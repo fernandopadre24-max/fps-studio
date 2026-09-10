@@ -134,51 +134,6 @@ async function initDb() {
         )
     `);
 
-    // Seed se vazio
-    const result = db.exec("SELECT COUNT(*) as c FROM servicos");
-    const count = result.length > 0 ? result[0].values[0][0] : 0;
-
-    if (count === 0) {
-        const seedData = [
-            ["INSERT INTO servicos (nome, descricao, preco, duracao, icone, imagem) VALUES (?, ?, ?, ?, ?, ?)",
-                ["Gravação de Vocais", "Sessão completa de gravação de vocais com tratamento acústico profissional.", 250.00, "2 horas", "fa-microphone", ""]],
-            ["INSERT INTO servicos (nome, descricao, preco, duracao, icone, imagem) VALUES (?, ?, ?, ?, ?, ?)",
-                ["Mixagem Profissional", "Mixagem completa com até 64 trilhas, EQ dinâmico e efeitos premium.", 500.00, "3 dias", "fa-sliders-h", ""]],
-            ["INSERT INTO servicos (nome, descricao, preco, duracao, icone, imagem) VALUES (?, ?, ?, ?, ?, ?)",
-                ["Masterização", "Masterização para streaming e mídia física com referência A/B.", 350.00, "2 dias", "fa-compact-disc", ""]],
-            ["INSERT INTO servicos (nome, descricao, preco, duracao, icone, imagem) VALUES (?, ?, ?, ?, ?, ?)",
-                ["Produção Musical", "Produção completa de faixa com arranjo e programação.", 800.00, "5 dias", "fa-music", ""]],
-            ["INSERT INTO servicos (nome, descricao, preco, duracao, icone, imagem) VALUES (?, ?, ?, ?, ?, ?)",
-                ["Aluguel de Estúdio", "Aluguel por hora do estúdio completo com engenheiro.", 150.00, "1 hora", "fa-building", ""]],
-            ["INSERT INTO servicos (nome, descricao, preco, duracao, icone, imagem) VALUES (?, ?, ?, ?, ?, ?)",
-                ["Aulas de Canto", "Aula particular de técnica vocal.", 120.00, "1 hora", "fa-users", ""]],
-
-            ["INSERT INTO materiais (nome, descricao, preco, estoque, categoria, imagem) VALUES (?, ?, ?, ?, ?, ?)",
-                ["Microfone Condensador AT2020", "Microfone condensador cardioide para gravação.", 899.00, 5, "microfone", ""]],
-            ["INSERT INTO materiais (nome, descricao, preco, estoque, categoria, imagem) VALUES (?, ?, ?, ?, ?, ?)",
-                ["Fone Audio-Technica M50x", "Fone circumaural profissional.", 1299.00, 8, "fone", ""]],
-            ["INSERT INTO materiais (nome, descricao, preco, estoque, categoria, imagem) VALUES (?, ?, ?, ?, ?, ?)",
-                ["Monitor Yamaha HS8", "Monitor bi-amplificado 8 polegadas.", 2499.00, 4, "monitor", ""]],
-            ["INSERT INTO materiais (nome, descricao, preco, estoque, categoria, imagem) VALUES (?, ?, ?, ?, ?, ?)",
-                ["Interface Focusrite Scarlett 2i2", "Interface USB 2 entradas 2 saídas.", 1099.00, 6, "interface", ""]],
-            ["INSERT INTO materiais (nome, descricao, preco, estoque, categoria, imagem) VALUES (?, ?, ?, ?, ?, ?)",
-                ["Cabo XLR 5m", "Cabo XLR balanceado blindado.", 79.00, 20, "cabo", ""]],
-            ["INSERT INTO materiais (nome, descricao, preco, estoque, categoria, imagem) VALUES (?, ?, ?, ?, ?, ?)",
-                ["Suporte Microfone", "Braço articulado com fixação bancada.", 189.00, 10, "acessorio", ""]],
-
-            ["INSERT INTO clientes (nome, email, telefone, senha, pin) VALUES (?, ?, ?, ?, ?)",
-                ["João Silva", "cliente@exemplo.com", "(11) 99999-0000", "cliente123", "5678"]],
-            ["INSERT INTO clientes (nome, email, telefone, senha, pin) VALUES (?, ?, ?, ?, ?)",
-                ["Maria Santos", "maria@email.com", "(11) 88888-1111", "maria123", "1111"]],
-            ["INSERT INTO clientes (nome, email, telefone, senha, pin) VALUES (?, ?, ?, ?, ?)",
-                ["Pedro Costa", "pedro@email.com", "(21) 77777-2222", "pedro123", "2222"]]
-        ];
-
-        for (const [sql, params] of seedData) {
-            db.run(sql, params);
-        }
-    }
-
     saveDb(db);
     return db;
 }

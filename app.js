@@ -63,6 +63,8 @@ async function initApp() {
 
             DBReady = true;
             console.log('SQLite conectado!');
+            setInterval(() => { if (document.visibilityState === 'visible') salvarAutoBackupLocal(); }, 60000);
+            await restaurarAutoBackupLocal();
         }
     } catch (err) {
         console.warn('API SQLite offline. Modo local ativo.', err);
@@ -79,6 +81,30 @@ async function initApp() {
 
 // Chama init ao carregar
 initApp();
+
+function salvarAutoBackupLocal() {
+    if (!DBReady) return;
+    DB_SERVICE.exportBackup().then(dados => {
+        try {
+            localStorage.setItem('fps_autobackup', JSON.stringify(Object.assign({}, dados, { salvoEm: new Date().toISOString() })));
+        } catch (e) {}
+    }).catch(() => {});
+}
+
+async function restaurarAutoBackupLocal() {
+    if (!DBReady) return;
+    try {
+        const raw = localStorage.getItem('fps_autobackup');
+        if (!raw) return;
+        const b = JSON.parse(raw);
+        if (!b || b.tipo !== 'fps-studio-backup') return;
+        const temDados = (b.servicos && b.servicos.length) || (b.clientes && b.clientes.length) || (b.pedidos && b.pedidos.length);
+        const servidorVazio = DB.servicos.length === 0 && DB.clientes.length === 0 && DB.pedidos.length === 0;
+        if (!temDados || !servidorVazio) return;
+        await DB_SERVICE.importBackup(b);
+        location.reload();
+    } catch (e) {}
+}
 
 // ============================================
 // SESSÃO (permanência de login)
