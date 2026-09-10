@@ -1073,6 +1073,7 @@ async function salvarPedido() {
     const status = document.getElementById('pedidoStatus').value;
     const dataInicial = document.getElementById('pedidoDataInicial').value || '';
     const horaInicial = document.getElementById('pedidoHoraInicial').value || '';
+    const horaFinal = document.getElementById('pedidoHoraFinal').value || '';
 
     if (servicos.length === 0 && materiais.length === 0) {
         showToast('Selecione pelo menos um serviço ou material!', 'error');
@@ -1088,13 +1089,13 @@ async function salvarPedido() {
     if (id) {
         const idx = DB.pedidos.findIndex(p => p.id === parseInt(id));
         if (idx !== -1) {
-            DB.pedidos[idx] = { ...DB.pedidos[idx], clienteId, servicos, materiais, desconto, status, total, dataInicial, horaInicial };
+            DB.pedidos[idx] = { ...DB.pedidos[idx], clienteId, servicos, materiais, desconto, status, total, dataInicial, horaInicial, horaFinal };
             pedidoSalvo = DB.pedidos[idx];
-            if (DBReady) await DB_SERVICE.updatePedido(pedidoSalvo.docId, { clienteId, servicos, materiais, desconto, status, total, parcial: pedidoSalvo.parcial || 0, descontoPct: pedidoSalvo.descontoPct || 0, dataInicial, horaInicial });
+            if (DBReady) await DB_SERVICE.updatePedido(pedidoSalvo.docId, { clienteId, servicos, materiais, desconto, status, total, parcial: pedidoSalvo.parcial || 0, descontoPct: pedidoSalvo.descontoPct || 0, dataInicial, horaInicial, horaFinal });
         }
     } else {
         const novoPedido = {
-            id: DB.nextId.pedido++, clienteId, servicos, materiais, desconto, status, total, dataInicial, horaInicial,
+            id: DB.nextId.pedido++, clienteId, servicos, materiais, desconto, status, total, dataInicial, horaInicial, horaFinal,
             data: new Date().toISOString().split('T')[0]
         };
         DB.pedidos.push(novoPedido);
@@ -1125,6 +1126,7 @@ function editarPedido(id) {
     document.getElementById('pedidoStatus').value = p.status;
     document.getElementById('pedidoDataInicial').value = p.dataInicial || '';
     document.getElementById('pedidoHoraInicial').value = p.horaInicial || '';
+    document.getElementById('pedidoHoraFinal').value = p.horaFinal || '';
 
     p.servicos.forEach(sId => {
         const cb = document.getElementById(`ps_${sId}`);
@@ -1172,7 +1174,7 @@ function verDetalhesPedido(id) {
             <h4><i class="fas fa-info-circle"></i> Informações</h4>
             <div class="detalhe-item"><span>Pedido</span><strong>#${p.id}</strong></div>
             <div class="detalhe-item"><span>Criado em</span><span>${formatDate(p.data)}</span></div>
-            ${p.dataInicial ? `<div class="detalhe-item"><span>Início</span><strong>${formatDate(p.dataInicial)} ${p.horaInicial || ''}</strong></div>` : ''}
+            ${p.dataInicial ? `<div class="detalhe-item"><span>Início</span><strong>${formatDate(p.dataInicial)} ${p.horaInicial || ''}${p.horaFinal ? ` &rarr; ${p.horaFinal}` : ''}</strong></div>` : ''}
             <div class="detalhe-item"><span>Status</span><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></div>
         </div>`;
 
@@ -1871,7 +1873,7 @@ function verDetalhesPedidoClient(id) {
             <h4><i class="fas fa-info-circle"></i> Informações do Pedido</h4>
             <div class="detalhe-item"><span>Pedido</span><strong>#${p.id}</strong></div>
             <div class="detalhe-item"><span>Criado em</span><span>${formatDate(p.data)}</span></div>
-            ${p.dataInicial ? `<div class="detalhe-item"><span>Início</span><strong>${formatDate(p.dataInicial)} ${p.horaInicial || ''}</strong></div>` : ''}
+            ${p.dataInicial ? `<div class="detalhe-item"><span>Início</span><strong>${formatDate(p.dataInicial)} ${p.horaInicial || ''}${p.horaFinal ? ` &rarr; ${p.horaFinal}` : ''}</strong></div>` : ''}
             <div class="detalhe-item"><span>Status</span><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></div>
         </div>`;
 
@@ -2017,6 +2019,7 @@ async function salvarPedidoClient() {
     const parcial = condicao === 'metade' ? 1 : 0;
     const dataInicial = document.getElementById('clientPedidoDataInicial').value || '';
     const horaInicial = document.getElementById('clientPedidoHoraInicial').value || '';
+    const horaFinal = document.getElementById('clientPedidoHoraFinal').value || '';
 
     const novoPedido = {
         id: DB.nextId.pedido++,
@@ -2029,7 +2032,8 @@ async function salvarPedidoClient() {
         parcial,
         descontoPct,
         dataInicial,
-        horaInicial
+        horaInicial,
+        horaFinal
     };
     DB.pedidos.push(novoPedido);
     if (DBReady) {
