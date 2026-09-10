@@ -4,13 +4,16 @@ const path = require('path');
 
 const DB_DIR = process.env.VERCEL ? '/tmp' : process.cwd();
 const DB_PATH = path.join(DB_DIR, 'fps-studio.db');
+const WASM_PATH = path.join(__dirname, 'sql-wasm.wasm');
 
 let dbInstance = null;
 
 async function getDb() {
     if (dbInstance) return dbInstance;
 
-    const SQL = await initSqlJs();
+    const SQL = await initSqlJs({
+        locateFile: () => WASM_PATH
+    });
 
     if (fs.existsSync(DB_PATH)) {
         const buffer = fs.readFileSync(DB_PATH);

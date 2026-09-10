@@ -5,9 +5,11 @@
 const API_BASE = '/api';
 
 async function apiCall(action, method = 'GET', body = null, params = {}) {
-    let url = `${API_BASE}?action=${action}`;
-    if (params.id) url += `&id=${params.id}`;
-    if (params.clienteId) url += `&clienteId=${params.clienteId}`;
+    let url = `${API_BASE}/${action}`;
+    const qp = [];
+    if (params.id) qp.push(`id=${params.id}`);
+    if (params.clienteId) qp.push(`clienteId=${params.clienteId}`);
+    if (qp.length) url += '?' + qp.join('&');
 
     const opts = { method, headers: { 'Content-Type': 'application/json' } };
     if (body) opts.body = JSON.stringify(body);
@@ -55,8 +57,8 @@ const DB_SERVICE = {
     // INIT (não precisa de seed, o db.js já faz)
     async init() {
         try {
-            await fetch(API_BASE);
-            return true;
+            const res = await fetch(`${API_BASE}/servicos`);
+            return res.ok;
         } catch { return false; }
     },
     async seedAll() {}
