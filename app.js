@@ -17,6 +17,7 @@ let DBReady = false; // Indica se a API SQLite está conectada
 let currentUser = null;
 let currentChatClient = null;
 let selectedPedidoId = null;
+let selectedPagamentoValor = 0;
 const clientesExpandidos = new Set();
 
 // ============================================
@@ -1304,14 +1305,30 @@ async function salvarPedidoClient() {
     }
     await sincronizarFinanceiroPedido(novoPedido);
 
-    // Adicionar notificação no chat
+    // Enviar pedido pelo chat para o administrador
     const chatKey = `admin_${currentUser.id}`;
     if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
-    DB.chats[chatKey].push({
-        tipo: 'sistema',
-        mensagem: `Novo pedido #${novoPedido.id} criado com total de ${formatCurrency(total)}`,
-        data: new Date().toISOString()
-    });
+
+    const nomesServicos = servicos.map(id => { const s = DB.servicos.find(x => x.id === id); return s ? s.nome : ''; }).filter(Boolean);
+    const nomesMateriais = materiais.map(id => { const m = DB.materiais.find(x => x.id === id); return m ? m.nome : ''; }).filter(Boolean);
+    const detalhes = [...nomesServicos, ...nomesMateriais].join(', ');
+
+    const msgData = {
+        tipo: 'pedido',
+        remetente: 'client',
+        clienteId: currentUser.id,
+        pedidoId: novoPedido.id,
+        mensagem: `Novo pedido #${novoPedido.id} - ${formatCurrency(total)}`,
+        descricao: detalhes,
+        valor: total,
+        data: new Date().toISOString(),
+        lida: false
+    };
+    DB.chats[chatKey].push(msgData);
+    if (DBReady) {
+        const res = await DB_SERVICE.sendMessage(msgData);
+        if (res && res.id) msgData.id = res.id;
+    }
 
     closeAllModals();
     renderPedidosClient();
@@ -1324,14 +1341,19 @@ function abrirPagamento(pedidoId) {
     const p = DB.pedidos.find(x => x.id === pedidoId);
     if (!p) return;
 
+    const chatKey = `admin_${currentUser.id}`;
+    const orc = (DB.chats[chatKey] || []).filter(m => m.tipo === 'orcamento' && m.pedidoId === pedidoId).pop();
+    const valorPag = orc ? Math.max(0, (orc.valor || 0) - (orc.desconto || 0)) : p.total;
+    selectedPagamentoValor = valorPag;
+
     document.getElementById('pagamentoInfo').innerHTML = `
         <div class="pedido-total" style="margin-bottom:16px;">
             <span>Pedido #${p.id}</span>
-            <strong>${formatCurrency(p.total)}</strong>
+            <strong>${formatCurrency(valorPag)}</strong>
         </div>`;
 
     // Generate PIX code
-    const pixCode = `00020126580014br.gov.bcb.pix0136fps-studio-${p.id}@fps.com520400005303986540${p.total.toFixed(2)}5802BR5913FPS STUDIO6009SAO PAULO62070503***6304`;
+    const pixCode = `00020126580014br.gov.bcb.pix0136fps-studio-${p.id}@fps.com520400005303986540${valorPag.toFixed(2)}5802BR5913FPS STUDIO6009SAO PAULO62070503***6304`;
     document.getElementById('pixCopiaCola').textContent = pixCode;
 
     openModal('pagamentoModal');
@@ -1366,9 +1388,9 @@ function confirmarPagamento() {
         tipo: 'comprovante',
         remetente: 'client',
         clienteId: currentUser.id,
-        mensagem: `Pagamento de ${formatCurrency(p.total)} realizado via ${tipo === 'pix' ? 'PIX' : 'Cartão de Crédito'} para o Pedido #${p.id}`,
+        mensagem: `Pagamento de ${formatCurrency(selectedPagamentoValor || p.total)} realizado via ${tipo === 'pix' ? 'PIX' : 'Cartão de Crédito'} para o Pedido #${p.id}`,
         descricao: `Pagamento do Pedido #${p.id}`,
-        valor: p.total,
+        valor: selectedPagamentoValor || p.total,
         desconto: 0,
         pedidoId: p.id,
         status: 'aguardando',
@@ -1459,11 +1481,27 @@ function renderChatMessagesAdmin(chatKey) {
     container.innerHTML = messages.map((m, msgIdx) => {
         if (m.tipo === 'sistema') {
             return `<div class="chat-message system">${m.mensagem}</div>`;
+        } else if (m.tipo === 'pedido') {
+            const pedido = DB.pedidos.find(x => x.id === m.pedidoId);
+            return `<div class="chat-message pedido">
+                <h4><i class="fas fa-clipboard-list"></i> Pedido do Cliente</h4>
+                <p><strong>${m.mensagem}</strong></p>
+                ${m.descricao ? `<p>${m.descricao}</p>` : ''}
+                <p>Valor do pedido: <strong>${formatCurrency(m.valor || (pedido ? pedido.total : 0))}</strong></p>
+                <div class="comprovante-acoes">
+                    <button class="btn-primary btn-sm" onclick="abrirOrcamentoParaPedido(${msgIdx})"><i class="fas fa-file-invoice-dollar"></i> Enviar Orçamento</button>
+                </div>
+                <div class="chat-message-time">${formatDateTime(m.data)}</div>
+            </div>`;
         } else if (m.tipo === 'orcamento') {
+            const desconto = m.desconto || 0;
+            const total = Math.max(0, (m.valor || 0) - desconto);
             return `<div class="chat-message orcamento">
                 <h4><i class="fas fa-file-invoice-dollar"></i> Orçamento</h4>
                 <p><strong>${m.descricao}</strong></p>
                 <p>Valor: <strong>${formatCurrency(m.valor)}</strong></p>
+                ${desconto > 0 ? `<p>Desconto: <strong>-${formatCurrency(desconto)}</strong></p>` : ''}
+                <p>Total a pagar: <strong>${formatCurrency(total)}</strong></p>
                 <p>Validade: ${m.validade}</p>
                 <div class="chat-message-time">${formatDateTime(m.data)}</div>
             </div>`;
@@ -1540,6 +1578,47 @@ async function sendMessageAdmin() {
     updateChatBadge();
 }
 
+let orcamentoPedidoId = null;
+
+function prepararOrcamentoAvulso() {
+    orcamentoPedidoId = null;
+    document.getElementById('orcamentoPedidoInfo').value = '';
+    document.getElementById('orcamentoDescricao').value = '';
+    document.getElementById('orcamentoValor').value = '';
+    document.getElementById('orcamentoDesconto').value = '0';
+    document.getElementById('orcamentoValidade').value = '15 dias';
+    atualizarTotalOrcamento();
+    openModal('enviarOrcamentoModal');
+}
+
+function abrirOrcamentoParaPedido(msgIdx) {
+    if (!currentChatClient) return;
+    const msgs = DB.chats[`admin_${currentChatClient}`] || [];
+    const m = msgs[msgIdx];
+    if (!m) return;
+
+    const pedido = DB.pedidos.find(x => x.id === m.pedidoId);
+    orcamentoPedidoId = m.pedidoId || null;
+
+    const nomesServicos = (pedido ? pedido.servicos : []).map(id => { const s = DB.servicos.find(x => x.id === id); return s ? s.nome : ''; }).filter(Boolean);
+    const nomesMateriais = (pedido ? pedido.materiais : []).map(id => { const mm = DB.materiais.find(x => x.id === id); return mm ? mm.nome : ''; }).filter(Boolean);
+
+    document.getElementById('orcamentoPedidoInfo').value = pedido ? `#${pedido.id} - ${formatCurrency(pedido.total)}` : '';
+    document.getElementById('orcamentoDescricao').value = [...nomesServicos, ...nomesMateriais].join(', ');
+    document.getElementById('orcamentoValor').value = pedido ? pedido.total.toFixed(2) : '';
+    document.getElementById('orcamentoDesconto').value = '0';
+    document.getElementById('orcamentoValidade').value = '15 dias';
+
+    atualizarTotalOrcamento();
+    openModal('enviarOrcamentoModal');
+}
+
+function atualizarTotalOrcamento() {
+    const valor = parseFloat(document.getElementById('orcamentoValor').value) || 0;
+    const desconto = parseFloat(document.getElementById('orcamentoDesconto').value) || 0;
+    document.getElementById('orcamentoTotal').textContent = formatCurrency(Math.max(0, valor - desconto));
+}
+
 async function enviarOrcamento() {
     if (!currentChatClient) return;
     const chatKey = `admin_${currentChatClient}`;
@@ -1551,6 +1630,8 @@ async function enviarOrcamento() {
         clienteId: currentChatClient,
         descricao: document.getElementById('orcamentoDescricao').value,
         valor: parseFloat(document.getElementById('orcamentoValor').value) || 0,
+        desconto: parseFloat(document.getElementById('orcamentoDesconto').value) || 0,
+        pedidoId: orcamentoPedidoId,
         validade: document.getElementById('orcamentoValidade').value || '15 dias',
         data: new Date().toISOString()
     };
@@ -1561,6 +1642,7 @@ async function enviarOrcamento() {
         if (res && res.id) msgData.id = res.id;
     }
 
+    orcamentoPedidoId = null;
     closeAllModals();
     renderChatMessagesAdmin(chatKey);
     showToast('Orçamento enviado!', 'success');
@@ -1681,6 +1763,25 @@ async function confirmarPagoComprovante(msgIdx) {
         }
     }
 
+    // Enviar mensagem de confirmação pro cliente com os detalhes do serviço
+    if (pedido) {
+        const nomesServicos = (pedido.servicos || []).map(id2 => { const s = DB.servicos.find(x => x.id === id2); return s ? s.nome : ''; }).filter(Boolean);
+        const nomesMateriais = (pedido.materiais || []).map(id2 => { const mm = DB.materiais.find(x => x.id === id2); return mm ? mm.nome : ''; }).filter(Boolean);
+        const detalhes = [...nomesServicos, ...nomesMateriais].join(', ') || 'Serviço solicitado';
+        const confMsg = {
+            tipo: 'sistema',
+            remetente: 'admin',
+            clienteId: currentChatClient,
+            mensagem: `Pagamento do Pedido #${pedido.id} confirmado! Detalhes do serviço: ${detalhes}. Valor: ${formatCurrency(Math.max(0, totalPago))}. Status: em andamento.`,
+            data: new Date().toISOString()
+        };
+        DB.chats[chatKey].push(confMsg);
+        if (DBReady) {
+            const res = await DB_SERVICE.sendMessage(confMsg);
+            if (res && res.id) confMsg.id = res.id;
+        }
+    }
+
     renderChatMessagesAdmin(chatKey);
     renderFinanceiro();
     updateChatBadge();
@@ -1737,11 +1838,22 @@ function renderClientChat() {
     container.innerHTML = messages.map(m => {
         if (m.tipo === 'sistema') {
             return `<div class="chat-message system">${m.mensagem}</div>`;
+        } else if (m.tipo === 'pedido') {
+            return `<div class="chat-message pedido">
+                <h4><i class="fas fa-clipboard-list"></i> Pedido Enviado</h4>
+                <p><strong>${m.mensagem}</strong></p>
+                ${m.descricao ? `<p>${m.descricao}</p>` : ''}
+                <div class="chat-message-time">${formatDateTime(m.data)}</div>
+            </div>`;
         } else if (m.tipo === 'orcamento') {
+            const desconto = m.desconto || 0;
+            const total = Math.max(0, (m.valor || 0) - desconto);
             return `<div class="chat-message orcamento">
                 <h4><i class="fas fa-file-invoice-dollar"></i> Orçamento Recebido</h4>
                 <p><strong>${m.descricao}</strong></p>
                 <p>Valor: <strong>${formatCurrency(m.valor)}</strong></p>
+                ${desconto > 0 ? `<p>Desconto: <strong>-${formatCurrency(desconto)}</strong></p>` : ''}
+                <p>Total a pagar: <strong>${formatCurrency(total)}</strong></p>
                 <p>Validade: ${m.validade}</p>
                 <div class="chat-message-time">${formatDateTime(m.data)}</div>
             </div>`;
@@ -1802,35 +1914,35 @@ function prepareClientPagamentoModal() {
     select.innerHTML = meusPedidos.map(p => `<option value="${p.id}">#${p.id} - ${formatCurrency(p.total)}</option>`).join('') || '<option value="">Nenhum pedido</option>';
 
     document.getElementById('clientPagamentoValor').value = '';
-    document.getElementById('clientPagamentoDesconto').value = '0';
     preencherValorPedidoClient();
 }
 
 function preencherValorPedidoClient() {
     const pedidoId = parseInt(document.getElementById('clientPagamentoPedido').value);
     const p = DB.pedidos.find(x => x.id === pedidoId);
-    if (p) {
-        document.getElementById('clientPagamentoValor').value = p.total.toFixed(2);
+    let valor = p ? p.total : 0;
+    if (currentUser) {
+        const orc = (DB.chats[`admin_${currentUser.id}`] || [])
+            .filter(m => m.tipo === 'orcamento' && m.pedidoId === pedidoId).pop();
+        if (orc) valor = Math.max(0, (orc.valor || 0) - (orc.desconto || 0));
     }
+    document.getElementById('clientPagamentoValor').value = valor ? valor.toFixed(2) : '';
     atualizarTotalPagamentoClient();
 }
 
 function atualizarTotalPagamentoClient() {
     const valor = parseFloat(document.getElementById('clientPagamentoValor').value) || 0;
-    const desconto = parseFloat(document.getElementById('clientPagamentoDesconto').value) || 0;
-    document.getElementById('clientPagamentoTotal').textContent = formatCurrency(Math.max(0, valor - desconto));
+    document.getElementById('clientPagamentoTotal').textContent = formatCurrency(valor);
 }
 
 async function enviarPagamentoClient() {
     if (!currentUser || currentUser.role !== 'client') return;
     const pedidoId = parseInt(document.getElementById('clientPagamentoPedido').value);
     const valor = parseFloat(document.getElementById('clientPagamentoValor').value) || 0;
-    const desconto = parseFloat(document.getElementById('clientPagamentoDesconto').value) || 0;
 
     if (!pedidoId) { showToast('Selecione um pedido!', 'error'); return; }
-    if (valor - desconto <= 0) { showToast('Informe um valor válido!', 'error'); return; }
+    if (valor <= 0) { showToast('Informe um valor válido!', 'error'); return; }
 
-    const total = Math.max(0, valor - desconto);
     const chatKey = `admin_${currentUser.id}`;
     if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
 
@@ -1838,10 +1950,10 @@ async function enviarPagamentoClient() {
         tipo: 'comprovante',
         remetente: 'client',
         clienteId: currentUser.id,
-        mensagem: `Pedido #${pedidoId} - Valor: ${formatCurrency(valor)}${desconto > 0 ? ` com desconto de ${formatCurrency(desconto)}` : ''} - Total a pagar: ${formatCurrency(total)}`,
+        mensagem: `Pedido #${pedidoId} - Valor a pagar: ${formatCurrency(valor)}`,
         descricao: `Pagamento do Pedido #${pedidoId}`,
         valor,
-        desconto,
+        desconto: 0,
         pedidoId,
         status: 'aguardando',
         data: new Date().toISOString(),
@@ -2017,7 +2129,7 @@ function clearForm(prefix) {
         pedido: ['pedidoId', 'pedidoDesconto'],
         cliente: ['clienteId', 'clienteNome', 'clienteEmail', 'clienteTelefone', 'clienteSenha', 'clientePin'],
         mov: ['movDescricao', 'movValor'],
-        orcamento: ['orcamentoDescricao', 'orcamentoValor', 'orcamentoValidade']
+        orcamento: ['orcamentoPedidoInfo', 'orcamentoDescricao', 'orcamentoValor', 'orcamentoDesconto', 'orcamentoValidade']
     };
 
     (form[prefix] || []).forEach(id => {

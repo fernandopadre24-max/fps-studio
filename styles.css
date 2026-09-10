@@ -1670,6 +1670,20 @@ body {
     max-width: 85%;
 }
 
+.chat-message.pedido {
+    background: linear-gradient(135deg, rgba(108,92,231,0.08), rgba(0,184,148,0.08));
+    border: 1px solid rgba(108,92,231,0.25);
+    max-width: 85%;
+}
+
+.chat-message.pedido h4 {
+    font-size: 14px;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
 .comprovante-acoes {
     display: flex;
     gap: 8px;

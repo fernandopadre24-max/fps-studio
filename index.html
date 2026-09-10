@@ -383,7 +383,7 @@
                                 </div>
                             </div>
                             <div class="chat-input-area" id="chatInputAreaAdmin" style="display:none;">
-                                <button class="btn-icon" onclick="openModal('enviarOrcamentoModal')" title="Enviar Orçamento">
+                                <button class="btn-icon" onclick="prepararOrcamentoAvulso()" title="Enviar Orçamento">
                                     <i class="fas fa-file-invoice-dollar"></i>
                                 </button>
                                 <button class="btn-icon" onclick="openModal('enviarComprovanteModal')" title="Enviar Comprovante">
@@ -965,12 +965,24 @@
             </div>
             <div class="modal-body">
                 <div class="form-group">
+                    <label>Pedido</label>
+                    <input type="text" id="orcamentoPedidoInfo" placeholder="Nenhum pedido vinculado" readonly>
+                </div>
+                <div class="form-group">
                     <label>Descrição do Orçamento</label>
                     <textarea id="orcamentoDescricao" placeholder="Descreva o orçamento..."></textarea>
                 </div>
                 <div class="form-group">
                     <label>Valor (R$)</label>
-                    <input type="number" id="orcamentoValor" step="0.01" placeholder="0,00">
+                    <input type="number" id="orcamentoValor" step="0.01" placeholder="0,00" oninput="atualizarTotalOrcamento()">
+                </div>
+                <div class="form-group">
+                    <label>Desconto (opcional) (R$)</label>
+                    <input type="number" id="orcamentoDesconto" step="0.01" value="0" placeholder="0,00" oninput="atualizarTotalOrcamento()">
+                </div>
+                <div class="pedido-total">
+                    <span>Total a pagar:</span>
+                    <strong id="orcamentoTotal">R$ 0,00</strong>
                 </div>
                 <div class="form-group">
                     <label>Validade</label>
@@ -1028,12 +1040,8 @@
                     <select id="clientPagamentoPedido" onchange="preencherValorPedidoClient()"></select>
                 </div>
                 <div class="form-group">
-                    <label>Valor do Pedido (R$)</label>
-                    <input type="number" id="clientPagamentoValor" step="0.01" placeholder="0,00">
-                </div>
-                <div class="form-group">
-                    <label>Desconto (opcional) (R$)</label>
-                    <input type="number" id="clientPagamentoDesconto" step="0.01" value="0" placeholder="0,00" oninput="atualizarTotalPagamentoClient()">
+                    <label>Valor a pagar (R$)</label>
+                    <input type="number" id="clientPagamentoValor" step="0.01" placeholder="0,00" readonly>
                 </div>
                 <div class="pedido-total">
                     <span>Total a pagar:</span>
