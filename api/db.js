@@ -73,7 +73,10 @@ async function initDb() {
             bairro TEXT DEFAULT '',
             cep TEXT DEFAULT '',
             cidade TEXT DEFAULT '',
-            estado TEXT DEFAULT ''
+            estado TEXT DEFAULT '',
+            tipoPessoa TEXT DEFAULT 'fisica',
+            cnpj TEXT DEFAULT '',
+            instagram TEXT DEFAULT ''
         )
     `);
 
@@ -85,6 +88,9 @@ async function initDb() {
     try { db.run('ALTER TABLE clientes ADD COLUMN cep TEXT DEFAULT ""'); } catch(e) {}
     try { db.run('ALTER TABLE clientes ADD COLUMN cidade TEXT DEFAULT ""'); } catch(e) {}
     try { db.run('ALTER TABLE clientes ADD COLUMN estado TEXT DEFAULT ""'); } catch(e) {}
+    try { db.run('ALTER TABLE clientes ADD COLUMN tipoPessoa TEXT DEFAULT "fisica"'); } catch(e) {}
+    try { db.run('ALTER TABLE clientes ADD COLUMN cnpj TEXT DEFAULT ""'); } catch(e) {}
+    try { db.run('ALTER TABLE clientes ADD COLUMN instagram TEXT DEFAULT ""'); } catch(e) {}
 
     db.run(`
         CREATE TABLE IF NOT EXISTS pedidos (
@@ -95,6 +101,8 @@ async function initDb() {
             desconto REAL DEFAULT 0,
             status TEXT DEFAULT 'pendente',
             data TEXT DEFAULT (date('now')),
+            dataPref TEXT DEFAULT '',
+            horarioPref TEXT DEFAULT '',
             total REAL DEFAULT 0,
             parcial INTEGER DEFAULT 0,
             descontoPct REAL DEFAULT 0
@@ -103,6 +111,8 @@ async function initDb() {
 
     try { db.run('ALTER TABLE pedidos ADD COLUMN parcial INTEGER DEFAULT 0'); } catch(e) {}
     try { db.run('ALTER TABLE pedidos ADD COLUMN descontoPct REAL DEFAULT 0'); } catch(e) {}
+    try { db.run('ALTER TABLE pedidos ADD COLUMN dataPref TEXT DEFAULT ""'); } catch(e) {}
+    try { db.run('ALTER TABLE pedidos ADD COLUMN horarioPref TEXT DEFAULT ""'); } catch(e) {}
 
     db.run(`
         CREATE TABLE IF NOT EXISTS movimentacoes (

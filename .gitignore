@@ -4,3 +4,6 @@ node_modules/
 *.log
 
 .vercel
+
+# Orkestra AI — estado local (nunca versionar)
+.sta/

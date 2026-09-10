@@ -512,7 +512,7 @@ function renderAdminDashboard() {
             return `<div class="pedido-item">
                 <div class="pedido-item-info">
                     <h5>Pedido #${p.id} - ${cliente ? cliente.nome : 'N/A'}</h5>
-                    <p>${formatDate(p.data)}</p>
+                    <p>${formatPedidoDataHora(p)}</p>
                 </div>
                 <div>
                     <span class="status-badge status-${p.status}">${statusLabel(p.status)}</span>
@@ -908,7 +908,7 @@ function renderPedidosAdmin() {
             <td>${servicoNomes || '-'}</td>
             <td><strong>${formatCurrency(p.total)}</strong>${condRotulo ? `<small class="cond-badge">${condRotulo}</small>` : ''}</td>
             <td><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></td>
-            <td>${formatDate(p.data)}</td>
+            <td>${formatPedidoDataHora(p)}</td>
             <td>
                 <div class="table-actions">
                     <button onclick="verDetalhesPedido(${p.id})" title="Ver Detalhes"><i class="fas fa-eye"></i></button>
@@ -945,7 +945,7 @@ function pedidoKanbanCard(p) {
         </div>
         <div class="kanban-card-bottom">
             <strong class="kanban-total">${formatCurrency(p.total)}</strong>
-            <span class="kanban-data">${formatDate(p.data)}</span>
+            <span class="kanban-data">${formatPedidoDataHora(p)}</span>
         </div>
         <div class="kanban-card-acoes">
             <button title="Ver detalhes" onclick="verDetalhesPedido(${p.id})"><i class="fas fa-eye"></i></button>
@@ -1071,6 +1071,8 @@ async function salvarPedido() {
     const materiais = [...document.querySelectorAll('#pedidoMateriais input:checked')].map(cb => parseInt(cb.value));
     const desconto = parseFloat(document.getElementById('pedidoDesconto').value) || 0;
     const status = document.getElementById('pedidoStatus').value;
+    const dataPref = document.getElementById('pedidoDataPref').value || '';
+    const horarioPref = document.getElementById('pedidoHoraPref').value || '';
 
     if (servicos.length === 0 && materiais.length === 0) {
         showToast('Selecione pelo menos um serviço ou material!', 'error');
@@ -1086,13 +1088,13 @@ async function salvarPedido() {
     if (id) {
         const idx = DB.pedidos.findIndex(p => p.id === parseInt(id));
         if (idx !== -1) {
-            DB.pedidos[idx] = { ...DB.pedidos[idx], clienteId, servicos, materiais, desconto, status, total };
+            DB.pedidos[idx] = { ...DB.pedidos[idx], clienteId, servicos, materiais, desconto, status, total, dataPref, horarioPref };
             pedidoSalvo = DB.pedidos[idx];
-            if (DBReady) await DB_SERVICE.updatePedido(pedidoSalvo.docId, { clienteId, servicos, materiais, desconto, status, total, parcial: pedidoSalvo.parcial || 0, descontoPct: pedidoSalvo.descontoPct || 0 });
+            if (DBReady) await DB_SERVICE.updatePedido(pedidoSalvo.docId, { clienteId, servicos, materiais, desconto, status, total, parcial: pedidoSalvo.parcial || 0, descontoPct: pedidoSalvo.descontoPct || 0, dataPref, horarioPref });
         }
     } else {
         const novoPedido = {
-            id: DB.nextId.pedido++, clienteId, servicos, materiais, desconto, status, total,
+            id: DB.nextId.pedido++, clienteId, servicos, materiais, desconto, status, total, dataPref, horarioPref,
             data: new Date().toISOString().split('T')[0]
         };
         DB.pedidos.push(novoPedido);
@@ -1121,6 +1123,8 @@ function editarPedido(id) {
     document.getElementById('pedidoCliente').value = p.clienteId;
     document.getElementById('pedidoDesconto').value = p.desconto;
     document.getElementById('pedidoStatus').value = p.status;
+    document.getElementById('pedidoDataPref').value = p.dataPref || '';
+    document.getElementById('pedidoHoraPref').value = p.horarioPref || '';
 
     p.servicos.forEach(sId => {
         const cb = document.getElementById(`ps_${sId}`);
@@ -1168,6 +1172,8 @@ function verDetalhesPedido(id) {
             <h4><i class="fas fa-info-circle"></i> Informações</h4>
             <div class="detalhe-item"><span>Pedido</span><strong>#${p.id}</strong></div>
             <div class="detalhe-item"><span>Data</span><span>${formatDate(p.data)}</span></div>
+            ${p.dataPref ? `<div class="detalhe-item"><span>Data preferida</span><strong>${formatDate(p.dataPref)}</strong></div>` : ''}
+            ${p.horarioPref ? `<div class="detalhe-item"><span>Horário</span><strong>${p.horarioPref}</strong></div>` : ''}
             <div class="detalhe-item"><span>Status</span><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></div>
         </div>`;
 
@@ -1478,7 +1484,7 @@ function toggleClienteDetalhe(id) {
                             : (p.descontoPct ? `<span class="pag-cond">-${p.descontoPct}% à vista</span>` : '');
                         return `<tr>
                             <td><strong>#${p.id}</strong></td>
-                            <td>${formatDate(p.data)}</td>
+                            <td>${formatPedidoDataHora(p)}</td>
                             <td style="max-width:280px;white-space:normal;">${nomes || '-'}</td>
                             <td>${pagamentosPedidoResumo(p)}${cond ? `<div style="margin-top:4px;">${cond}</div>` : ''}</td>
                             <td><strong>${formatCurrency(esperado)}</strong></td>
@@ -1514,6 +1520,30 @@ function toggleClienteDetalhe(id) {
     renderClientes();
 }
 
+function abrirNovoClienteModal() {
+    clearForm('cliente');
+    document.getElementById('clienteModalTitle').textContent = 'Novo Cliente';
+    const tipo = document.getElementById('clienteTipoPessoa');
+    if (tipo) { tipo.value = 'fisica'; toggleTipoPessoaAdmin(); }
+    openModal('clienteModal');
+}
+
+function toggleTipoPessoaAdmin() {
+    const tipo = document.getElementById('clienteTipoPessoa');
+    const wrap = document.getElementById('clienteCnpjWrap');
+    if (tipo && wrap) wrap.style.display = (tipo.value === 'juridica') ? '' : 'none';
+}
+
+function toggleTipoPessoaPerfil() {
+    const tipo = document.getElementById('perfilTipoPessoa');
+    const cpfWrap = document.getElementById('perfilCpfWrap');
+    const cnpjWrap = document.getElementById('perfilCnpjWrap');
+    if (!tipo) return;
+    const juridica = tipo.value === 'juridica';
+    if (cpfWrap) cpfWrap.style.display = juridica ? 'none' : '';
+    if (cnpjWrap) cnpjWrap.style.display = juridica ? '' : 'none';
+}
+
 function editarCliente(id) {
     const c = DB.clientes.find(x => x.id === id);
     if (!c) return;
@@ -1523,6 +1553,13 @@ function editarCliente(id) {
     document.getElementById('clienteTelefone').value = c.telefone;
     document.getElementById('clienteSenha').value = c.senha;
     document.getElementById('clientePin').value = c.pin || '';
+    const tipo = document.getElementById('clienteTipoPessoa');
+    if (tipo) {
+        tipo.value = c.tipoPessoa || 'fisica';
+        toggleTipoPessoaAdmin();
+    }
+    document.getElementById('clienteCnpj').value = c.cnpj || '';
+    document.getElementById('clienteInstagram').value = c.instagram || '';
     document.getElementById('clienteModalTitle').textContent = 'Editar Cliente';
     openModal('clienteModal');
 }
@@ -1540,16 +1577,25 @@ async function excluirCliente(id) {
 async function salvarCliente() {
     const id = document.getElementById('clienteId').value;
     const pin = document.getElementById('clientePin').value;
+    const tipoPessoa = (document.getElementById('clienteTipoPessoa').value || 'fisica');
     const data = {
         nome: document.getElementById('clienteNome').value,
         email: document.getElementById('clienteEmail').value,
         telefone: document.getElementById('clienteTelefone').value,
         senha: document.getElementById('clienteSenha').value,
-        pin: pin
+        pin: pin,
+        tipoPessoa,
+        cnpj: (document.getElementById('clienteCnpj').value || '').trim(),
+        instagram: (document.getElementById('clienteInstagram').value || '').trim()
     };
 
     if (!data.nome || !data.email) {
         showToast('Preencha nome e e-mail!', 'error');
+        return;
+    }
+
+    if (data.tipoPessoa === 'juridica' && !data.cnpj) {
+        showToast('Informe o CNPJ!', 'error');
         return;
     }
 
@@ -1603,7 +1649,8 @@ async function salvarCliente() {
 function perfilClienteCompleto(c) {
     const u = c || currentUser;
     if (!u || u.role !== 'client') return true;
-    return !!(u.cpf && u.endereco && u.cep && u.cidade && u.estado);
+    const doc = (u.tipoPessoa === 'juridica') ? u.cnpj : (u.cpf || u.cnpj);
+    return !!(doc && u.endereco && u.cep && u.cidade && u.estado);
 }
 
 function atualizarAvisoPerfil(autoOpen) {
@@ -1623,8 +1670,16 @@ function mostrarPerfilClient() {
     if (!currentUser || currentUser.role !== 'client') return;
     const u = currentUser;
     document.getElementById('perfilNome').value = u.nome || '';
+    document.getElementById('perfilEmail').value = u.email || '';
     document.getElementById('perfilTelefone').value = u.telefone || '';
+    const tipo = document.getElementById('perfilTipoPessoa');
+    if (tipo) {
+        tipo.value = u.tipoPessoa || 'fisica';
+        toggleTipoPessoaPerfil();
+    }
     document.getElementById('perfilCpf').value = u.cpf || '';
+    document.getElementById('perfilCnpj').value = u.cnpj || '';
+    document.getElementById('perfilInstagram').value = u.instagram || '';
     document.getElementById('perfilEndereco').value = u.endereco || '';
     document.getElementById('perfilNumero').value = u.numero || '';
     document.getElementById('perfilComplemento').value = u.complemento || '';
@@ -1642,8 +1697,12 @@ async function salvarPerfilClient() {
     const v = id => (document.getElementById(id).value || '').trim();
     const dados = {
         nome: v('perfilNome'),
+        email: v('perfilEmail'),
         telefone: v('perfilTelefone'),
+        tipoPessoa: document.getElementById('perfilTipoPessoa').value || 'fisica',
         cpf: v('perfilCpf'),
+        cnpj: v('perfilCnpj'),
+        instagram: v('perfilInstagram'),
         endereco: v('perfilEndereco'),
         numero: v('perfilNumero'),
         complemento: v('perfilComplemento'),
@@ -1652,16 +1711,20 @@ async function salvarPerfilClient() {
         cidade: v('perfilCidade'),
         estado: v('perfilEstado')
     };
-    if (!dados.nome) { showToast('Informe seu nome!', 'error'); return; }
+    if (!dados.nome || !dados.email) { showToast('Informe seu nome e e-mail!', 'error'); return; }
+    if (dados.tipoPessoa === 'juridica' && !dados.cnpj) { showToast('Informe o CNPJ!', 'error'); return; }
 
     const persistido = { ...atual, ...dados };
     const dbUpdate = {
         nome: persistido.nome,
-        email: atual.email,
+        email: persistido.email,
         telefone: persistido.telefone,
         senha: atual.senha,
         pin: atual.pin || '',
         cpf: persistido.cpf,
+        cnpj: persistido.cnpj,
+        tipoPessoa: persistido.tipoPessoa,
+        instagram: persistido.instagram,
         endereco: persistido.endereco,
         numero: persistido.numero,
         complemento: persistido.complemento,
@@ -1718,7 +1781,7 @@ function renderClientDashboard() {
         recentesContainer.innerHTML = recentes.map(p => `<div class="pedido-item">
             <div class="pedido-item-info">
                 <h5>Pedido #${p.id}</h5>
-                <p>${formatDate(p.data)}</p>
+                <p>${formatPedidoDataHora(p)}</p>
             </div>
             <div>
                 <span class="status-badge status-${p.status}">${statusLabel(p.status)}</span>
@@ -1787,7 +1850,7 @@ function renderPedidosClient() {
             <td>${materialNomes || '-'}</td>
             <td><strong>${formatCurrency(p.total)}</strong>${condRotulo ? `<small class="cond-badge">${condRotulo}</small>` : ''}</td>
             <td><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></td>
-            <td>${formatDate(p.data)}</td>
+            <td>${formatPedidoDataHora(p)}</td>
             <td>
                 <div class="table-actions">
                     <button onclick="verDetalhesPedidoClient(${p.id})" title="Ver Detalhes"><i class="fas fa-eye"></i></button>
@@ -1808,6 +1871,8 @@ function verDetalhesPedidoClient(id) {
             <h4><i class="fas fa-info-circle"></i> Informações do Pedido</h4>
             <div class="detalhe-item"><span>Pedido</span><strong>#${p.id}</strong></div>
             <div class="detalhe-item"><span>Data</span><span>${formatDate(p.data)}</span></div>
+            ${p.dataPref ? `<div class="detalhe-item"><span>Data preferida</span><strong>${formatDate(p.dataPref)}</strong></div>` : ''}
+            ${p.horarioPref ? `<div class="detalhe-item"><span>Horário</span><strong>${p.horarioPref}</strong></div>` : ''}
             <div class="detalhe-item"><span>Status</span><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></div>
         </div>`;
 
@@ -1862,6 +1927,11 @@ function prepareClientPedidoModal() {
         <label for="cpm_${m.id}">${m.nome}</label>
         ${formatMaterialPrice(m, 'item-price')}
     </div>`).join('');
+
+    const dp = document.getElementById('clientPedidoDataPref');
+    const hp = document.getElementById('clientPedidoHoraPref');
+    if (dp) dp.value = '';
+    if (hp) hp.value = '';
 
     const nomeEl = document.getElementById('clientResumoNome');
     const emailEl = document.getElementById('clientResumoEmail');
@@ -1946,6 +2016,8 @@ async function salvarPedidoClient() {
     const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
     const descontoPct = condicao === 'vista' ? 10 : 0;
     const parcial = condicao === 'metade' ? 1 : 0;
+    const dataPref = document.getElementById('clientPedidoDataPref').value || '';
+    const horarioPref = document.getElementById('clientPedidoHoraPref').value || '';
 
     const novoPedido = {
         id: DB.nextId.pedido++,
@@ -1956,7 +2028,9 @@ async function salvarPedidoClient() {
         data: new Date().toISOString().split('T')[0],
         total,
         parcial,
-        descontoPct
+        descontoPct,
+        dataPref,
+        horarioPref
     };
     DB.pedidos.push(novoPedido);
     if (DBReady) {
@@ -1976,13 +2050,17 @@ async function salvarPedidoClient() {
         ? `Pagamento à vista (10% de desconto): R$ ${formatCurrency(total * 0.90)}`
         : `Dividido em 2x: entrada de R$ ${formatCurrency(total / 2)} agora e R$ ${formatCurrency(total / 2)} ao finalizar`;
 
+    const prefHorario = dataPref
+        ? `Preferência: ${formatDate(dataPref)}${horarioPref ? ' às ' + horarioPref : ''}`
+        : '';
+
     const msgData = {
         tipo: 'pedido',
         remetente: 'client',
         clienteId: currentUser.id,
         pedidoId: novoPedido.id,
         mensagem: `Novo pedido #${novoPedido.id} - ${formatCurrency(total)}`,
-        descricao: detalhes + ' · ' + rotuloCondicao,
+        descricao: detalhes + ' · ' + rotuloCondicao + (prefHorario ? ' · ' + prefHorario : ''),
         valor: total,
         data: new Date().toISOString(),
         lida: false
@@ -2914,6 +2992,24 @@ function formatDate(dateStr) {
     return `${d}/${m}/${y}`;
 }
 
+function formatPedidoDataHora(p) {
+    const d = p.dataPref || p.data;
+    let txt = formatDate(d);
+    if (p.horarioPref) txt += ` <span class="hora-pedido">${p.horarioPref}</span>`;
+    return txt;
+}
+
+function validarDiaFuncionamento() {
+    const dp = document.getElementById('clientPedidoDataPref') || document.getElementById('pedidoDataPref');
+    if (!dp || !dp.value) return;
+    const d = new Date(dp.value + 'T12:00:00');
+    const dia = d.getDay();
+    const nomes = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+    const funciona = dia >= 2 && dia <= 5;
+    document.querySelectorAll('.tarja-funcionamento.tarja-dinamica').forEach(t => t.classList.toggle('tarja-alerta', !funciona));
+    if (!funciona) showToast(`Atenção: o estúdio não funciona em ${nomes[dia]}s — atendemos de terça a sexta.`, 'error');
+}
+
 function formatDateTime(isoStr) {
     if (!isoStr) return '';
     const date = new Date(isoStr);
@@ -3023,8 +3119,8 @@ function clearForm(prefix) {
     const form = {
         servico: ['servicoId', 'servicoNome', 'servicoDescricao', 'servicoPreco', 'servicoDuracao', 'servicoIcone', 'servicoImagem'],
         material: ['materialId', 'materialNome', 'materialDescricao', 'materialPreco', 'materialEstoque', 'materialImagem'],
-        pedido: ['pedidoId', 'pedidoDesconto'],
-        cliente: ['clienteId', 'clienteNome', 'clienteEmail', 'clienteTelefone', 'clienteSenha', 'clientePin'],
+        pedido: ['pedidoId', 'pedidoDesconto', 'pedidoDataPref', 'pedidoHoraPref'],
+        cliente: ['clienteId', 'clienteNome', 'clienteEmail', 'clienteTelefone', 'clienteSenha', 'clientePin', 'clienteCnpj', 'clienteInstagram'],
         mov: ['movDescricao', 'movValor'],
         comprovante: ['comprovantePedido', 'comprovanteValor', 'comprovanteData', 'comprovanteImagem'],
         orcamento: ['orcamentoPedidoInfo', 'orcamentoDescricao', 'orcamentoValor', 'orcamentoDesconto', 'orcamentoValidade']

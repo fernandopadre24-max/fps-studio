@@ -504,7 +504,7 @@
                 <div class="page" id="adminClientes">
                     <div class="page-header">
                         <h2>Gerenciar Clientes</h2>
-                        <button class="btn-primary" onclick="openModal('clienteModal')">
+                        <button class="btn-primary" onclick="abrirNovoClienteModal()">
                             <i class="fas fa-plus"></i> Novo Cliente
                         </button>
                     </div>
@@ -783,6 +783,9 @@
                     <button class="btn-primary btn-sm" onclick="mostrarPerfilClient()">
                         <i class="fas fa-user-edit"></i> Completar Cadastro
                     </button>
+                </div>
+                <div class="tarja-funcionamento tarja-topo">
+                    <i class="fas fa-calendar-day"></i> Funcionamento: <strong>terça a sexta</strong> · Retirada/entrega de pedidos apenas nesses dias
                 </div>
                 <!-- CLIENT HOME -->
                 <div class="page active" id="clientHome">
@@ -1077,6 +1080,19 @@
                         </select>
                     </div>
                 </div>
+                <div class="tarja-funcionamento tarja-dinamica">
+                    <i class="fas fa-calendar-day"></i> O estúdio funciona de <strong>terça a sexta</strong>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Data preferida</label>
+                        <input type="date" id="pedidoDataPref" onchange="validarDiaFuncionamento()">
+                    </div>
+                    <div class="form-group">
+                        <label>Horário preferido</label>
+                        <input type="time" id="pedidoHoraPref">
+                    </div>
+                </div>
                 <div class="pedido-total">
                     <span>Total:</span>
                     <strong id="pedidoTotalPreview">R$ 0,00</strong>
@@ -1111,6 +1127,19 @@
                 <div class="form-group">
                     <label>Selecione os Materiais</label>
                     <div class="checkbox-group" id="clientPedidoMateriais"></div>
+                </div>
+                <div class="tarja-funcionamento tarja-dinamica">
+                    <i class="fas fa-calendar-day"></i> O estúdio funciona de <strong>terça a sexta</strong>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Data preferida</label>
+                        <input type="date" id="clientPedidoDataPref" onchange="validarDiaFuncionamento()">
+                    </div>
+                    <div class="form-group">
+                        <label>Horário preferido</label>
+                        <input type="time" id="clientPedidoHoraPref">
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Condição de Pagamento</label>
@@ -1223,6 +1252,23 @@
                 <div class="form-group">
                     <label>Telefone</label>
                     <input type="tel" id="clienteTelefone" placeholder="(00) 00000-0000">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Tipo</label>
+                        <select id="clienteTipoPessoa" onchange="toggleTipoPessoaAdmin()">
+                            <option value="fisica">Pessoa Física</option>
+                            <option value="juridica">Pessoa Jurídica</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="clienteCnpjWrap" style="display:none;">
+                        <label>CNPJ</label>
+                        <input type="text" id="clienteCnpj" placeholder="00.000.000/0000-00">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Instagram</label>
+                    <input type="text" id="clienteInstagram" placeholder="@seuperfil">
                 </div>
                 <div class="form-group">
                     <label>Senha de Acesso</label>
@@ -1457,14 +1503,35 @@
                     <label>Nome completo</label>
                     <input type="text" id="perfilNome">
                 </div>
+                <div class="form-group">
+                    <label>Tipo</label>
+                    <select id="perfilTipoPessoa" onchange="toggleTipoPessoaPerfil()">
+                        <option value="fisica">Pessoa Física</option>
+                        <option value="juridica">Pessoa Jurídica</option>
+                    </select>
+                </div>
                 <div class="form-row">
-                    <div class="form-group">
+                    <div class="form-group" id="perfilCpfWrap">
                         <label>CPF</label>
                         <input type="text" id="perfilCpf" placeholder="000.000.000-00">
+                    </div>
+                    <div class="form-group" id="perfilCnpjWrap" style="display:none;">
+                        <label>CNPJ</label>
+                        <input type="text" id="perfilCnpj" placeholder="00.000.000/0000-00">
                     </div>
                     <div class="form-group">
                         <label>Telefone</label>
                         <input type="text" id="perfilTelefone" placeholder="(00) 00000-0000">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>E-mail</label>
+                        <input type="email" id="perfilEmail" placeholder="email@exemplo.com">
+                    </div>
+                    <div class="form-group">
+                        <label>Instagram</label>
+                        <input type="text" id="perfilInstagram" placeholder="@seuperfil">
                     </div>
                 </div>
                 <div class="form-group">
