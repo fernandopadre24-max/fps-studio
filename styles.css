@@ -1541,6 +1541,32 @@ body {
     gap: 14px;
 }
 
+.sub-secao-titulo {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--dark-light);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.sub-secao-titulo i {
+    color: var(--primary);
+}
+
+.sub-table tfoot td {
+    border-top: 2px solid var(--gray-light);
+    background: rgba(108, 92, 231, 0.04);
+    font-size: 14px;
+}
+
+.sub-table tfoot .valor-total strong {
+    color: var(--primary);
+    font-size: 16px;
+}
+
 .cliente-resumo {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));

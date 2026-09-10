@@ -1308,6 +1308,55 @@ function renderClientes() {
     }).join('');
 }
 
+function htmlResumoServicosCliente(clienteId) {
+    const pedidos = DB.pedidos.filter(p => p.clienteId === clienteId && p.status !== 'cancelado');
+    const itens = new Map();
+    pedidos.forEach(p => {
+        (p.servicos || []).forEach(sId => {
+            const s = DB.servicos.find(x => x.id === sId);
+            if (!s || s.preco <= 0) return;
+            const chave = `s_${sId}`;
+            const item = itens.get(chave) || { tipo: 'Serviço', nome: s.nome, preco: s.preco, qtd: 0, sub: 0 };
+            item.qtd++;
+            item.sub += s.preco;
+            itens.set(chave, item);
+        });
+        (p.materiais || []).forEach(mId => {
+            const m = DB.materiais.find(x => x.id === mId);
+            if (!m || m.preco <= 0) return;
+            const chave = `m_${mId}`;
+            const item = itens.get(chave) || { tipo: 'Material', nome: m.nome, preco: m.preco, qtd: 0, sub: 0 };
+            item.qtd++;
+            item.sub += m.preco;
+            itens.set(chave, item);
+        });
+    });
+
+    if (itens.size === 0) return '';
+
+    const linhas = [...itens.values()].map(item => `<tr>
+        <td>${item.tipo}</td>
+        <td style="white-space:normal;">${item.nome}</td>
+        <td>${item.qtd}</td>
+        <td>${formatCurrency(item.preco)}</td>
+        <td class="valor-pago"><strong>${formatCurrency(item.sub)}</strong></td>
+    </tr>`).join('');
+
+    const somatoria = [...itens.values()].reduce((s, i) => s + i.sub, 0);
+
+    return `<div class="sub-secao-titulo"><i class="fas fa-chart-pie"></i> Detalhes por Serviço / Material</div>
+        <table class="data-table sub-table">
+            <thead><tr><th>Tipo</th><th>Item</th><th>Qtde</th><th>Valor unit.</th><th>Subtotal</th></tr></thead>
+            <tbody>${linhas}</tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="4"><strong>Somatória</strong></td>
+                    <td class="valor-total"><strong>${formatCurrency(somatoria)}</strong></td>
+                </tr>
+            </tfoot>
+        </table>`;
+}
+
 function toggleClienteDetalhe(id) {
     const row = document.getElementById(`detalhe_${id}`);
     const content = document.createElement('div');
@@ -1325,6 +1374,7 @@ function toggleClienteDetalhe(id) {
             <div class="resumo-card resumo-pago"><span>Pago</span><strong>${formatCurrency(totalPago)}</strong></div>
             <div class="resumo-card resumo-aberto"><span>Em aberto</span><strong>${formatCurrency(Math.max(0, emAberto))}</strong></div>
         </div>
+        ${htmlResumoServicosCliente(id)}
         ${pedidos.length === 0
             ? '<p class="empty-state">Este cliente ainda não possui pedidos.</p>'
             : `<table class="data-table sub-table">
