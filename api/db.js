@@ -103,6 +103,10 @@ async function initDb() {
             data TEXT DEFAULT (date('now')),
             dataPref TEXT DEFAULT '',
             horarioPref TEXT DEFAULT '',
+            dataInicial TEXT DEFAULT '',
+            horaInicial TEXT DEFAULT '',
+            dataFinal TEXT DEFAULT '',
+            horaFinal TEXT DEFAULT '',
             total REAL DEFAULT 0,
             parcial INTEGER DEFAULT 0,
             descontoPct REAL DEFAULT 0
@@ -113,6 +117,10 @@ async function initDb() {
     try { db.run('ALTER TABLE pedidos ADD COLUMN descontoPct REAL DEFAULT 0'); } catch(e) {}
     try { db.run('ALTER TABLE pedidos ADD COLUMN dataPref TEXT DEFAULT ""'); } catch(e) {}
     try { db.run('ALTER TABLE pedidos ADD COLUMN horarioPref TEXT DEFAULT ""'); } catch(e) {}
+    try { db.run('ALTER TABLE pedidos ADD COLUMN dataInicial TEXT DEFAULT ""'); } catch(e) {}
+    try { db.run('ALTER TABLE pedidos ADD COLUMN horaInicial TEXT DEFAULT ""'); } catch(e) {}
+    try { db.run('ALTER TABLE pedidos ADD COLUMN dataFinal TEXT DEFAULT ""'); } catch(e) {}
+    try { db.run('ALTER TABLE pedidos ADD COLUMN horaFinal TEXT DEFAULT ""'); } catch(e) {}
 
     db.run(`
         CREATE TABLE IF NOT EXISTS movimentacoes (

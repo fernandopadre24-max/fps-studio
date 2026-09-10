@@ -1071,8 +1071,10 @@ async function salvarPedido() {
     const materiais = [...document.querySelectorAll('#pedidoMateriais input:checked')].map(cb => parseInt(cb.value));
     const desconto = parseFloat(document.getElementById('pedidoDesconto').value) || 0;
     const status = document.getElementById('pedidoStatus').value;
-    const dataPref = document.getElementById('pedidoDataPref').value || '';
-    const horarioPref = document.getElementById('pedidoHoraPref').value || '';
+    const dataInicial = document.getElementById('pedidoDataInicial').value || '';
+    const horaInicial = document.getElementById('pedidoHoraInicial').value || '';
+    const dataFinal = document.getElementById('pedidoDataFinal').value || '';
+    const horaFinal = document.getElementById('pedidoHoraFinal').value || '';
 
     if (servicos.length === 0 && materiais.length === 0) {
         showToast('Selecione pelo menos um serviço ou material!', 'error');
@@ -1088,13 +1090,13 @@ async function salvarPedido() {
     if (id) {
         const idx = DB.pedidos.findIndex(p => p.id === parseInt(id));
         if (idx !== -1) {
-            DB.pedidos[idx] = { ...DB.pedidos[idx], clienteId, servicos, materiais, desconto, status, total, dataPref, horarioPref };
+            DB.pedidos[idx] = { ...DB.pedidos[idx], clienteId, servicos, materiais, desconto, status, total, dataInicial, horaInicial, dataFinal, horaFinal };
             pedidoSalvo = DB.pedidos[idx];
-            if (DBReady) await DB_SERVICE.updatePedido(pedidoSalvo.docId, { clienteId, servicos, materiais, desconto, status, total, parcial: pedidoSalvo.parcial || 0, descontoPct: pedidoSalvo.descontoPct || 0, dataPref, horarioPref });
+            if (DBReady) await DB_SERVICE.updatePedido(pedidoSalvo.docId, { clienteId, servicos, materiais, desconto, status, total, parcial: pedidoSalvo.parcial || 0, descontoPct: pedidoSalvo.descontoPct || 0, dataInicial, horaInicial, dataFinal, horaFinal });
         }
     } else {
         const novoPedido = {
-            id: DB.nextId.pedido++, clienteId, servicos, materiais, desconto, status, total, dataPref, horarioPref,
+            id: DB.nextId.pedido++, clienteId, servicos, materiais, desconto, status, total, dataInicial, horaInicial, dataFinal, horaFinal,
             data: new Date().toISOString().split('T')[0]
         };
         DB.pedidos.push(novoPedido);
@@ -1123,8 +1125,10 @@ function editarPedido(id) {
     document.getElementById('pedidoCliente').value = p.clienteId;
     document.getElementById('pedidoDesconto').value = p.desconto;
     document.getElementById('pedidoStatus').value = p.status;
-    document.getElementById('pedidoDataPref').value = p.dataPref || '';
-    document.getElementById('pedidoHoraPref').value = p.horarioPref || '';
+    document.getElementById('pedidoDataInicial').value = p.dataInicial || '';
+    document.getElementById('pedidoHoraInicial').value = p.horaInicial || '';
+    document.getElementById('pedidoDataFinal').value = p.dataFinal || '';
+    document.getElementById('pedidoHoraFinal').value = p.horaFinal || '';
 
     p.servicos.forEach(sId => {
         const cb = document.getElementById(`ps_${sId}`);
@@ -1171,9 +1175,9 @@ function verDetalhesPedido(id) {
         <div class="detalhe-section">
             <h4><i class="fas fa-info-circle"></i> Informações</h4>
             <div class="detalhe-item"><span>Pedido</span><strong>#${p.id}</strong></div>
-            <div class="detalhe-item"><span>Data</span><span>${formatDate(p.data)}</span></div>
-            ${p.dataPref ? `<div class="detalhe-item"><span>Data preferida</span><strong>${formatDate(p.dataPref)}</strong></div>` : ''}
-            ${p.horarioPref ? `<div class="detalhe-item"><span>Horário</span><strong>${p.horarioPref}</strong></div>` : ''}
+            <div class="detalhe-item"><span>Criado em</span><span>${formatDate(p.data)}</span></div>
+            ${p.dataInicial ? `<div class="detalhe-item"><span>Início</span><strong>${formatDate(p.dataInicial)} ${p.horaInicial || ''}</strong></div>` : ''}
+            ${p.dataFinal ? `<div class="detalhe-item"><span>Término</span><strong>${formatDate(p.dataFinal)} ${p.horaFinal || ''}</strong></div>` : ''}
             <div class="detalhe-item"><span>Status</span><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></div>
         </div>`;
 
@@ -1313,6 +1317,7 @@ async function salvarMovimentacao() {
     closeAllModals();
     renderFinanceiro();
     renderAdminDashboard();
+    if (data.tipo === 'entrada' && data.pagamento !== 'pendente') celebratePayment();
     showToast('Movimentação registrada!', 'success');
     clearForm('mov');
 }
@@ -1870,9 +1875,9 @@ function verDetalhesPedidoClient(id) {
         <div class="detalhe-section">
             <h4><i class="fas fa-info-circle"></i> Informações do Pedido</h4>
             <div class="detalhe-item"><span>Pedido</span><strong>#${p.id}</strong></div>
-            <div class="detalhe-item"><span>Data</span><span>${formatDate(p.data)}</span></div>
-            ${p.dataPref ? `<div class="detalhe-item"><span>Data preferida</span><strong>${formatDate(p.dataPref)}</strong></div>` : ''}
-            ${p.horarioPref ? `<div class="detalhe-item"><span>Horário</span><strong>${p.horarioPref}</strong></div>` : ''}
+            <div class="detalhe-item"><span>Criado em</span><span>${formatDate(p.data)}</span></div>
+            ${p.dataInicial ? `<div class="detalhe-item"><span>Início</span><strong>${formatDate(p.dataInicial)} ${p.horaInicial || ''}</strong></div>` : ''}
+            ${p.dataFinal ? `<div class="detalhe-item"><span>Término</span><strong>${formatDate(p.dataFinal)} ${p.horaFinal || ''}</strong></div>` : ''}
             <div class="detalhe-item"><span>Status</span><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></div>
         </div>`;
 
@@ -2016,8 +2021,10 @@ async function salvarPedidoClient() {
     const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
     const descontoPct = condicao === 'vista' ? 10 : 0;
     const parcial = condicao === 'metade' ? 1 : 0;
-    const dataPref = document.getElementById('clientPedidoDataPref').value || '';
-    const horarioPref = document.getElementById('clientPedidoHoraPref').value || '';
+    const dataInicial = document.getElementById('clientPedidoDataInicial').value || '';
+    const horaInicial = document.getElementById('clientPedidoHoraInicial').value || '';
+    const dataFinal = document.getElementById('clientPedidoDataFinal').value || '';
+    const horaFinal = document.getElementById('clientPedidoHoraFinal').value || '';
 
     const novoPedido = {
         id: DB.nextId.pedido++,
@@ -2029,8 +2036,10 @@ async function salvarPedidoClient() {
         total,
         parcial,
         descontoPct,
-        dataPref,
-        horarioPref
+        dataInicial,
+        horaInicial,
+        dataFinal,
+        horaFinal
     };
     DB.pedidos.push(novoPedido);
     if (DBReady) {
@@ -2050,8 +2059,8 @@ async function salvarPedidoClient() {
         ? `Pagamento à vista (10% de desconto): R$ ${formatCurrency(total * 0.90)}`
         : `Dividido em 2x: entrada de R$ ${formatCurrency(total / 2)} agora e R$ ${formatCurrency(total / 2)} ao finalizar`;
 
-    const prefHorario = dataPref
-        ? `Preferência: ${formatDate(dataPref)}${horarioPref ? ' às ' + horarioPref : ''}`
+    const prefHorario = dataInicial
+        ? `Agendamento: De ${formatDate(dataInicial)} ${horaInicial} até ${formatDate(dataFinal)} ${horaFinal}`
         : '';
 
     const msgData = {
@@ -2683,6 +2692,7 @@ async function confirmarPagoComprovante(msgIdx) {
     renderChatMessagesAdmin(chatKey);
     renderFinanceiro();
     updateChatBadge();
+    celebratePayment();
     showToast('Pagamento confirmado como PAGO!', 'success');
 }
 
@@ -2993,9 +3003,9 @@ function formatDate(dateStr) {
 }
 
 function formatPedidoDataHora(p) {
-    const d = p.dataPref || p.data;
-    let txt = formatDate(d);
-    if (p.horarioPref) txt += ` <span class="hora-pedido">${p.horarioPref}</span>`;
+    if (!p.dataInicial) return formatDate(p.data);
+    let txt = formatDate(p.dataInicial);
+    if (p.horaInicial) txt += ` <span class="hora-pedido">${p.horaInicial}</span>`;
     return txt;
 }
 
@@ -3119,7 +3129,7 @@ function clearForm(prefix) {
     const form = {
         servico: ['servicoId', 'servicoNome', 'servicoDescricao', 'servicoPreco', 'servicoDuracao', 'servicoIcone', 'servicoImagem'],
         material: ['materialId', 'materialNome', 'materialDescricao', 'materialPreco', 'materialEstoque', 'materialImagem'],
-        pedido: ['pedidoId', 'pedidoDesconto', 'pedidoDataPref', 'pedidoHoraPref'],
+        pedido: ['pedidoId', 'pedidoDesconto', 'pedidoDataInicial', 'pedidoHoraInicial', 'pedidoDataFinal', 'pedidoHoraFinal'],
         cliente: ['clienteId', 'clienteNome', 'clienteEmail', 'clienteTelefone', 'clienteSenha', 'clientePin', 'clienteCnpj', 'clienteInstagram'],
         mov: ['movDescricao', 'movValor'],
         comprovante: ['comprovantePedido', 'comprovanteValor', 'comprovanteData', 'comprovanteImagem'],
@@ -3672,3 +3682,39 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 150);
     });
 });
+
+function celebratePayment() {
+    if (typeof confetti === 'function') {
+        confetti({
+            particleCount: 150,
+            spread: 70,
+            origin: { y: 0.6 },
+            colors: ['#26cc00', '#00c3ff', '#ff0055', '#ff9900', '#ffffff'],
+            zIndex: 9999
+        });
+    }
+
+    try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        const audioCtx = new AudioContext();
+        
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(1760, audioCtx.currentTime + 0.1);
+        
+        gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.3);
+    } catch(e) {
+        console.error("Audio API error", e);
+    }
+}
