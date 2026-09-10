@@ -17,6 +17,7 @@ let DBReady = false; // Indica se a API SQLite está conectada
 let currentUser = null;
 let currentChatClient = null;
 let selectedPedidoId = null;
+const clientesExpandidos = new Set();
 
 // ============================================
 // INICIALIZAÇÃO COM SQLITE (via API)
@@ -839,12 +840,19 @@ async function excluirMovimentacao(id) {
 // ============================================
 // CLIENTES ADMIN
 // ============================================
+function valorPagoPedido(p) {
+    return DB.movimentacoes
+        .filter(m => m.tipo === 'entrada' && (m.descricao || '').includes(`Pedido #${p.id}`))
+        .reduce((s, m) => s + m.valor, 0);
+}
+
 function renderClientes() {
     const tbody = document.getElementById('clientesBody');
     tbody.innerHTML = DB.clientes.map(c => {
         const pedidos = DB.pedidos.filter(p => p.clienteId === c.id);
         const totalGasto = pedidos.reduce((s, p) => s + p.total, 0);
-        return `<tr>
+        const aberto = clientesExpandidos.has(c.id);
+        return `<tr class="cliente-row" onclick="toggleClienteDetalhe(${c.id})">
             <td><strong>${c.nome}</strong></td>
             <td>${c.email}</td>
             <td>${c.telefone}</td>
@@ -852,12 +860,77 @@ function renderClientes() {
             <td><strong>${formatCurrency(totalGasto)}</strong></td>
             <td>
                 <div class="table-actions">
-                    <button onclick="editarCliente(${c.id})" title="Editar"><i class="fas fa-edit"></i></button>
-                    <button class="btn-del" onclick="excluirCliente(${c.id})" title="Excluir"><i class="fas fa-trash"></i></button>
+                    <button title="${aberto ? 'Ocultar pedidos' : 'Ver pedidos'}" class="${aberto ? 'btn-ativo' : ''}"><i class="fas ${aberto ? 'fa-chevron-up' : 'fa-chevron-down'}"></i></button>
+                    <button onclick="editarCliente(${c.id});event.stopPropagation()" title="Editar"><i class="fas fa-edit"></i></button>
+                    <button class="btn-del" onclick="excluirCliente(${c.id});event.stopPropagation()" title="Excluir"><i class="fas fa-trash"></i></button>
                 </div>
             </td>
+        </tr>
+        <tr class="cliente-detalhe" id="detalhe_${c.id}" style="${aberto ? '' : 'display:none;'}">
+            <td colspan="6"></td>
         </tr>`;
     }).join('');
+}
+
+function toggleClienteDetalhe(id) {
+    const row = document.getElementById(`detalhe_${id}`);
+    const content = document.createElement('div');
+    const c = DB.clientes.find(x => x.id === id);
+    const pedidos = DB.pedidos.filter(p => p.clienteId === id);
+    const totalGasto = pedidos.reduce((s, p) => s + p.total, 0);
+    const totalPago = pedidos.reduce((s, p) => s + valorPagoPedido(p), 0);
+    const emAberto = totalGasto - totalPago;
+
+    content.className = 'cliente-detalhe-content';
+    content.innerHTML = `
+        <div class="cliente-resumo">
+            <div class="resumo-card"><span>Pedidos</span><strong>${pedidos.length}</strong></div>
+            <div class="resumo-card"><span>Total</span><strong>${formatCurrency(totalGasto)}</strong></div>
+            <div class="resumo-card resumo-pago"><span>Pago</span><strong>${formatCurrency(totalPago)}</strong></div>
+            <div class="resumo-card resumo-aberto"><span>Em aberto</span><strong>${formatCurrency(Math.max(0, emAberto))}</strong></div>
+        </div>
+        ${pedidos.length === 0
+            ? '<p class="empty-state">Este cliente ainda não possui pedidos.</p>'
+            : `<table class="data-table sub-table">
+                <thead>
+                    <tr><th>#</th><th>Data</th><th>Serviços / Materiais</th><th>Total</th><th>Pago</th><th>Em aberto</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                    ${pedidos.map(p => {
+                        const nomes = [
+                            ...p.servicos.map(id => DB.servicos.find(s => s.id === id)?.nome).filter(Boolean),
+                            ...p.materiais.map(id => DB.materiais.find(m => m.id === id)?.nome).filter(Boolean)
+                        ].join(', ');
+                        const pago = valorPagoPedido(p);
+                        const restante = p.total - pago;
+                        const pagoCls = pago >= p.total ? 'valor-pago' : '';
+                        const abertoCls = restante > 0 ? 'valor-aberto' : '';
+                        return `<tr>
+                            <td><strong>#${p.id}</strong></td>
+                            <td>${formatDate(p.data)}</td>
+                            <td style="max-width:280px;white-space:normal;">${nomes || '-'}</td>
+                            <td><strong>${formatCurrency(p.total)}</strong></td>
+                            <td class="${pagoCls}">${formatCurrency(pago)}</td>
+                            <td class="${abertoCls}">${formatCurrency(Math.max(0, restante))}</td>
+                            <td><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></td>
+                        </tr>`;
+                    }).join('')}
+                </tbody>
+            </table>`}
+    `;
+
+    const td = row.firstElementChild;
+    if (clientesExpandidos.has(id)) {
+        clientesExpandidos.delete(id);
+        row.style.display = 'none';
+        td.innerHTML = '';
+    } else {
+        clientesExpandidos.add(id);
+        td.innerHTML = '';
+        td.appendChild(content);
+        row.style.display = '';
+    }
+    renderClientes();
 }
 
 function editarCliente(id) {
