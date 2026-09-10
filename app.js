@@ -1357,56 +1357,35 @@ function confirmarPagamento() {
     if (!selectedPedidoId) return;
     const tipo = document.querySelector('input[name="pagamentoTipo"]:checked').value;
     const p = DB.pedidos.find(x => x.id === selectedPedidoId);
+    if (!p) return;
 
-    // Update pedido status
-    p.status = 'em_andamento';
-
-    // Atualizar/registrar movimentação no financeiro
-    const mov = DB.movimentacoes.find(m => m.pedidoId === p.id) ||
-        DB.movimentacoes.find(m => m.tipo === 'entrada' && (m.descricao || '').includes(`Pedido #${p.id}`) && m.pagamento === 'pendente');
-    if (mov) {
-        mov.pagamento = tipo;
-        mov.descricao = `Pagamento Pedido #${p.id}`;
-        mov.tipo = 'entrada';
-        mov.categoria = mov.categoria || 'servico';
-        mov.valor = p.total;
-        mov.pedidoId = p.id;
-        if (DBReady && mov.docId) DB_SERVICE.updateMovimentacao(mov.docId, { tipo: mov.tipo, descricao: mov.descricao, valor: mov.valor, categoria: mov.categoria, pagamento: mov.pagamento, data: mov.data });
-    } else {
-        DB.movimentacoes.push({
-            id: DB.nextId.movimentacao++,
-            tipo: 'entrada',
-            descricao: `Pagamento Pedido #${p.id}`,
-            valor: p.total,
-            categoria: 'servico',
-            pagamento: tipo,
-            data: new Date().toISOString().split('T')[0],
-            pedidoId: p.id
-        });
-        let nova = DB.movimentacoes[DB.movimentacoes.length - 1];
-        if (DBReady) DB_SERVICE.addMovimentacao(nova).then(docId => nova.docId = docId);
-    }
-
-    // Update stock
-    p.materiais.forEach(mId => {
-        const m = DB.materiais.find(x => x.id === mId);
-        if (m && m.estoque > 0) m.estoque--;
-    });
-
-    // Add chat message
     const chatKey = `admin_${currentUser.id}`;
     if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
-    DB.chats[chatKey].push({
+
+    const msgData = {
         tipo: 'comprovante',
+        remetente: 'client',
+        clienteId: currentUser.id,
         mensagem: `Pagamento de ${formatCurrency(p.total)} realizado via ${tipo === 'pix' ? 'PIX' : 'Cartão de Crédito'} para o Pedido #${p.id}`,
-        data: new Date().toISOString()
-    });
+        descricao: `Pagamento do Pedido #${p.id}`,
+        valor: p.total,
+        desconto: 0,
+        pedidoId: p.id,
+        status: 'aguardando',
+        data: new Date().toISOString(),
+        lida: false
+    };
+
+    DB.chats[chatKey].push(msgData);
+    if (DBReady) {
+        DB_SERVICE.sendMessage(msgData).then(res => {
+            if (res && res.id) msgData.id = res.id;
+        });
+    }
 
     closeAllModals();
     renderPedidosClient();
-    renderClientDashboard();
-    renderFinanceiro();
-    showToast('Pagamento confirmado com sucesso!', 'success');
+    showToast('Comprovante enviado! Aguardando confirmação do administrador.', 'success');
 }
 
 // ============================================
@@ -1490,21 +1469,31 @@ function renderChatMessagesAdmin(chatKey) {
             </div>`;
         } else if (m.tipo === 'comprovante') {
             const isFromClient = m.remetente === 'client';
+            const pedidoLinked = DB.pedidos.find(x => x.id === (m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0)));
+            const valorPedido = pedidoLinked ? pedidoLinked.total : (m.valor || 0);
             const desconto = m.desconto || 0;
-            const total = Math.max(0, (m.valor || 0) - desconto);
+            const total = Math.max(0, valorPedido - desconto);
             let acoes = '';
-            if (isFromClient && m.status !== 'pago') {
-                acoes = `<div class="comprovante-acoes">
-                    ${m.status !== 'recebido' ? `<button class="btn-secondary btn-sm" onclick="confirmarRecebidoComprovante(${msgIdx})"><i class="fas fa-check"></i> Confirmar Recebido</button>` : ''}
-                    <button class="btn-primary btn-sm" onclick="confirmarPagoComprovante(${msgIdx})"><i class="fas fa-check-circle"></i> ${m.status === 'recebido' ? 'Confirmar Pago' : 'Confirmar Pagamento'}</button>
-                </div>`;
+            let descontoArea = '';
+            if (isFromClient) {
+                if (m.status !== 'pago') {
+                    descontoArea = `<div class="comprovante-desconto">
+                        <label>Desconto (R$)</label>
+                        <input type="number" id="descontoComp_${msgIdx}" step="0.01" min="0" value="${desconto}" oninput="atualizarTotalComprovante(${msgIdx})">
+                    </div>`;
+                    acoes = `<div class="comprovante-acoes">
+                        ${m.status !== 'recebido' ? `<button class="btn-secondary btn-sm" onclick="confirmarRecebidoComprovante(${msgIdx})"><i class="fas fa-check"></i> Confirmar Recebido</button>` : ''}
+                        <button class="btn-primary btn-sm" onclick="confirmarPagoComprovante(${msgIdx})"><i class="fas fa-check-circle"></i> ${m.status === 'recebido' ? 'Confirmar Pago' : 'Confirmar Pagamento'}</button>
+                    </div>`;
+                }
             }
             return `<div class="chat-message comprovante">
                 <h4><i class="fas fa-receipt"></i> ${isFromClient ? 'Comprovante de Pagamento (Cliente)' : 'Comprovante de Pagamento'}</h4>
                 <p>${m.mensagem}</p>
-                ${m.valor ? `<p>Valor: <strong>${formatCurrency(m.valor)}</strong></p>` : ''}
+                <p>Valor do Pedido: <strong>${formatCurrency(valorPedido)}</strong></p>
+                ${descontoArea}
                 ${desconto > 0 ? `<p>Desconto: <strong>-${formatCurrency(desconto)}</strong></p>` : ''}
-                ${isFromClient ? `<p>Total a pagar: <strong>${formatCurrency(total)}</strong></p>` : ''}
+                ${isFromClient ? `<p>Total a pagar: <strong id="totalComp_${msgIdx}">${formatCurrency(total)}</strong></p>` : ''}
                 <p>Status: ${comprovanteStatusBadge(m.status || 'aguardando')}</p>
                 ${acoes}
                 <div class="chat-message-time">${formatDateTime(m.data)}</div>
@@ -1607,6 +1596,19 @@ async function enviarComprovante() {
     showToast('Comprovante enviado!', 'success');
 }
 
+function atualizarTotalComprovante(msgIdx) {
+    if (!currentChatClient) return;
+    const msgs = DB.chats[`admin_${currentChatClient}`] || [];
+    const m = msgs[msgIdx];
+    if (!m || m.tipo !== 'comprovante') return;
+    const input = document.getElementById(`descontoComp_${msgIdx}`);
+    const desconto = input ? (parseFloat(input.value) || 0) : (m.desconto || 0);
+    const pedidoLinked = DB.pedidos.find(x => x.id === (m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0)));
+    const valorPedido = pedidoLinked ? pedidoLinked.total : (m.valor || 0);
+    const el = document.getElementById(`totalComp_${msgIdx}`);
+    if (el) el.textContent = formatCurrency(Math.max(0, valorPedido - desconto));
+}
+
 async function confirmarRecebidoComprovante(msgIdx) {
     if (!currentChatClient) return;
     const chatKey = `admin_${currentChatClient}`;
@@ -1630,13 +1632,17 @@ async function confirmarPagoComprovante(msgIdx) {
     const m = msgs[msgIdx];
     if (!m || m.tipo !== 'comprovante') return;
 
+    const input = document.getElementById(`descontoComp_${msgIdx}`);
+    const descontoAdmin = input ? (parseFloat(input.value) || 0) : (m.desconto || 0);
+
     m.status = 'pago';
+    m.desconto = descontoAdmin;
     m.lida = true;
-    if (DBReady && m.id) await DB_SERVICE.updateMessage(m.id, { status: 'pago' });
+    if (DBReady && m.id) await DB_SERVICE.updateMessage(m.id, { status: 'pago', desconto: descontoAdmin });
 
     const pedidoId = m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0);
     const pedido = DB.pedidos.find(x => x.id === pedidoId);
-    const totalPago = Math.max(0, (m.valor || (pedido ? pedido.total : 0)) - (m.desconto || 0));
+    const totalPago = Math.max(0, (m.valor || (pedido ? pedido.total : 0)) - descontoAdmin);
 
     if (pedido && totalPago > 0) {
         const mov = DB.movimentacoes.find(mm => mm.pedidoId === pedido.id) ||

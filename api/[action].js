@@ -155,9 +155,11 @@ module.exports = async (req, res) => {
                     saveDb(db);
                     result = { id: r.id };
                 } else if (method === 'PUT') {
-                    const { lida, status, tipo, mensagem, descricao, valor, validade, desconto, pedidoId } = req.body;
+                    const { lida, status, desconto, tipo, mensagem, descricao, valor, validade, pedidoId } = req.body;
                     if (status !== undefined && id !== null) {
-                        db.run('UPDATE chats SET status=? WHERE id=?', [status, id]);
+                        const cur = queryOne(db, 'SELECT * FROM chats WHERE id=?', [id]);
+                        const novoDesconto = desconto !== undefined ? desconto : (cur && cur.desconto ? cur.desconto : 0);
+                        db.run('UPDATE chats SET status=?, desconto=? WHERE id=?', [status, novoDesconto, id]);
                     } else if (lida !== undefined) {
                         db.run('UPDATE chats SET lida=? WHERE clienteId=?', [lida ? 1 : 0, req.body.clienteId]);
                     } else if (id !== null) {

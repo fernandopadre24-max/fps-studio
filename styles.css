@@ -1773,6 +1773,46 @@ body {
     margin: 16px 0;
 }
 
+.pagamento-aviso {
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--text-light, #888);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    text-align: center;
+    justify-content: center;
+}
+
+.comprovante-desconto {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.comprovante-desconto label {
+    font-size: 12px;
+    color: var(--text-light, #888);
+    white-space: nowrap;
+}
+
+.comprovante-desconto input {
+    width: 110px;
+    padding: 8px;
+    border: 1px solid rgba(0,184,148,0.3);
+    border-radius: 8px;
+    font-size: 13px;
+    font-family: inherit;
+    background: var(--bg);
+    color: var(--text);
+    outline: none;
+}
+
+.comprovante-desconto input:focus {
+    border-color: var(--primary);
+}
+
 .pix-qr {
     text-align: center;
 }
