@@ -160,6 +160,46 @@
                     <i class="fas fa-bars"></i>
                 </button>
                 <h2 id="pageTitle">Painel Administrativo</h2>
+                <div class="top-tools">
+                    <div class="real-clock">
+                        <span id="relogioAdmin">--:--:--</span>
+                        <small id="dataAdmin"></small>
+                    </div>
+                    <div class="tool-wrapper">
+                        <button class="tool-btn btn-tema" onclick="toggleTema()" title="Tema Claro/Escuro"><i class="fas fa-moon"></i></button>
+                    </div>
+                    <div class="tool-wrapper">
+                        <button class="tool-btn" onclick="toggleCalendar(this)" title="Calendário"><i class="fas fa-calendar-alt"></i></button>
+                        <div class="tool-popover calendar-popover" id="calendarPopover">
+                            <div class="tool-popover-header">
+                                <h4><i class="fas fa-calendar-alt"></i> Calendário</h4>
+                            </div>
+                            <div class="calendar-nav">
+                                <button class="btn-icon" onclick="mudarMes(-1)"><i class="fas fa-chevron-left"></i></button>
+                                <span id="calendarMesAno"></span>
+                                <button class="btn-icon" onclick="mudarMes(1)"><i class="fas fa-chevron-right"></i></button>
+                            </div>
+                            <div class="calendar-grid" id="calendarGrid"></div>
+                        </div>
+                    </div>
+                    <div class="tool-wrapper">
+                        <button class="tool-btn" onclick="toggleCalculator(this)" title="Calculadora"><i class="fas fa-calculator"></i></button>
+                        <div class="tool-popover calc-popover" id="calcPopover">
+                            <div class="calc-display" id="calcDisplay">0</div>
+                            <div class="calc-grid" id="calcGrid"></div>
+                        </div>
+                    </div>
+                    <div class="tool-wrapper">
+                        <button class="tool-btn" onclick="toggleNotif(this)" title="Avisos"><i class="fas fa-bell"></i><span class="tool-badge" id="notifBadge">0</span></button>
+                        <div class="tool-popover notif-popover" id="notifPopover">
+                            <div class="tool-popover-header">
+                                <h4><i class="fas fa-bell"></i> Avisos</h4>
+                                <button class="btn-close" onclick="fecharNotif()">&times;</button>
+                            </div>
+                            <div class="notif-list" id="notifList"></div>
+                        </div>
+                    </div>
+                </div>
                 <div class="user-info">
                     <span>Administrador</span>
                     <div class="avatar"><i class="fas fa-user-shield"></i></div>
@@ -175,7 +215,7 @@
                             </div>
                             <div class="stat-info">
                                 <h3 id="statReceita">R$ 0,00</h3>
-                                <p>Receita Total</p>
+                                <p>Receita Confirmada <small class="stat-period" id="statPeriodoReceita"></small></p>
                             </div>
                         </div>
                         <div class="stat-card">
@@ -206,6 +246,53 @@
                             </div>
                         </div>
                     </div>
+                    <div class="charts-grid">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-chart-bar"></i> Receitas x Despesas</h3>
+                                <span class="card-subtitle">Últimos 6 meses</span>
+                            </div>
+                            <div class="card-body chart-body">
+                                <div class="chart-wrap">
+                                    <canvas id="graficoBarras"></canvas>
+                                </div>
+                                <div class="chart-legend" id="legendBarras"></div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-chart-pie"></i> Receita por Serviço</h3>
+                                <span class="card-subtitle">Pagamentos confirmados</span>
+                            </div>
+                            <div class="card-body donut-body">
+                                <div class="donut" id="donutServicos">
+                                    <div class="donut-ring" id="donutServicosRing"></div>
+                                    <div class="donut-center">
+                                        <span id="donutTotal">R$ 0,00</span>
+                                        <small>receita</small>
+                                    </div>
+                                </div>
+                                <div class="donut-legend" id="legendServicos"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="filter-bar dash-filtros">
+                        <i class="fas fa-filter filtro-icone"></i>
+                        <select id="filtroPeriodoDash" onchange="aplicarFiltrosDashboard()">
+                            <option value="todos">Todo o período</option>
+                            <option value="7">Últimos 7 dias</option>
+                            <option value="30">Últimos 30 dias</option>
+                            <option value="mes">Este mês</option>
+                            <option value="ano">Este ano</option>
+                        </select>
+                        <select id="filtroTipoDash" onchange="aplicarFiltrosDashboard()">
+                            <option value="todos">Todas as movimentações</option>
+                            <option value="entrada">Somente entradas</option>
+                            <option value="saida">Somente saídas</option>
+                        </select>
+                        <input type="text" id="buscaMovDash" placeholder="Buscar descrição ou cliente..." oninput="aplicarFiltrosDashboard()">
+                        <button class="btn-secondary btn-sm" onclick="limparFiltrosDashboard()"><i class="fas fa-undo"></i> Limpar</button>
+                    </div>
                     <div class="dashboard-grid">
                         <div class="card">
                             <div class="card-header">
@@ -218,6 +305,7 @@
                         <div class="card">
                             <div class="card-header">
                                 <h3><i class="fas fa-exchange-alt"></i> Últimas Movimentações</h3>
+                                <button class="btn-secondary btn-sm" onclick="irParaPagina('adminFinanceiro')"><i class="fas fa-arrow-right"></i> Ver todas</button>
                             </div>
                             <div class="card-body" id="ultimasMovimentacoes">
                                 <p class="empty-state">Nenhuma movimentação encontrada</p>
@@ -463,6 +551,46 @@
                     <i class="fas fa-bars"></i>
                 </button>
                 <h2 id="pageTitleClient">Painel do Cliente</h2>
+                <div class="top-tools">
+                    <div class="real-clock">
+                        <span id="relogioClient">--:--:--</span>
+                        <small id="dataClient"></small>
+                    </div>
+                    <div class="tool-wrapper">
+                        <button class="tool-btn btn-tema" onclick="toggleTema()" title="Tema Claro/Escuro"><i class="fas fa-moon"></i></button>
+                    </div>
+                    <div class="tool-wrapper">
+                        <button class="tool-btn" onclick="toggleCalendar(this)" title="Calendário"><i class="fas fa-calendar-alt"></i></button>
+                        <div class="tool-popover calendar-popover" id="calendarPopoverClient">
+                            <div class="tool-popover-header">
+                                <h4><i class="fas fa-calendar-alt"></i> Calendário</h4>
+                            </div>
+                            <div class="calendar-nav">
+                                <button class="btn-icon" onclick="mudarMes(-1, 'Client')"><i class="fas fa-chevron-left"></i></button>
+                                <span id="calendarMesAnoClient"></span>
+                                <button class="btn-icon" onclick="mudarMes(1, 'Client')"><i class="fas fa-chevron-right"></i></button>
+                            </div>
+                            <div class="calendar-grid" id="calendarGridClient"></div>
+                        </div>
+                    </div>
+                    <div class="tool-wrapper">
+                        <button class="tool-btn" onclick="toggleCalculator(this)" title="Calculadora"><i class="fas fa-calculator"></i></button>
+                        <div class="tool-popover calc-popover" id="calcPopoverClient">
+                            <div class="calc-display" id="calcDisplayClient">0</div>
+                            <div class="calc-grid" id="calcGridClient"></div>
+                        </div>
+                    </div>
+                    <div class="tool-wrapper">
+                        <button class="tool-btn" onclick="toggleNotif(this)" title="Avisos"><i class="fas fa-bell"></i><span class="tool-badge" id="notifBadgeClient">0</span></button>
+                        <div class="tool-popover notif-popover" id="notifPopoverClient">
+                            <div class="tool-popover-header">
+                                <h4><i class="fas fa-bell"></i> Avisos</h4>
+                                <button class="btn-close" onclick="fecharNotif()">&times;</button>
+                            </div>
+                            <div class="notif-list" id="notifListClient"></div>
+                        </div>
+                    </div>
+                </div>
                 <div class="user-info">
                     <span id="clientNameDisplay">Cliente</span>
                     <div class="avatar"><i class="fas fa-user"></i></div>

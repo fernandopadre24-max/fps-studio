@@ -363,20 +363,78 @@ function toggleSidebar(id) {
 // ============================================
 // ADMIN DASHBOARD
 // ============================================
+// ============================================
+// DASHBOARD ADMIN (gráficos, filtros, movimentações detalhadas)
+// ============================================
+const dashFiltros = { periodo: 'todos', tipo: 'todos', busca: '' };
+
+function dashCores() {
+    const cs = getComputedStyle(document.body);
+    const texto = cs.getPropertyValue('--dark').trim() || '#2d3436';
+    const grid = cs.getPropertyValue('--gray-light').trim() || 'rgba(0,0,0,0.12)';
+    return { texto, grid };
+}
+
+function compactValor(v) {
+    if (v >= 1000) return (v / 1000).toFixed(1).replace('.', ',') + 'k';
+    return String(Math.round(v));
+}
+
+function dashEmPeriodo(data) {
+    const f = dashFiltros.periodo;
+    if (f === 'todos' || !data) return true;
+    const hoje = new Date();
+    const d = new Date(data + 'T00:00:00');
+    if (f === '7') return (hoje - d) / 86400000 <= 7;
+    if (f === '30') return (hoje - d) / 86400000 <= 30;
+    if (f === 'mes') return d.getMonth() === hoje.getMonth() && d.getFullYear() === hoje.getFullYear();
+    if (f === 'ano') return d.getFullYear() === hoje.getFullYear();
+    return true;
+}
+
+function dashPeriodoLabel() {
+    const map = { '7': '7 dias', '30': '30 dias', 'mes': 'este mês', 'ano': 'este ano', 'todos': '' };
+    return map[dashFiltros.periodo];
+}
+
+function aplicarFiltrosDashboard() {
+    dashFiltros.periodo = document.getElementById('filtroPeriodoDash').value;
+    dashFiltros.tipo = document.getElementById('filtroTipoDash').value;
+    dashFiltros.busca = document.getElementById('buscaMovDash').value.trim().toLowerCase();
+    renderAdminDashboard();
+}
+
+function limparFiltrosDashboard() {
+    document.getElementById('filtroPeriodoDash').value = 'todos';
+    document.getElementById('filtroTipoDash').value = 'todos';
+    document.getElementById('buscaMovDash').value = '';
+    dashFiltros.periodo = 'todos'; dashFiltros.tipo = 'todos'; dashFiltros.busca = '';
+    renderAdminDashboard();
+}
+
+function nomeClienteDoPedido(pedidoId) {
+    const p = DB.pedidos.find(x => x.id === pedidoId);
+    if (!p) return '';
+    const c = DB.clientes.find(x => x.id === p.clienteId);
+    return c ? c.nome : '';
+}
+
 function renderAdminDashboard() {
-    const totalReceita = DB.movimentacoes.filter(m => m.tipo === 'entrada').reduce((s, m) => s + m.valor, 0);
+    const movs = DB.movimentacoes.filter(m => dashEmPeriodo(m.data) && (dashFiltros.tipo === 'todos' || m.tipo === dashFiltros.tipo));
+    const totalReceita = movs.filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente').reduce((s, m) => s + m.valor, 0);
     const pedidosAtivos = DB.pedidos.filter(p => p.status !== 'cancelado' && p.status !== 'concluido').length;
 
     document.getElementById('statReceita').textContent = formatCurrency(totalReceita);
     document.getElementById('statPedidos').textContent = pedidosAtivos;
     document.getElementById('statClientes').textContent = DB.clientes.length;
     document.getElementById('statMateriais').textContent = DB.materiais.length;
+    const statPeriodoEl = document.getElementById('statPeriodoReceita');
+    if (statPeriodoEl) statPeriodoEl.textContent = dashPeriodoLabel() ? `(${dashPeriodoLabel()})` : '';
 
-    // Últimos pedidos
-    const ultimosPedidos = [...DB.pedidos].sort((a, b) => new Date(b.data) - new Date(a.data)).slice(0, 5);
+    const ultimosPedidos = [...DB.pedidos].filter(p => dashEmPeriodo(p.data)).sort((a, b) => new Date(b.data) - new Date(a.data)).slice(0, 5);
     const container = document.getElementById('ultimosPedidos');
     if (ultimosPedidos.length === 0) {
-        container.innerHTML = '<p class="empty-state">Nenhum pedido encontrado</p>';
+        container.innerHTML = '<p class="empty-state">Nenhum pedido encontrado neste período</p>';
     } else {
         container.innerHTML = ultimosPedidos.map(p => {
             const cliente = DB.clientes.find(c => c.id === p.clienteId);
@@ -392,25 +450,158 @@ function renderAdminDashboard() {
         }).join('');
     }
 
-    // Últimas movimentações
-    const ultimasMovs = [...DB.movimentacoes].sort((a, b) => new Date(b.data) - new Date(a.data)).slice(0, 5);
-    const movContainer = document.getElementById('ultimasMovimentacoes');
-    if (ultimasMovs.length === 0) {
-        movContainer.innerHTML = '<p class="empty-state">Nenhuma movimentação encontrada</p>';
-    } else {
-        movContainer.innerHTML = ultimasMovs.map(m => `<div class="mov-item">
-            <div class="mov-item-left">
-                <div class="mov-item-icon ${m.tipo}">
-                    <i class="fas fa-arrow-${m.tipo === 'entrada' ? 'up' : 'down'}"></i>
-                </div>
-                <div class="mov-item-info">
-                    <h5>${m.descricao}</h5>
-                    <p>${formatDate(m.data)} - ${capitalize(m.pagamento)}</p>
-                </div>
-            </div>
-            <div class="mov-item-value ${m.tipo}">${m.tipo === 'entrada' ? '+' : '-'}${formatCurrency(m.valor)}</div>
-        </div>`).join('');
+    let ultimasMovs = [...movs].sort((a, b) => new Date(b.data) - new Date(a.data));
+    if (dashFiltros.busca) {
+        ultimasMovs = ultimasMovs.filter(m => {
+            const cliente = nomeClienteDoPedido(m.pedidoId) || '';
+            return (m.descricao || '').toLowerCase().includes(dashFiltros.busca) || cliente.toLowerCase().includes(dashFiltros.busca);
+        });
     }
+    const movContainer = document.getElementById('ultimasMovimentacoes');
+    const mostrarMovs = ultimasMovs.slice(0, 8);
+    if (mostrarMovs.length === 0) {
+        movContainer.innerHTML = '<p class="empty-state">Nenhuma movimentação encontrada' + (dashFiltros.busca ? ' para a busca acima' : ' neste período') + '</p>';
+    } else {
+        movContainer.innerHTML = mostrarMovs.map(m => {
+            const cliente = nomeClienteDoPedido(m.pedidoId);
+            const pendente = m.tipo === 'entrada' && m.pagamento === 'pendente';
+            return `<div class="mov-item${pendente ? ' mov-pendente' : ''}">
+                <div class="mov-item-left">
+                    <div class="mov-item-icon ${m.tipo}">
+                        <i class="fas fa-arrow-${m.tipo === 'entrada' ? 'up' : 'down'}"></i>
+                    </div>
+                    <div class="mov-item-info">
+                        <h5>${m.descricao}</h5>
+                        <p>${formatDate(m.data)}${cliente ? ` · ${cliente}` : ''} · ${capitalize(m.categoria)}</p>
+                        <span class="status-badge status-${pendente ? 'pendente' : m.tipo === 'entrada' ? 'concluido' : 'cancelado'}">${pendente ? 'Pendente' : capitalize(m.pagamento)}</span>
+                    </div>
+                </div>
+                <div class="mov-item-value ${m.tipo}">${m.tipo === 'entrada' ? '+' : '-'}${formatCurrency(m.valor)}</div>
+            </div>`;
+        }).join('');
+    }
+
+    desenharGraficoBarras();
+    desenharDonutServicos();
+}
+
+// ----- Gráfico de barras: receitas x despesas (últimos 6 meses) -----
+function desenharGraficoBarras() {
+    const canvas = document.getElementById('graficoBarras');
+    const legendEl = document.getElementById('legendBarras');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const cores = dashCores();
+    const dpr = window.devicePixelRatio || 1;
+    const wrap = canvas.parentElement;
+    const cssW = wrap.clientWidth || 320;
+    const cssH = 220;
+    canvas.width = cssW * dpr;
+    canvas.height = cssH * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const agora = new Date();
+    const meses = [];
+    for (let i = 5; i >= 0; i--) {
+        const d = new Date(agora.getFullYear(), agora.getMonth() - i, 1);
+        meses.push({ ano: d.getFullYear(), mes: d.getMonth(), entradas: 0, saidas: 0 });
+    }
+    DB.movimentacoes.forEach(m => {
+        const idx = meses.findIndex(x => `${x.ano}-${String(x.mes + 1).padStart(2, '0')}` === (m.data || '').slice(0, 7));
+        if (idx === -1) return;
+        if (m.tipo === 'entrada' && m.pagamento !== 'pendente') meses[idx].entradas += m.valor;
+        if (m.tipo === 'saida') meses[idx].saidas += m.valor;
+    });
+
+    const maxVal = Math.max(...meses.flatMap(x => [x.entradas, x.saidas]), 1);
+    const padL = 46, padR = 10, padT = 18, padB = 26;
+    const w = cssW - padL - padR;
+    const h = cssH - padT - padB;
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    const linhas = 4;
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = cores.grid;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'right';
+    ctx.font = '10px Inter, sans-serif';
+    ctx.fillStyle = cores.texto;
+    for (let i = 0; i <= linhas; i++) {
+        const y = padT + (h / linhas) * i;
+        ctx.beginPath();
+        ctx.moveTo(padL, y);
+        ctx.lineTo(cssW - padR, y);
+        ctx.stroke();
+        ctx.fillText(compactValor(maxVal - (maxVal / linhas) * i), padL - 6, y);
+    }
+
+    const nomesMesShort = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    const barW = Math.min(26, (w / meses.length) / 2.6);
+    meses.forEach((m, i) => {
+        const groupW = w / meses.length;
+        const xC = padL + groupW * i + groupW / 2;
+        const hE = (m.entradas / maxVal) * h;
+        const hS = (m.saidas / maxVal) * h;
+        ctx.fillStyle = '#667eea';
+        ctx.fillRect(xC - barW - 2, padT + h - Math.max(hE, 1), barW, Math.max(hE, 1));
+        ctx.fillStyle = '#f5576c';
+        ctx.fillRect(xC + 2, padT + h - Math.max(hS, 1), barW, Math.max(hS, 1));
+        ctx.fillStyle = cores.texto;
+        ctx.font = '9px Inter, sans-serif';
+        if (hE > 0) ctx.fillText(compactValor(m.entradas), xC - barW - 2, padT + h - hE - 6);
+        if (hS > 0) ctx.fillText(compactValor(m.saidas), xC + 2, padT + h - hS - 6);
+        ctx.font = '10px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(nomesMesShort[m.mes], xC, padT + h + 16);
+        ctx.textAlign = 'right';
+    });
+
+    if (legendEl) legendEl.innerHTML = `<span class="leg-item"><i style="background:#667eea"></i>Entradas</span><span class="leg-item"><i style="background:#f5576c"></i>Saídas</span>`;
+}
+
+// ----- Donut: receita por serviço (apenas pagamentos confirmados) -----
+function desenharDonutServicos() {
+    const ring = document.getElementById('donutServicosRing');
+    const legendEl = document.getElementById('legendServicos');
+    const totalEl = document.getElementById('donutTotal');
+    if (!ring || !legendEl || !totalEl) return;
+
+    const servicosMap = {};
+    let outros = 0;
+    DB.movimentacoes.forEach(m => {
+        if (m.tipo !== 'entrada' || m.pagamento === 'pendente') return;
+        const pedido = m.pedidoId ? DB.pedidos.find(p => p.id === m.pedidoId) : null;
+        if (!pedido || !pedido.servicos || !pedido.servicos.length) { outros += m.valor; return; }
+        const share = m.valor / pedido.servicos.length;
+        pedido.servicos.forEach(id => {
+            const nome = (DB.servicos.find(s => s.id === id) || {}).nome || 'Serviço';
+            servicosMap[nome] = (servicosMap[nome] || 0) + share;
+        });
+    });
+    if (outros > 1e-9) servicosMap['Outros'] = outros;
+
+    const entradas = Object.entries(servicosMap).sort((a, b) => b[1] - a[1]);
+    const total = entradas.reduce((s, [, v]) => s + v, 0);
+    totalEl.textContent = formatCurrency(total);
+
+    if (!total) {
+        ring.style.background = 'conic-gradient(#e1e8f0 0 100%)';
+        legendEl.innerHTML = '<span class="leg-vazio">Sem receita confirmada ainda</span>';
+        return;
+    }
+
+    const cores = ['#667eea', '#f093fb', '#43e97b', '#fdcb6e', '#f5576c', '#00b894', '#4facfe', '#e17055', '#6c5ce7', '#00cec9'];
+    let acum = 0;
+    const partes = [];
+    const legend = entradas.map(([nome, valor], i) => {
+        const pct = (valor / total) * 100;
+        const cor = cores[i % cores.length];
+        partes.push(`${cor} ${acum.toFixed(2)}% ${(acum + pct).toFixed(2)}%`);
+        acum += pct;
+        return `<span class="leg-item"><i style="background:${cor}"></i>${nome}<strong>${formatCurrency(valor)}</strong></span>`;
+    }).join('');
+    ring.style.background = `conic-gradient(${partes.join(', ')})`;
+    legendEl.innerHTML = legend;
 }
 
 // ============================================
@@ -1824,6 +2015,7 @@ function updateChatBadge() {
         document.getElementById('chatBadgeClient').textContent = unread;
         document.getElementById('chatBadgeClient').style.display = unread > 0 ? 'block' : 'none';
     }
+    atualizarBadgeNotif();
 }
 
 // ============================================
@@ -2253,10 +2445,287 @@ function showToast(message, type = 'info') {
 }
 
 // ============================================
+// TOOLS DA TOPBAR (relógio, tema, calendário, calculadora, avisos)
+// ============================================
+const calcEstado = { '': { display: '0', prev: null, operador: null, reset: false }, 'Client': { display: '0', prev: null, operador: null, reset: false } };
+const calEstado = { '': { ano: null, mes: null }, 'Client': { ano: null, mes: null } };
+
+function getSfx(popover) {
+    return (popover.id || '').endsWith('Client') ? 'Client' : '';
+}
+
+function getPopover(btn) {
+    return btn.closest('.tool-wrapper').querySelector('.tool-popover');
+}
+
+function fecharPopovers() {
+    document.querySelectorAll('.tool-popover.active').forEach(p => p.classList.remove('active'));
+}
+
+function fecharNotif() {
+    document.querySelectorAll('.notif-popover').forEach(p => p.classList.remove('active'));
+}
+
+function atualizarRelogio() {
+    const agora = new Date();
+    const tempo = agora.toLocaleTimeString('pt-BR');
+    const data = agora.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' });
+    ['Admin', 'Client'].forEach(sfx => {
+        const rel = document.getElementById('relogio' + sfx);
+        const dat = document.getElementById('data' + sfx);
+        if (rel) rel.textContent = tempo;
+        if (dat) dat.textContent = data.charAt(0).toUpperCase() + data.slice(1);
+    });
+}
+
+function aplicarTema() {
+    if (!localStorage.getItem('fps_tema')) localStorage.setItem('fps_tema', 'light');
+    document.body.classList.toggle('dark', localStorage.getItem('fps_tema') === 'dark');
+    atualizarIconeTema();
+}
+
+function atualizarIconeTema() {
+    const dark = document.body.classList.contains('dark');
+    document.querySelectorAll('.btn-tema i').forEach(i => i.className = dark ? 'fas fa-sun' : 'fas fa-moon');
+}
+
+function toggleTema() {
+    document.body.classList.toggle('dark');
+    localStorage.setItem('fps_tema', document.body.classList.contains('dark') ? 'dark' : 'light');
+    atualizarIconeTema();
+}
+
+function irParaPagina(pagina) {
+    const nav = document.querySelector(`.nav-item[data-page="${pagina}"]`);
+    if (nav) nav.click();
+}
+
+function montarCalculadora() {
+    const teclas = ['C', '⌫', '%', '÷', '7', '8', '9', '×', '4', '5', '6', '-', '1', '2', '3', '+', '0', '.', '='];
+    ['', 'Client'].forEach(sfx => {
+        const gridEl = document.getElementById('calcGrid' + (sfx === '' ? '' : 'Client'));
+        if (!gridEl || gridEl.dataset.montado) return;
+        gridEl.dataset.montado = '1';
+        gridEl.innerHTML = teclas.map(t => {
+            const extra = t === '0' ? ' calc-zero' : t === '=' ? ' calc-equals' : isNaN(t) ? ' calc-op' : ' calc-num';
+            return `<button class="calc-btn${extra}" onclick="calcClick('${sfx}', '${t}')">${t}</button>`;
+        }).join('');
+    });
+}
+
+function fmtCalc(n) {
+    if (!isFinite(n)) return 'Erro';
+    return String(parseFloat(n.toFixed(8)));
+}
+
+function calcClick(sfx, key) {
+    const st = calcEstado[sfx];
+    const displayEl = document.getElementById('calcDisplay' + (sfx === '' ? '' : 'Client'));
+    if (!displayEl) return;
+    const mostrar = v => { st.display = v; displayEl.textContent = v; };
+    const calcular = (a, b, op) => {
+        switch (op) {
+            case '+': return a + b;
+            case '-': return a - b;
+            case '×': return a * b;
+            case '÷': return b === 0 ? NaN : a / b;
+        }
+    };
+
+    if (key >= '0' && key <= '9') {
+        if (st.reset || st.display === '0') mostrar(key);
+        else mostrar(st.display.length < 14 ? (st.display === 'Erro' ? key : st.display + key) : st.display);
+        st.reset = false;
+        return;
+    }
+    if (key === '.') {
+        if (st.display === 'Erro') { mostrar('0.'); st.reset = false; return; }
+        if (st.reset) { mostrar('0.'); st.reset = false; return; }
+        if (!st.display.includes('.')) mostrar(st.display + '.');
+        return;
+    }
+    if (key === '%') {
+        mostrar(fmtCalc(parseFloat(st.display) / 100));
+        st.reset = true;
+        return;
+    }
+    if (key === '⌫') {
+        if (st.reset) return;
+        mostrar(st.display.length > 1 ? st.display.slice(0, -1) : '0');
+        return;
+    }
+    if (key === 'C') {
+        st.prev = null; st.operador = null; st.reset = false;
+        mostrar('0');
+        return;
+    }
+    if (['+', '-', '×', '÷'].includes(key)) {
+        const v = parseFloat(st.display);
+        if (st.prev !== null && st.operador && !st.reset) {
+            const r = calcular(st.prev, v, st.operador);
+            st.prev = isNaN(r) ? null : r;
+            mostrar(st.prev === null ? 'Erro' : fmtCalc(r));
+        } else {
+            st.prev = v;
+        }
+        st.operador = key;
+        st.reset = true;
+        return;
+    }
+    if (key === '=') {
+        const v = parseFloat(st.display);
+        if (st.prev !== null && st.operador) {
+            const r = calcular(st.prev, v, st.operador);
+            st.prev = null; st.operador = null; st.reset = true;
+            mostrar(isNaN(r) ? 'Erro' : fmtCalc(r));
+        } else {
+            st.reset = true;
+        }
+        return;
+    }
+}
+
+function toggleCalculator(btn) {
+    const pop = getPopover(btn);
+    if (pop.classList.contains('active')) { pop.classList.remove('active'); return; }
+    fecharPopovers();
+    montarCalculadora();
+    pop.classList.add('active');
+}
+
+function renderCalendar(sfx) {
+    const st = calEstado[sfx];
+    const hoje = new Date();
+    if (!st.ano || !st.mes) { st.ano = hoje.getFullYear(); st.mes = hoje.getMonth(); }
+    const mesAnoEl = document.getElementById('calendarMesAno' + (sfx === '' ? '' : 'Client'));
+    const gridEl = document.getElementById('calendarGrid' + (sfx === '' ? '' : 'Client'));
+    if (!mesAnoEl || !gridEl) return;
+    const primeiro = new Date(st.ano, st.mes, 1);
+    const diasNoMes = new Date(st.ano, st.mes + 1, 0).getDate();
+    const offset = primeiro.getDay();
+    const nomesMes = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+    const diasSemana = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    let html = diasSemana.map(d => `<span class="cal-dia cal-dia-label">${d}</span>`).join('');
+    for (let i = 0; i < offset; i++) html += '<span></span>';
+    for (let d = 1; d <= diasNoMes; d++) {
+        const ehHoje = st.ano === hoje.getFullYear() && st.mes === hoje.getMonth() && d === hoje.getDate();
+        html += `<span class="cal-dia${ehHoje ? ' cal-hoje' : ''}">${d}</span>`;
+    }
+    mesAnoEl.textContent = `${nomesMes[st.mes]} ${st.ano}`;
+    gridEl.innerHTML = html;
+}
+
+function mudarMes(delta, sfx = '') {
+    const st = calEstado[sfx];
+    st.mes += delta;
+    if (st.mes < 0) { st.mes = 11; st.ano--; }
+    if (st.mes > 11) { st.mes = 0; st.ano++; }
+    renderCalendar(sfx);
+}
+
+function toggleCalendar(btn) {
+    const pop = getPopover(btn);
+    if (pop.classList.contains('active')) { pop.classList.remove('active'); return; }
+    fecharPopovers();
+    renderCalendar(getSfx(pop));
+    pop.classList.add('active');
+}
+
+function gerarNotificacoes() {
+    const lista = [];
+    if (!currentUser) return lista;
+    if (currentUser.role === 'admin') {
+        DB.pedidos.filter(p => p.status === 'pendente').slice(0, 5).forEach(p => {
+            lista.push({ icone: 'fa-clipboard-list', classe: 'notif-primary', titulo: `Pedido #${p.id} pendente`, texto: `Aguardando orçamento/pagamento - ${formatCurrency(p.total)}`, pagina: 'adminPedidos' });
+        });
+        Object.keys(DB.chats).forEach(key => {
+            (DB.chats[key] || []).forEach(m => {
+                if (m.tipo === 'comprovante' && m.remetente === 'client' && m.status === 'aguardando') {
+                    lista.push({ icone: 'fa-receipt', classe: 'notif-warning', titulo: 'Comprovante aguardando', texto: m.mensagem, pagina: 'adminChat' });
+                }
+            });
+        });
+        DB.materiais.filter(m => m.estoque <= 3).slice(0, 5).forEach(m => {
+            lista.push({ icone: 'fa-boxes', classe: 'notif-danger', titulo: `Estoque baixo: ${m.nome}`, texto: `Restam ${m.estoque} unidade(s)`, pagina: 'adminMateriais' });
+        });
+        const temNaoLida = Object.keys(DB.chats).some(key => (DB.chats[key] || []).some(m => m.remetente === 'client' && !m.lida));
+        if (temNaoLida) lista.push({ icone: 'fa-envelope', classe: 'notif-primary', titulo: 'Mensagens não lidas', texto: 'Há mensagens de clientes no chat', pagina: 'adminChat' });
+    } else if (currentUser.role === 'client') {
+        const msgs = DB.chats[`admin_${currentUser.id}`] || [];
+        msgs.forEach(m => {
+            if (m.tipo === 'orcamento' && m.remetente === 'admin' && !m.lida) {
+                lista.push({ icone: 'fa-file-invoice-dollar', classe: 'notif-primary', titulo: 'Novo orçamento', texto: `${m.descricao || 'Orçamento'} - ${formatCurrency(Math.max(0, (m.valor || 0) - (m.desconto || 0)))}`, pagina: 'clientChat' });
+            }
+            if (m.tipo === 'comprovante' && m.remetente === 'client' && m.status === 'aguardando') {
+                lista.push({ icone: 'fa-hourglass-half', classe: 'notif-warning', titulo: 'Pagamento aguardando', texto: m.mensagem, pagina: 'clientChat' });
+            }
+            if (m.tipo === 'sistema' && m.remetente === 'admin' && !m.lida) {
+                lista.push({ icone: 'fa-check-circle', classe: 'notif-success', titulo: 'Confirmação', texto: m.mensagem, pagina: 'clientChat' });
+            }
+        });
+    }
+    const vistos = new Set();
+    return lista.filter(n => { const k = n.titulo + n.texto; if (vistos.has(k)) return false; vistos.add(k); return true; });
+}
+
+function atualizarBadgeNotif() {
+    if (!currentUser) return;
+    const n = gerarNotificacoes().length;
+    ['', 'Client'].forEach(sfx => {
+        const badge = document.getElementById('notifBadge' + (sfx === '' ? '' : 'Client'));
+        if (badge) { badge.textContent = n; badge.style.display = n ? 'flex' : 'none'; }
+    });
+}
+
+function renderNotif(pop) {
+    const sfx = getSfx(pop);
+    const listaEl = pop.querySelector('.notif-list');
+    const badgeEl = document.getElementById('notifBadge' + (sfx === '' ? '' : 'Client'));
+    const todos = gerarNotificacoes();
+    const visiveis = todos.slice(0, 8);
+    if (badgeEl) { badgeEl.textContent = todos.length; badgeEl.style.display = todos.length ? 'flex' : 'none'; }
+    listaEl.innerHTML = visiveis.length ? visiveis.map(x => `
+        <div class="notif-item" onclick="fecharNotif(); irParaPagina('${x.pagina}')">
+            <div class="notif-icone ${x.classe}"><i class="fas ${x.icone}"></i></div>
+            <div class="notif-corpo"><strong>${x.titulo}</strong><p>${x.texto}</p></div>
+        </div>`).join('') : '<div class="notif-vazio"><i class="fas fa-check-circle"></i><p>Sem avisos</p></div>';
+}
+
+function toggleNotif(btn) {
+    const pop = getPopover(btn);
+    if (pop.classList.contains('active')) { pop.classList.remove('active'); return; }
+    fecharPopovers();
+    renderNotif(pop);
+    pop.classList.add('active');
+}
+
+function iniciarFerramentas() {
+    atualizarRelogio();
+    setInterval(atualizarRelogio, 1000);
+    montarCalculadora();
+    aplicarTema();
+    atualizarBadgeNotif();
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('.tool-wrapper')) fecharPopovers();
+    });
+}
+
+// ============================================
 // INIT
 // ============================================
 document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('movData').value = new Date().toISOString().split('T')[0];
     updateChatBadge();
     setupDragDrop();
+    iniciarFerramentas();
+    let dashResizeTimer;
+    window.addEventListener('resize', function() {
+        clearTimeout(dashResizeTimer);
+        dashResizeTimer = setTimeout(function() {
+            if (currentUser && currentUser.role === 'admin' && document.getElementById('adminHome').classList.contains('active')) {
+                desenharGraficoBarras();
+                desenharDonutServicos();
+            }
+        }, 150);
+    });
 });
