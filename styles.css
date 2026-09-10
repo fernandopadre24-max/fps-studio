@@ -2518,6 +2518,47 @@ body {
     font-weight: 600;
 }
 
+.orcamento-condicao {
+    padding: 12px 14px;
+    background: rgba(108, 92, 231, 0.05);
+    border: 1px dashed var(--primary);
+    border-radius: var(--radius-sm);
+    margin-bottom: 14px;
+    font-size: 13px;
+    color: var(--dark-light);
+}
+
+.orc-cond-titulo {
+    font-size: 13px;
+    margin-bottom: 6px;
+    color: var(--dark);
+}
+
+.orc-cond-titulo i {
+    color: var(--primary);
+    margin-right: 4px;
+}
+
+.orc-cond-linha {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    padding: 2px 0;
+}
+
+.orc-cond-linha strong {
+    color: var(--primary);
+}
+
+.chat-message .orc-cond-titulo {
+    font-size: 12px;
+    background: rgba(108, 92, 231, 0.06);
+    border-radius: 6px;
+    padding: 6px 8px;
+    margin: 8px 0 6px;
+}
+
 /* EMPTY STATE */
 .empty-state {
     text-align: center;

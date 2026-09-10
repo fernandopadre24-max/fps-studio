@@ -2050,13 +2050,14 @@ function renderChatMessagesAdmin(chatKey) {
             </div>`;
         } else if (m.tipo === 'orcamento') {
             const desconto = m.desconto || 0;
-            const total = Math.max(0, (m.valor || 0) - desconto);
+            const cond = condicaoOrcamentoDe(m);
             return `<div class="chat-message orcamento">
                 <h4><i class="fas fa-file-invoice-dollar"></i> Orçamento</h4>
                 <p><strong>${m.descricao}</strong></p>
                 <p>Valor: <strong>${formatCurrency(m.valor)}</strong></p>
                 ${desconto > 0 ? `<p>Desconto: <strong>-${formatCurrency(desconto)}</strong></p>` : ''}
-                <p>Total a pagar: <strong>${formatCurrency(total)}</strong></p>
+                ${cond.linhas}
+                <p>${cond.rotuloPagar}: <strong>${formatCurrency(cond.totalPagar)}</strong></p>
                 <p>Validade: ${m.validade}</p>
                 <div class="chat-message-time">${formatDateTime(m.data)}</div>
             </div>`;
@@ -2135,9 +2136,11 @@ async function sendMessageAdmin() {
 }
 
 let orcamentoPedidoId = null;
+let orcamentoCondicao = null;
 
 function prepararOrcamentoAvulso() {
     orcamentoPedidoId = null;
+    orcamentoCondicao = null;
     document.getElementById('orcamentoPedidoInfo').value = '';
     document.getElementById('orcamentoDescricao').value = '';
     document.getElementById('orcamentoValor').value = '';
@@ -2155,6 +2158,7 @@ function abrirOrcamentoParaPedido(msgIdx) {
 
     const pedido = DB.pedidos.find(x => x.id === m.pedidoId);
     orcamentoPedidoId = m.pedidoId || null;
+    orcamentoCondicao = pedido ? { parcial: !!pedido.parcial, descontoPct: pedido.descontoPct || 0 } : null;
 
     const nomesServicos = (pedido ? pedido.servicos : []).map(id => { const s = DB.servicos.find(x => x.id === id); return s ? s.nome : ''; }).filter(Boolean);
     const nomesMateriais = (pedido ? pedido.materiais : []).map(id => { const mm = DB.materiais.find(x => x.id === id); return mm ? mm.nome : ''; }).filter(Boolean);
@@ -2169,10 +2173,33 @@ function abrirOrcamentoParaPedido(msgIdx) {
     openModal('enviarOrcamentoModal');
 }
 
+function atualizarCondicaoOrcamento() {
+    const el = document.getElementById('orcamentoCondicaoInfo');
+    if (!el) return;
+    const valor = parseFloat(document.getElementById('orcamentoValor').value) || 0;
+    const desconto = parseFloat(document.getElementById('orcamentoDesconto').value) || 0;
+    const base = Math.max(0, valor - desconto);
+    const c = orcamentoCondicao;
+    let html = '';
+    if (!c) {
+        html = '<span class="field-hint">Sem condição vinculada — será cobrado o valor integral.</span>';
+    } else if (c.parcial) {
+        html = `<p class="orc-cond-titulo"><i class="fas fa-sync-alt"></i> Condição escolhida pelo cliente: <strong>Dividido em 2x (50% + 50%)</strong></p>
+            <div class="orc-cond-linha"><span>Entrada agora</span><strong>${formatCurrency(base / 2)}</strong></div>
+            <div class="orc-cond-linha"><span>Saldo ao finalizar</span><strong>${formatCurrency(base / 2)}</strong></div>`;
+    } else if (c.descontoPct) {
+        html = `<p class="orc-cond-titulo"><i class="fas fa-hand-holding-usd"></i> Condição escolhida pelo cliente: <strong>À vista com ${c.descontoPct}% de desconto</strong></p>
+            <div class="orc-cond-linha"><span>Total à vista</span><strong>${formatCurrency(base * (1 - c.descontoPct / 100))}</strong></div>`;
+    }
+    el.innerHTML = html;
+    el.style.display = c ? 'block' : 'none';
+}
+
 function atualizarTotalOrcamento() {
     const valor = parseFloat(document.getElementById('orcamentoValor').value) || 0;
     const desconto = parseFloat(document.getElementById('orcamentoDesconto').value) || 0;
     document.getElementById('orcamentoTotal').textContent = formatCurrency(Math.max(0, valor - desconto));
+    atualizarCondicaoOrcamento();
 }
 
 async function enviarOrcamento() {
@@ -2189,6 +2216,8 @@ async function enviarOrcamento() {
         desconto: parseFloat(document.getElementById('orcamentoDesconto').value) || 0,
         pedidoId: orcamentoPedidoId,
         validade: document.getElementById('orcamentoValidade').value || '15 dias',
+        parcial: orcamentoCondicao ? (orcamentoCondicao.parcial ? 1 : 0) : 0,
+        descontoPct: orcamentoCondicao ? (orcamentoCondicao.descontoPct || 0) : 0,
         data: new Date().toISOString()
     };
 
@@ -2199,10 +2228,30 @@ async function enviarOrcamento() {
     }
 
     orcamentoPedidoId = null;
+    orcamentoCondicao = null;
     closeAllModals();
     renderChatMessagesAdmin(chatKey);
     showToast('Orçamento enviado!', 'success');
     clearForm('orcamento');
+}
+
+function condicaoOrcamentoDe(m) {
+    const base = Math.max(0, (m.valor || 0) - (m.desconto || 0));
+    let totalPagar = base;
+    let rotuloPagar = 'Total a pagar';
+    let linhas = '';
+    if (m.parcial) {
+        const entrada = base / 2;
+        totalPagar = entrada;
+        rotuloPagar = 'Entrada (50%) agora';
+        linhas = `<p class="orc-cond-titulo"><i class="fas fa-sync-alt"></i> Condição: <strong>Dividido em 2x (50% + 50%)</strong></p>
+            <p>Saldo ao finalizar: <strong>${formatCurrency(entrada)}</strong></p>`;
+    } else if (m.descontoPct) {
+        totalPagar = base * (1 - m.descontoPct / 100);
+        rotuloPagar = `Total à vista (-${m.descontoPct}%)`;
+        linhas = `<p class="orc-cond-titulo"><i class="fas fa-hand-holding-usd"></i> Condição: <strong>À vista com ${m.descontoPct}% de desconto</strong></p>`;
+    }
+    return { totalPagar, rotuloPagar, linhas };
 }
 
 async function enviarComprovante() {
@@ -2424,13 +2473,14 @@ function renderClientChat() {
             </div>`;
         } else if (m.tipo === 'orcamento') {
             const desconto = m.desconto || 0;
-            const total = Math.max(0, (m.valor || 0) - desconto);
+            const cond = condicaoOrcamentoDe(m);
             return `<div class="chat-message orcamento">
                 <h4><i class="fas fa-file-invoice-dollar"></i> Orçamento Recebido</h4>
                 <p><strong>${m.descricao}</strong></p>
                 <p>Valor: <strong>${formatCurrency(m.valor)}</strong></p>
                 ${desconto > 0 ? `<p>Desconto: <strong>-${formatCurrency(desconto)}</strong></p>` : ''}
-                <p>Total a pagar: <strong>${formatCurrency(total)}</strong></p>
+                ${cond.linhas}
+                <p>${cond.rotuloPagar}: <strong>${formatCurrency(cond.totalPagar)}</strong></p>
                 <p>Validade: ${m.validade}</p>
                 ${m.pedidoId ? `<div class="comprovante-acoes">
                     <button class="btn-primary btn-sm" onclick="pagarOrcamento(${msgIdx})"><i class="fas fa-credit-card"></i> Realizar Pagamento</button>
