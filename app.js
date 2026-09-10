@@ -1073,8 +1073,6 @@ async function salvarPedido() {
     const status = document.getElementById('pedidoStatus').value;
     const dataInicial = document.getElementById('pedidoDataInicial').value || '';
     const horaInicial = document.getElementById('pedidoHoraInicial').value || '';
-    const dataFinal = document.getElementById('pedidoDataFinal').value || '';
-    const horaFinal = document.getElementById('pedidoHoraFinal').value || '';
 
     if (servicos.length === 0 && materiais.length === 0) {
         showToast('Selecione pelo menos um serviço ou material!', 'error');
@@ -1090,13 +1088,13 @@ async function salvarPedido() {
     if (id) {
         const idx = DB.pedidos.findIndex(p => p.id === parseInt(id));
         if (idx !== -1) {
-            DB.pedidos[idx] = { ...DB.pedidos[idx], clienteId, servicos, materiais, desconto, status, total, dataInicial, horaInicial, dataFinal, horaFinal };
+            DB.pedidos[idx] = { ...DB.pedidos[idx], clienteId, servicos, materiais, desconto, status, total, dataInicial, horaInicial };
             pedidoSalvo = DB.pedidos[idx];
-            if (DBReady) await DB_SERVICE.updatePedido(pedidoSalvo.docId, { clienteId, servicos, materiais, desconto, status, total, parcial: pedidoSalvo.parcial || 0, descontoPct: pedidoSalvo.descontoPct || 0, dataInicial, horaInicial, dataFinal, horaFinal });
+            if (DBReady) await DB_SERVICE.updatePedido(pedidoSalvo.docId, { clienteId, servicos, materiais, desconto, status, total, parcial: pedidoSalvo.parcial || 0, descontoPct: pedidoSalvo.descontoPct || 0, dataInicial, horaInicial });
         }
     } else {
         const novoPedido = {
-            id: DB.nextId.pedido++, clienteId, servicos, materiais, desconto, status, total, dataInicial, horaInicial, dataFinal, horaFinal,
+            id: DB.nextId.pedido++, clienteId, servicos, materiais, desconto, status, total, dataInicial, horaInicial,
             data: new Date().toISOString().split('T')[0]
         };
         DB.pedidos.push(novoPedido);
@@ -1127,8 +1125,6 @@ function editarPedido(id) {
     document.getElementById('pedidoStatus').value = p.status;
     document.getElementById('pedidoDataInicial').value = p.dataInicial || '';
     document.getElementById('pedidoHoraInicial').value = p.horaInicial || '';
-    document.getElementById('pedidoDataFinal').value = p.dataFinal || '';
-    document.getElementById('pedidoHoraFinal').value = p.horaFinal || '';
 
     p.servicos.forEach(sId => {
         const cb = document.getElementById(`ps_${sId}`);
@@ -1177,7 +1173,6 @@ function verDetalhesPedido(id) {
             <div class="detalhe-item"><span>Pedido</span><strong>#${p.id}</strong></div>
             <div class="detalhe-item"><span>Criado em</span><span>${formatDate(p.data)}</span></div>
             ${p.dataInicial ? `<div class="detalhe-item"><span>Início</span><strong>${formatDate(p.dataInicial)} ${p.horaInicial || ''}</strong></div>` : ''}
-            ${p.dataFinal ? `<div class="detalhe-item"><span>Término</span><strong>${formatDate(p.dataFinal)} ${p.horaFinal || ''}</strong></div>` : ''}
             <div class="detalhe-item"><span>Status</span><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></div>
         </div>`;
 
@@ -1227,7 +1222,7 @@ function renderFinanceiro() {
 async function sincronizarFinanceiroPedido(p) {
     if (!p) return null;
     const existente = DB.movimentacoes.find(m => m.pedidoId === p.id) ||
-        DB.movimentacoes.find(m => m.tipo === 'entrada' && (m.descricao || '').includes(`Pedido #${p.id}`) && m.pagamento !== 'pendente');
+        DB.movimentacoes.find(m => m.tipo === 'entrada' && (m.pedidoId === p.id || (m.descricao || '').includes(`Pedido #${p.id}`)) && m.pagamento !== 'pendente');
 
     if (p.status === 'cancelado') {
         if (existente) {
@@ -1336,7 +1331,7 @@ async function excluirMovimentacao(id) {
 // ============================================
 function valorPagoPedido(p) {
     return DB.movimentacoes
-        .filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente' && (m.descricao || '').includes(`Pedido #${p.id}`))
+        .filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente' && (m.pedidoId === p.id || (m.descricao || '').includes(`Pedido #${p.id}`)))
         .reduce((s, m) => s + m.valor, 0);
 }
 
@@ -1358,7 +1353,7 @@ function metodoPagamentoRotulo(pagamento) {
 
 function pagamentosPedidoResumo(p) {
     const pagamentos = DB.movimentacoes
-        .filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente' && (m.descricao || '').includes(`Pedido #${p.id}`))
+        .filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente' && (m.pedidoId === p.id || (m.descricao || '').includes(`Pedido #${p.id}`)))
         .sort((a, b) => (a.data || '').localeCompare(b.data || '') || (a.id || 0) - (b.id || 0));
     if (pagamentos.length === 0) {
         const temPendente = DB.movimentacoes.some(m => m.pagamento === 'pendente' && (m.pedidoId === p.id || (m.descricao || '').includes(`Pedido #${p.id}`)));
@@ -1877,7 +1872,6 @@ function verDetalhesPedidoClient(id) {
             <div class="detalhe-item"><span>Pedido</span><strong>#${p.id}</strong></div>
             <div class="detalhe-item"><span>Criado em</span><span>${formatDate(p.data)}</span></div>
             ${p.dataInicial ? `<div class="detalhe-item"><span>Início</span><strong>${formatDate(p.dataInicial)} ${p.horaInicial || ''}</strong></div>` : ''}
-            ${p.dataFinal ? `<div class="detalhe-item"><span>Término</span><strong>${formatDate(p.dataFinal)} ${p.horaFinal || ''}</strong></div>` : ''}
             <div class="detalhe-item"><span>Status</span><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></div>
         </div>`;
 
@@ -2023,8 +2017,6 @@ async function salvarPedidoClient() {
     const parcial = condicao === 'metade' ? 1 : 0;
     const dataInicial = document.getElementById('clientPedidoDataInicial').value || '';
     const horaInicial = document.getElementById('clientPedidoHoraInicial').value || '';
-    const dataFinal = document.getElementById('clientPedidoDataFinal').value || '';
-    const horaFinal = document.getElementById('clientPedidoHoraFinal').value || '';
 
     const novoPedido = {
         id: DB.nextId.pedido++,
@@ -2037,9 +2029,7 @@ async function salvarPedidoClient() {
         parcial,
         descontoPct,
         dataInicial,
-        horaInicial,
-        dataFinal,
-        horaFinal
+        horaInicial
     };
     DB.pedidos.push(novoPedido);
     if (DBReady) {
@@ -2060,7 +2050,7 @@ async function salvarPedidoClient() {
         : `Dividido em 2x: entrada de R$ ${formatCurrency(total / 2)} agora e R$ ${formatCurrency(total / 2)} ao finalizar`;
 
     const prefHorario = dataInicial
-        ? `Agendamento: De ${formatDate(dataInicial)} ${horaInicial} até ${formatDate(dataFinal)} ${horaFinal}`
+        ? `Agendamento: ${formatDate(dataInicial)} ${horaInicial}`
         : '';
 
     const msgData = {
