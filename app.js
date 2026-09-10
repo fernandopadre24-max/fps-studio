@@ -12,23 +12,20 @@ const DB = {
     nextId: { servico: 7, material: 7, cliente: 4, pedido: 4, movimentacao: 6 }
 };
 
-let DBReady = false; // Indica se o Supabase está conectado
+let DBReady = false; // Indica se a API SQLite está conectada
 
 let currentUser = null;
 let currentChatClient = null;
 let selectedPedidoId = null;
 
 // ============================================
-// INICIALIZAÇÃO COM SUPABASE
+// INICIALIZAÇÃO COM SQLITE (via API)
 // ============================================
 async function initApp() {
     try {
         const ok = await DB_SERVICE.init();
         if (ok) {
-            // Seed dados iniciais
-            await DB_SERVICE.seedAll();
-
-            // Carrega todos os dados do Supabase
+            // Carrega todos os dados do SQLite via API
             DB.servicos = await DB_SERVICE.getServicos();
             DB.materiais = await DB_SERVICE.getMateriais();
             DB.clientes = await DB_SERVICE.getClientes();
@@ -50,10 +47,10 @@ async function initApp() {
             }
 
             DBReady = true;
-            console.log('Supabase conectado!');
+            console.log('SQLite conectado!');
         }
     } catch (err) {
-        console.warn('Supabase offline. Modo local ativo.', err);
+        console.warn('API SQLite offline. Modo local ativo.', err);
         DBReady = false;
     }
 

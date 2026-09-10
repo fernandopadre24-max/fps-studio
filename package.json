@@ -1,0 +1,9 @@
+{
+    "name": "fps-studio",
+    "version": "1.0.0",
+    "description": "Sistema de gerenciamento de estúdio de gravação",
+    "main": "api/db.js",
+    "dependencies": {
+        "sql.js": "^1.11.0"
+    }
+}
