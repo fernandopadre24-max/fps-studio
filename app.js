@@ -485,7 +485,7 @@ function renderMateriaisAdmin() {
             <h4>${m.nome}</h4>
             <p>${m.descricao}</p>
             <div class="item-card-meta">
-                <span class="item-card-price">${formatCurrency(m.preco)}</span>
+                ${formatMaterialPrice(m)}
                 <span class="item-card-badge ${m.estoque > 0 ? 'badge-estoque' : 'badge-sem-estoque'}">${m.estoque} em estoque</span>
             </div>
         </div>
@@ -616,7 +616,7 @@ function preparePedidoModal() {
     materiaisDiv.innerHTML = DB.materiais.map(m => `<div class="checkbox-item">
         <input type="checkbox" id="pm_${m.id}" value="${m.id}" onchange="updatePedidoTotal()">
         <label for="pm_${m.id}">${m.nome}</label>
-        <span class="item-price">${formatCurrency(m.preco)}</span>
+        ${formatMaterialPrice(m, 'item-price')}
     </div>`).join('');
 }
 
@@ -741,7 +741,7 @@ function verDetalhesPedido(id) {
     if (materiais.length) {
         html += `<div class="detalhe-section"><h4><i class="fas fa-boxes"></i> Materiais</h4>`;
         materiais.forEach(m => {
-            html += `<div class="detalhe-item"><span>${m.nome}</span><strong>${formatCurrency(m.preco)}</strong></div>`;
+            html += `<div class="detalhe-item"><span>${m.nome}</span>${m.preco <= 0 ? formatMaterialPrice(m) : `<strong>${formatCurrency(m.preco)}</strong>`}</div>`;
         });
         html += `</div>`;
     }
@@ -1003,7 +1003,7 @@ function renderMateriaisClient() {
             <h4>${m.nome}</h4>
             <p>${m.descricao}</p>
             <div class="item-card-meta">
-                <span class="item-card-price">${formatCurrency(m.preco)}</span>
+                ${formatMaterialPrice(m)}
                 <span class="item-card-badge ${m.estoque > 0 ? 'badge-estoque' : 'badge-sem-estoque'}">${m.estoque > 0 ? `${m.estoque} disponível` : 'Esgotado'}</span>
             </div>
         </div>
@@ -1068,7 +1068,7 @@ function verDetalhesPedidoClient(id) {
     if (materiais.length) {
         html += `<div class="detalhe-section"><h4><i class="fas fa-boxes"></i> Materiais</h4>`;
         materiais.forEach(m => {
-            html += `<div class="detalhe-item"><span>${m.nome}</span><strong>${formatCurrency(m.preco)}</strong></div>`;
+            html += `<div class="detalhe-item"><span>${m.nome}</span>${m.preco <= 0 ? formatMaterialPrice(m) : `<strong>${formatCurrency(m.preco)}</strong>`}</div>`;
         });
         html += `</div>`;
     }
@@ -1091,7 +1091,7 @@ function prepareClientPedidoModal() {
     materiaisDiv.innerHTML = DB.materiais.map(m => `<div class="checkbox-item">
         <input type="checkbox" id="cpm_${m.id}" value="${m.id}" onchange="updateClientPedidoTotal()">
         <label for="cpm_${m.id}">${m.nome}</label>
-        <span class="item-price">${formatCurrency(m.preco)}</span>
+        ${formatMaterialPrice(m, 'item-price')}
     </div>`).join('');
 }
 
@@ -1565,6 +1565,12 @@ function statusLabel(status) {
         cancelado: 'Cancelado'
     };
     return labels[status] || status;
+}
+
+function formatMaterialPrice(m, cls = 'item-card-price') {
+    return m && m.preco <= 0
+        ? '<span class="badge-incluso"><i class="fas fa-gift"></i> INCLUSO</span>'
+        : `<span class="${cls}">${formatCurrency(m.preco)}</span>`;
 }
 
 function getCategoriaIcon(cat) {
