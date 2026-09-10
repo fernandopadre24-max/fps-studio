@@ -58,10 +58,43 @@ async function initApp() {
     setupDragDrop();
     document.getElementById('movData').value = new Date().toISOString().split('T')[0];
     updateChatBadge();
+    restaurarSessao();
 }
 
 // Chama init ao carregar
 initApp();
+
+// ============================================
+// SESSÃO (permanência de login)
+// ============================================
+function salvarSessao() {
+    if (currentUser) localStorage.setItem('fps_session', JSON.stringify(currentUser));
+}
+
+function limparSessao() {
+    localStorage.removeItem('fps_session');
+}
+
+function restaurarSessao() {
+    const saved = localStorage.getItem('fps_session');
+    if (!saved) return;
+    try {
+        const user = JSON.parse(saved);
+        if (!user || !user.role) return;
+        if (user.role === 'client') {
+            const cliente = DB.clientes.find(c => c.id === user.id);
+            if (!cliente) { limparSessao(); return; }
+            currentUser = { role: 'client', ...cliente };
+            showDashboard('client');
+            document.getElementById('clientNameDisplay').textContent = cliente.nome;
+        } else {
+            currentUser = { role: 'admin', nome: 'Administrador' };
+            showDashboard('admin');
+        }
+    } catch (e) {
+        limparSessao();
+    }
+}
 
 // ============================================
 // LOGIN / AUTH
@@ -76,6 +109,7 @@ document.getElementById('loginForm').addEventListener('submit', function(e) {
     if (email === 'admin' && password === 'admin123') {
         currentUser = { role: 'admin', nome: 'Administrador' };
         showDashboard('admin');
+        salvarSessao();
         showToast('Bem-vindo, Administrador!', 'success');
     } else {
         const cliente = DB.clientes.find(c => c.email === email && c.senha === password);
@@ -83,6 +117,7 @@ document.getElementById('loginForm').addEventListener('submit', function(e) {
             currentUser = { role: 'client', ...cliente };
             showDashboard('client');
             document.getElementById('clientNameDisplay').textContent = cliente.nome;
+            salvarSessao();
             showToast(`Bem-vindo, ${cliente.nome}!`, 'success');
         } else {
             showToast('Credenciais inválidas!', 'error');
@@ -105,6 +140,7 @@ document.getElementById('pinForm').addEventListener('submit', function(e) {
     if (email === 'admin' && pin === '1234') {
         currentUser = { role: 'admin', nome: 'Administrador' };
         showDashboard('admin');
+        salvarSessao();
         showToast('Bem-vindo, Administrador! (PIN)', 'success');
     } else {
         const cliente = DB.clientes.find(c => c.email === email && c.pin === pin);
@@ -112,6 +148,7 @@ document.getElementById('pinForm').addEventListener('submit', function(e) {
             currentUser = { role: 'client', ...cliente };
             showDashboard('client');
             document.getElementById('clientNameDisplay').textContent = cliente.nome;
+            salvarSessao();
             showToast(`Bem-vindo, ${cliente.nome}! (PIN)`, 'success');
         } else {
             showToast('E-mail ou PIN inválido!', 'error');
@@ -239,6 +276,7 @@ function clearRegisterForm() {
 }
 
 function logout() {
+    limparSessao();
     currentUser = null;
     currentChatClient = null;
     selectedPedidoId = null;
@@ -654,11 +692,13 @@ async function salvarPedido() {
     materiais.forEach(id => { const m = DB.materiais.find(x => x.id === id); if (m) total += m.preco; });
     total = Math.max(0, total - desconto);
 
+    let pedidoSalvo;
     if (id) {
         const idx = DB.pedidos.findIndex(p => p.id === parseInt(id));
         if (idx !== -1) {
             DB.pedidos[idx] = { ...DB.pedidos[idx], clienteId, servicos, materiais, desconto, status, total };
-            if (DBReady) await DB_SERVICE.updatePedido(DB.pedidos[idx].docId, { clienteId, servicos, materiais, desconto, status, total });
+            pedidoSalvo = DB.pedidos[idx];
+            if (DBReady) await DB_SERVICE.updatePedido(pedidoSalvo.docId, { clienteId, servicos, materiais, desconto, status, total });
         }
     } else {
         const novoPedido = {
@@ -666,15 +706,19 @@ async function salvarPedido() {
             data: new Date().toISOString().split('T')[0]
         };
         DB.pedidos.push(novoPedido);
+        pedidoSalvo = novoPedido;
         if (DBReady) {
             const docId = await DB_SERVICE.addPedido(novoPedido);
             DB.pedidos[DB.pedidos.length - 1].docId = docId;
         }
     }
 
+    await sincronizarFinanceiroPedido(pedidoSalvo);
+
     closeAllModals();
     renderPedidosAdmin();
     renderAdminDashboard();
+    renderFinanceiro();
     showToast(id ? 'Pedido atualizado!' : 'Pedido criado!', 'success');
     clearForm('pedido');
 }
@@ -706,9 +750,15 @@ async function excluirPedido(id) {
     if (!confirm('Tem certeza que deseja excluir este pedido?')) return;
     const item = DB.pedidos.find(p => p.id === id);
     DB.pedidos = DB.pedidos.filter(p => p.id !== id);
+    const mov = DB.movimentacoes.find(m => m.pedidoId === id);
+    if (mov) {
+        DB.movimentacoes = DB.movimentacoes.filter(m => m.id !== mov.id);
+        if (DBReady && mov.docId) await DB_SERVICE.deleteMovimentacao(mov.docId);
+    }
     if (DBReady && item?.docId) await DB_SERVICE.deletePedido(item.docId);
     renderPedidosAdmin();
     renderAdminDashboard();
+    renderFinanceiro();
     showToast('Pedido excluído!', 'success');
 }
 
@@ -761,14 +811,55 @@ function verDetalhesPedido(id) {
 // FINANCEIRO
 // ============================================
 function renderFinanceiro() {
-    const entrada = DB.movimentacoes.filter(m => m.tipo === 'entrada').reduce((s, m) => s + m.valor, 0);
+    const recebido = DB.movimentacoes.filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente').reduce((s, m) => s + m.valor, 0);
+    const aReceber = DB.movimentacoes.filter(m => m.tipo === 'entrada' && m.pagamento === 'pendente').reduce((s, m) => s + m.valor, 0);
     const saida = DB.movimentacoes.filter(m => m.tipo === 'saida').reduce((s, m) => s + m.valor, 0);
 
-    document.getElementById('totalEntradas').textContent = formatCurrency(entrada);
+    document.getElementById('totalEntradas').textContent = formatCurrency(recebido);
+    const aReceberEl = document.getElementById('totalAReceber');
+    if (aReceberEl) aReceberEl.textContent = formatCurrency(aReceber);
     document.getElementById('totalSaidas').textContent = formatCurrency(saida);
-    document.getElementById('saldoGeral').textContent = formatCurrency(entrada - saida);
+    document.getElementById('saldoGeral').textContent = formatCurrency(recebido - saida);
 
     renderMovimentacoes();
+}
+
+async function sincronizarFinanceiroPedido(p) {
+    if (!p) return null;
+    const existente = DB.movimentacoes.find(m => m.pedidoId === p.id) ||
+        DB.movimentacoes.find(m => m.tipo === 'entrada' && (m.descricao || '').includes(`Pedido #${p.id}`) && m.pagamento !== 'pendente');
+
+    if (p.status === 'cancelado') {
+        if (existente) {
+            DB.movimentacoes = DB.movimentacoes.filter(m => m.id !== existente.id);
+            if (DBReady && existente.docId) await DB_SERVICE.deleteMovimentacao(existente.docId);
+        }
+        return null;
+    }
+
+    if (existente) {
+        const mudancas = { tipo: 'entrada', descricao: `Pedido #${p.id}`, valor: p.total, categoria: 'servico', pagamento: existente.pagamento || 'pendente', data: existente.data, pedidoId: p.id };
+        Object.assign(existente, mudancas);
+        if (DBReady && existente.docId) await DB_SERVICE.updateMovimentacao(existente.docId, mudancas);
+        return existente;
+    }
+
+    const nova = {
+        id: DB.nextId.movimentacao++,
+        tipo: 'entrada',
+        descricao: `Pedido #${p.id}`,
+        valor: p.total,
+        categoria: 'servico',
+        pagamento: 'pendente',
+        data: new Date().toISOString().split('T')[0],
+        pedidoId: p.id
+    };
+    DB.movimentacoes.push(nova);
+    if (DBReady) {
+        const docId = await DB_SERVICE.addMovimentacao(nova);
+        nova.docId = docId;
+    }
+    return nova;
 }
 
 function renderMovimentacoes() {
@@ -784,13 +875,15 @@ function renderMovimentacoes() {
     movs.sort((a, b) => new Date(b.data) - new Date(a.data));
 
     const tbody = document.getElementById('movimentacoesBody');
-    tbody.innerHTML = movs.map(m => `<tr>
+    tbody.innerHTML = movs.map(m => `<tr class="${m.pagamento === 'pendente' ? 'mov-pendente' : ''}">
         <td>${formatDate(m.data)}</td>
         <td>${m.descricao}</td>
         <td><span class="status-badge status-${m.tipo === 'entrada' ? 'concluido' : 'cancelado'}">${capitalize(m.tipo)}</span></td>
         <td>${capitalize(m.categoria)}</td>
         <td class="mov-item-value ${m.tipo}">${m.tipo === 'entrada' ? '+' : '-'}${formatCurrency(m.valor)}</td>
-        <td>${capitalize(m.pagamento)}</td>
+        <td>${m.pagamento === 'pendente'
+            ? `<span class="status-badge status-pendente">Pendente</span>`
+            : capitalize(m.pagamento)}</td>
         <td>
             <div class="table-actions">
                 <button class="btn-del" onclick="excluirMovimentacao(${m.id})" title="Excluir"><i class="fas fa-trash"></i></button>
@@ -842,7 +935,7 @@ async function excluirMovimentacao(id) {
 // ============================================
 function valorPagoPedido(p) {
     return DB.movimentacoes
-        .filter(m => m.tipo === 'entrada' && (m.descricao || '').includes(`Pedido #${p.id}`))
+        .filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente' && (m.descricao || '').includes(`Pedido #${p.id}`))
         .reduce((s, m) => s + m.valor, 0);
 }
 
@@ -1181,7 +1274,7 @@ function updateClientPedidoTotal() {
     document.getElementById('clientPedidoTotal').textContent = formatCurrency(total);
 }
 
-function salvarPedidoClient() {
+async function salvarPedidoClient() {
     if (!currentUser || currentUser.role !== 'client') return;
     const servicos = [...document.querySelectorAll('#clientPedidoServicos input:checked')].map(cb => parseInt(cb.value));
     const materiais = [...document.querySelectorAll('#clientPedidoMateriais input:checked')].map(cb => parseInt(cb.value));
@@ -1195,7 +1288,7 @@ function salvarPedidoClient() {
     servicos.forEach(id => { const s = DB.servicos.find(x => x.id === id); if (s) total += s.preco; });
     materiais.forEach(id => { const m = DB.materiais.find(x => x.id === id); if (m) total += m.preco; });
 
-    DB.pedidos.push({
+    const novoPedido = {
         id: DB.nextId.pedido++,
         clienteId: currentUser.id,
         servicos, materiais,
@@ -1203,14 +1296,20 @@ function salvarPedidoClient() {
         status: 'pendente',
         data: new Date().toISOString().split('T')[0],
         total
-    });
+    };
+    DB.pedidos.push(novoPedido);
+    if (DBReady) {
+        const docId = await DB_SERVICE.addPedido(novoPedido);
+        novoPedido.docId = docId;
+    }
+    await sincronizarFinanceiroPedido(novoPedido);
 
     // Adicionar notificação no chat
     const chatKey = `admin_${currentUser.id}`;
     if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
     DB.chats[chatKey].push({
         tipo: 'sistema',
-        mensagem: `Novo pedido #${DB.nextId.pedido - 1} criado com total de ${formatCurrency(total)}`,
+        mensagem: `Novo pedido #${novoPedido.id} criado com total de ${formatCurrency(total)}`,
         data: new Date().toISOString()
     });
 
@@ -1262,16 +1361,31 @@ function confirmarPagamento() {
     // Update pedido status
     p.status = 'em_andamento';
 
-    // Add movimentacao
-    DB.movimentacoes.push({
-        id: DB.nextId.movimentacao++,
-        tipo: 'entrada',
-        descricao: `Pagamento Pedido #${p.id}`,
-        valor: p.total,
-        categoria: 'servico',
-        pagamento: tipo,
-        data: new Date().toISOString().split('T')[0]
-    });
+    // Atualizar/registrar movimentação no financeiro
+    const mov = DB.movimentacoes.find(m => m.pedidoId === p.id) ||
+        DB.movimentacoes.find(m => m.tipo === 'entrada' && (m.descricao || '').includes(`Pedido #${p.id}`) && m.pagamento === 'pendente');
+    if (mov) {
+        mov.pagamento = tipo;
+        mov.descricao = `Pagamento Pedido #${p.id}`;
+        mov.tipo = 'entrada';
+        mov.categoria = mov.categoria || 'servico';
+        mov.valor = p.total;
+        mov.pedidoId = p.id;
+        if (DBReady && mov.docId) DB_SERVICE.updateMovimentacao(mov.docId, { tipo: mov.tipo, descricao: mov.descricao, valor: mov.valor, categoria: mov.categoria, pagamento: mov.pagamento, data: mov.data });
+    } else {
+        DB.movimentacoes.push({
+            id: DB.nextId.movimentacao++,
+            tipo: 'entrada',
+            descricao: `Pagamento Pedido #${p.id}`,
+            valor: p.total,
+            categoria: 'servico',
+            pagamento: tipo,
+            data: new Date().toISOString().split('T')[0],
+            pedidoId: p.id
+        });
+        let nova = DB.movimentacoes[DB.movimentacoes.length - 1];
+        if (DBReady) DB_SERVICE.addMovimentacao(nova).then(docId => nova.docId = docId);
+    }
 
     // Update stock
     p.materiais.forEach(mId => {
@@ -1291,6 +1405,7 @@ function confirmarPagamento() {
     closeAllModals();
     renderPedidosClient();
     renderClientDashboard();
+    renderFinanceiro();
     showToast('Pagamento confirmado com sucesso!', 'success');
 }
 

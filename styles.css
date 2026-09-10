@@ -1940,6 +1940,14 @@ body {
     color: var(--danger);
 }
 
+.mov-pendente {
+    background: rgba(253,203,110,0.08);
+}
+
+.mov-pendente:hover {
+    background: rgba(253,203,110,0.15);
+}
+
 /* DETALHES PEDIDO */
 .detalhe-section {
     margin-bottom: 20px;

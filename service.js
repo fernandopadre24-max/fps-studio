@@ -48,6 +48,7 @@ const DB_SERVICE = {
     // MOVIMENTAÇÕES
     async getMovimentacoes() { return apiCall('movimentacoes'); },
     async addMovimentacao(d) { return apiCall('movimentacoes', 'POST', d); },
+    async updateMovimentacao(id, d) { return apiCall('movimentacoes', 'PUT', d, { id }); },
     async deleteMovimentacao(id) { return apiCall('movimentacoes', 'DELETE', null, { id }); },
 
     // CHAT

@@ -121,14 +121,20 @@ module.exports = async (req, res) => {
             // MOVIMENTAÇÕES
             case 'movimentacoes':
                 if (method === 'GET') {
-                    result = queryAll(db, 'SELECT * FROM movimentacoes ORDER BY data DESC');
+                    result = queryAll(db, 'SELECT * FROM movimentacoes ORDER BY data DESC, id DESC');
                 } else if (method === 'POST') {
-                    const { tipo, descricao, valor, categoria, pagamento, data } = req.body;
-                    db.run('INSERT INTO movimentacoes (tipo, descricao, valor, categoria, pagamento, data) VALUES (?, ?, ?, ?, ?, ?)',
-                        [tipo, descricao, valor || 0, categoria || 'outro', pagamento || 'pix', data]);
+                    const { tipo, descricao, valor, categoria, pagamento, data, pedidoId } = req.body;
+                    db.run('INSERT INTO movimentacoes (tipo, descricao, valor, categoria, pagamento, data, pedidoId) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                        [tipo, descricao, valor || 0, categoria || 'outro', pagamento || 'pix', data, pedidoId || null]);
                     const r = queryOne(db, 'SELECT last_insert_rowid() as id');
                     saveDb(db);
                     result = { id: r.id };
+                } else if (method === 'PUT') {
+                    const { tipo, descricao, valor, categoria, pagamento, data, pedidoId } = req.body;
+                    db.run('UPDATE movimentacoes SET tipo=?, descricao=?, valor=?, categoria=?, pagamento=?, data=?, pedidoId=? WHERE id=?',
+                        [tipo, descricao, valor || 0, categoria || 'outro', pagamento || 'pix', data, pedidoId || null, id]);
+                    saveDb(db);
+                    result = { ok: true };
                 } else if (method === 'DELETE') {
                     db.run('DELETE FROM movimentacoes WHERE id=?', [id]);
                     saveDb(db);
