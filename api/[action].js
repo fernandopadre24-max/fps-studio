@@ -179,6 +179,106 @@ module.exports = async (req, res) => {
                 }
                 break;
 
+            // CONFIGURAÇÕES
+            case 'config':
+                if (method === 'GET') {
+                    const rows = queryAll(db, 'SELECT chave, valor FROM config');
+                    const obj = {};
+                    rows.forEach(r => { try { obj[r.chave] = JSON.parse(r.valor); } catch(e) { obj[r.chave] = r.valor; } });
+                    result = obj;
+                } else if (method === 'POST') {
+                    const data = req.body || {};
+                    Object.keys(data).forEach(chave => {
+                        db.run('INSERT INTO config (chave, valor) VALUES (?, ?) ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor',
+                            [chave, JSON.stringify(data[chave])]);
+                    });
+                    saveDb(db);
+                    result = { ok: true };
+                }
+                break;
+
+            // BACKUP / RESTAURAÇÃO
+            case 'backup_export':
+                if (method === 'GET') {
+                    const configRows = queryAll(db, 'SELECT chave, valor FROM config');
+                    const configObj = {};
+                    configRows.forEach(r => { try { configObj[r.chave] = JSON.parse(r.valor); } catch(e) { configObj[r.chave] = r.valor; } });
+                    const pedidos = queryAll(db, 'SELECT * FROM pedidos ORDER BY id');
+                    result = {
+                        tipo: 'fps-studio-backup',
+                        versao: 1,
+                        exportadoEm: new Date().toISOString(),
+                        config: configObj,
+                        servicos: queryAll(db, 'SELECT * FROM servicos ORDER BY id'),
+                        materiais: queryAll(db, 'SELECT * FROM materiais ORDER BY id'),
+                        clientes: queryAll(db, 'SELECT * FROM clientes ORDER BY id'),
+                        pedidos: pedidos.map(p => ({ ...p, servicos: JSON.parse(p.servicos || '[]'), materiais: JSON.parse(p.materiais || '[]') })),
+                        movimentacoes: queryAll(db, 'SELECT * FROM movimentacoes ORDER BY id'),
+                        chats: queryAll(db, 'SELECT * FROM chats ORDER BY id')
+                    };
+                } else {
+                    throw new Error('Use GET para exportar backup');
+                }
+                break;
+
+            case 'backup_import':
+                if (method === 'POST') {
+                    const data = req.body || {};
+                    if (data.tipo !== 'fps-studio-backup') throw new Error('Arquivo de backup inválido');
+
+                    const ins = (tabela, colunas) => (row) => {
+                        const vals = colunas.map(c => row[c] === undefined ? null : row[c]);
+                        db.run(`INSERT INTO ${tabela} (${colunas.join(', ')}) VALUES (${colunas.map(() => '?').join(', ')})`, vals);
+                    };
+
+                    db.run('BEGIN');
+                    try {
+                        db.run('DELETE FROM config'); db.run('DELETE FROM chats'); db.run('DELETE FROM movimentacoes');
+                        db.run('DELETE FROM pedidos'); db.run('DELETE FROM clientes'); db.run('DELETE FROM materiais');
+                        db.run('DELETE FROM servicos');
+
+                        if (data.config && typeof data.config === 'object' && Object.keys(data.config).length) {
+                            Object.keys(data.config).forEach(chave => {
+                                db.run('INSERT INTO config (chave, valor) VALUES (?, ?)', [chave, JSON.stringify(data.config[chave])]);
+                            });
+                        }
+
+                        const insServico = ins('servicos', ['id', 'nome', 'descricao', 'preco', 'duracao', 'icone', 'imagem']);
+                        (data.servicos || []).forEach(insServico);
+                        const insMaterial = ins('materiais', ['id', 'nome', 'descricao', 'preco', 'estoque', 'categoria', 'imagem']);
+                        (data.materiais || []).forEach(insMaterial);
+                        const insCliente = ins('clientes', ['id', 'nome', 'email', 'telefone', 'senha', 'pin']);
+                        (data.clientes || []).forEach(insCliente);
+                        const insPedido = ins('pedidos', ['id', 'clienteId', 'servicos', 'materiais', 'desconto', 'status', 'data', 'total']);
+                        ((data.pedidos || []).map(p => ({ ...p, servicos: JSON.stringify(p.servicos || []), materiais: JSON.stringify(p.materiais || []) }))).forEach(insPedido);
+                        const insMov = ins('movimentacoes', ['id', 'tipo', 'descricao', 'valor', 'categoria', 'pagamento', 'data', 'pedidoId']);
+                        (data.movimentacoes || []).forEach(insMov);
+                        const insChat = ins('chats', ['id', 'tipo', 'remetente', 'clienteId', 'mensagem', 'descricao', 'valor', 'validade', 'data', 'lida', 'desconto', 'status', 'pedidoId', 'imagem']);
+                        (data.chats || []).forEach(insChat);
+
+                        db.run('COMMIT');
+                        saveDb(db);
+                    } catch (e) {
+                        db.run('ROLLBACK');
+                        throw e;
+                    }
+
+                    result = {
+                        ok: true,
+                        contagens: {
+                            servicos: (data.servicos || []).length,
+                            materiais: (data.materiais || []).length,
+                            clientes: (data.clientes || []).length,
+                            pedidos: (data.pedidos || []).length,
+                            movimentacoes: (data.movimentacoes || []).length,
+                            chats: (data.chats || []).length
+                        }
+                    };
+                } else {
+                    throw new Error('Use POST para restaurar backup');
+                }
+                break;
+
             default:
                 return res.status(400).json({ error: 'Ação inválida' });
         }

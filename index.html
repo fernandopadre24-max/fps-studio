@@ -18,7 +18,7 @@
             <div class="login-card">
                 <div class="login-logo">
                     <i class="fas fa-microphone-alt"></i>
-                    <h1>FPS Studio</h1>
+                    <h1 id="appTitleLogin">FPS Studio</h1>
                     <p>Sistema de Gerenciamento</p>
                 </div>
 
@@ -122,7 +122,7 @@
         <aside class="sidebar" id="adminSidebar">
             <div class="sidebar-header">
                 <i class="fas fa-microphone-alt"></i>
-                <span>FPS Studio</span>
+                <span class="brand-titulo">FPS Studio</span>
             </div>
             <nav class="sidebar-nav">
                 <a href="#" class="nav-item active" data-page="adminHome">
@@ -146,6 +146,9 @@
                 </a>
                 <a href="#" class="nav-item" data-page="adminClientes">
                     <i class="fas fa-users"></i><span>Clientes</span>
+                </a>
+                <a href="#" class="nav-item" data-page="adminConfig">
+                    <i class="fas fa-cog"></i><span>Configurações</span>
                 </a>
             </nav>
             <div class="sidebar-footer">
@@ -345,15 +348,26 @@
                         </button>
                     </div>
                     <div class="filter-bar">
-                        <select id="filtroStatusPedido" onchange="renderPedidosAdmin()">
-                            <option value="todos">Todos</option>
-                            <option value="pendente">Pendente</option>
-                            <option value="em_andamento">Em Andamento</option>
-                            <option value="concluido">Concluído</option>
-                            <option value="cancelado">Cancelado</option>
+                        <div class="view-toggle">
+                            <button class="vt-btn active" id="btnViewBoard" onclick="alternarVisaoPedidos('board')"><i class="fas fa-columns"></i> Quadro</button>
+                            <button class="vt-btn" id="btnViewTable" onclick="alternarVisaoPedidos('table')"><i class="fas fa-table"></i> Tabela</button>
+                        </div>
+                        <select id="filtroClientePedido" onchange="renderPedidosAdmin()">
+                            <option value="">Todos os clientes</option>
                         </select>
+                        <input type="search" id="buscaPedidoAdmin" placeholder="Buscar pedido ou cliente..." oninput="renderPedidosAdmin()">
+                        <div id="wrapStatusFiltro" style="display:none">
+                            <select id="filtroStatusPedido" onchange="renderPedidosAdmin()">
+                                <option value="todos">Todos</option>
+                                <option value="pendente">Pendente</option>
+                                <option value="em_andamento">Em Andamento</option>
+                                <option value="concluido">Concluído</option>
+                                <option value="cancelado">Cancelado</option>
+                            </select>
+                        </div>
                     </div>
-                    <div class="table-container">
+                    <div class="kanban-board" id="kanbanPedidos"></div>
+                    <div class="table-container" id="tabelaPedidosWrap" style="display:none">
                         <table class="data-table" id="tabelaPedidosAdmin">
                             <thead>
                                 <tr>
@@ -510,6 +524,95 @@
                         </table>
                     </div>
                 </div>
+
+                <!-- CONFIGURAÇÕES -->
+                <div class="page" id="adminConfig">
+                    <div class="page-header">
+                        <h2>Configurações do Sistema</h2>
+                        <div class="page-header-actions">
+                            <button class="btn-secondary" onclick="restaurarConfigPadrao()"><i class="fas fa-undo"></i> Padrão</button>
+                            <button class="btn-primary" onclick="salvarConfig()"><i class="fas fa-save"></i> Salvar</button>
+                        </div>
+                    </div>
+                    <div class="settings-grid">
+                        <div class="card">
+                            <div class="card-header"><h3><i class="fas fa-pen"></i> Identidade</h3></div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <label>Título do App</label>
+                                    <input type="text" id="configTitulo" maxlength="40" placeholder="Ex.: FPS Studio">
+                                    <small class="field-hint">Aparece no login e na barra lateral.</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><h3><i class="fas fa-palette"></i> Aparência</h3></div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <label>Tema de cores</label>
+                                    <select id="configTema" onchange="atualizarVisualConfig()">
+                                        <option value="padrao">Padrão (Roxo)</option>
+                                        <option value="neon">Neon (Ciano)</option>
+                                        <option value="oceano">Oceano (Azul)</option>
+                                        <option value="esmeralda">Esmeralda (Verde)</option>
+                                        <option value="solar">Solar (Âmbar)</option>
+                                        <option value="rosa">Rosa</option>
+                                        <option value="custom">Cor personalizada</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" id="linhaCorCustom" style="display:none">
+                                    <label>Cor personalizada</label>
+                                    <div class="color-row">
+                                        <input type="color" id="configCorCustom" value="#6c5ce7" onchange="atualizarVisualConfig()">
+                                        <span id="configCorSwatch"></span>
+                                        <button class="btn-secondary btn-sm" onclick="aplicarCorConfig()"><i class="fas fa-check"></i> Aplicar</button>
+                                    </div>
+                                </div>
+                                <div class="form-group switch-group">
+                                    <label class="switch-label" for="configDark">Modo escuro padrão</label>
+                                    <label class="switch">
+                                        <input type="checkbox" id="configDark">
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                                <div class="config-preview">
+                                    <span class="field-hint">Pré-visualização da cor</span>
+                                    <div class="config-preview-bar" id="configPreviewCor"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><h3><i class="fas fa-font"></i> Tipografia</h3></div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <label>Fonte</label>
+                                    <select id="configFonte">
+                                        <option value="Inter">Inter</option>
+                                        <option value="Poppins">Poppins</option>
+                                        <option value="Roboto">Roboto</option>
+                                        <option value="Montserrat">Montserrat</option>
+                                        <option value="Open Sans">Open Sans</option>
+                                        <option value="Lato">Lato</option>
+                                        <option value="Segoe UI">Segoe UI</option>
+                                        <option value="Arial">Arial</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Tamanho da fonte: <strong id="configFontSizeVal">14px</strong></label>
+                                    <input type="range" id="configFontSize" min="12" max="18" step="0.5" oninput="document.getElementById('configFontSizeVal').textContent = this.value + 'px'">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><h3><i class="fas fa-database"></i> Backup e Restauração</h3></div>
+                            <div class="card-body backup-actions">
+                                <button class="btn-primary" onclick="exportarBackup()"><i class="fas fa-download"></i> Exportar Backup</button>
+                                <label class="btn-secondary file-btn"><i class="fas fa-upload"></i> Restaurar Backup<input type="file" id="backupFile" accept=".json,application/json" onchange="importarBackup(this)" style="display:none"></label>
+                                <p class="field-hint">O backup inclui serviços, materiais, clientes, pedidos, movimentações, chat e configurações. Restaurar substitui todos os dados atuais.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </main>
     </div>
@@ -519,7 +622,7 @@
         <aside class="sidebar client-sidebar" id="clientSidebar">
             <div class="sidebar-header">
                 <i class="fas fa-microphone-alt"></i>
-                <span>FPS Studio</span>
+                <span class="brand-titulo">FPS Studio</span>
             </div>
             <nav class="sidebar-nav">
                 <a href="#" class="nav-item active" data-page="clientHome">

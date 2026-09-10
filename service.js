@@ -56,6 +56,14 @@ const DB_SERVICE = {
     async sendMessage(d) { return apiCall('chat', 'POST', d); },
     async updateMessage(id, d) { return apiCall('chat', 'PUT', d, { id }); },
 
+    // CONFIGURAÇÕES
+    async getConfig() { return apiCall('config'); },
+    async saveConfig(d) { return apiCall('config', 'POST', d); },
+
+    // BACKUP / RESTAURAÇÃO
+    async exportBackup() { return apiCall('backup_export'); },
+    async importBackup(d) { return apiCall('backup_import', 'POST', d); },
+
     // INIT (não precisa de seed, o db.js já faz)
     async init() {
         try {

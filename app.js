@@ -20,6 +20,9 @@ let selectedPedidoId = null;
 let selectedPagamentoValor = 0;
 const clientesExpandidos = new Set();
 
+let APP_CONFIG = null;
+const CONFIG_DEFAULT = { appTitle: 'FPS Studio', tema: 'padrao', primaryColor: '', fonte: 'Inter', fontSize: 14, darkPadrao: false };
+
 // ============================================
 // INICIALIZAÇÃO COM SQLITE (via API)
 // ============================================
@@ -33,6 +36,11 @@ async function initApp() {
             DB.clientes = await DB_SERVICE.getClientes();
             DB.pedidos = await DB_SERVICE.getPedidos();
             DB.movimentacoes = await DB_SERVICE.getMovimentacoes();
+
+            // Normaliza docId = id (o id do servidor é o mesmo do cliente)
+            ['servicos', 'materiais', 'clientes', 'pedidos', 'movimentacoes'].forEach(tabela => {
+                DB[tabela].forEach(r => { r.docId = r.id; });
+            });
 
             // Calcular nextIds
             if (DB.servicos.length) DB.nextId.servico = Math.max(...DB.servicos.map(s => s.id)) + 1;
@@ -55,6 +63,8 @@ async function initApp() {
         console.warn('API SQLite offline. Modo local ativo.', err);
         DBReady = false;
     }
+
+    await carregarConfig();
 
     setupDragDrop();
     document.getElementById('movData').value = new Date().toISOString().split('T')[0];
@@ -325,6 +335,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
             adminFinanceiro: 'Controle Financeiro',
             adminChat: 'Chat com Clientes',
             adminClientes: 'Gerenciar Clientes',
+            adminConfig: 'Configurações',
             clientHome: 'Painel do Cliente',
             clientServicos: 'Nossos Serviços',
             clientMateriais: 'Materiais Disponíveis',
@@ -348,6 +359,7 @@ function renderCurrentPage(page) {
         case 'adminFinanceiro': renderFinanceiro(); break;
         case 'adminChat': renderChatList(); break;
         case 'adminClientes': renderClientes(); break;
+        case 'adminConfig': preencherFormConfig(); break;
         case 'clientHome': renderClientDashboard(); break;
         case 'clientServicos': renderServicosClient(); break;
         case 'clientMateriais': renderMateriaisClient(); break;
@@ -806,12 +818,28 @@ function removerImagemMaterial(e) {
 // PEDIDOS ADMIN
 // ============================================
 function renderPedidosAdmin() {
-    const filtro = document.getElementById('filtroStatusPedido').value;
-    let pedidos = [...DB.pedidos];
-    if (filtro !== 'todos') pedidos = pedidos.filter(p => p.status === filtro);
+    const selCliente = document.getElementById('filtroClientePedido');
+    const clienteVal = selCliente.value;
+    selCliente.innerHTML = '<option value="">Todos os clientes</option>' +
+        DB.clientes.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+    selCliente.value = clienteVal;
 
+    const busca = (document.getElementById('buscaPedidoAdmin').value || '').trim().toLowerCase();
+    let pedidos = DB.pedidos.filter(p => {
+        const cliente = DB.clientes.find(c => c.id === p.clienteId);
+        const nome = cliente ? cliente.nome.toLowerCase() : '';
+        if (clienteVal && p.clienteId !== parseInt(clienteVal)) return false;
+        if (busca && !String(p.id).includes(busca.replace('#', '')) && !nome.includes(busca)) return false;
+        return true;
+    });
+
+    renderKanbanPedidos(pedidos);
+
+    const filtro = document.getElementById('filtroStatusPedido').value;
+    let tabela = pedidos;
+    if (filtro !== 'todos') tabela = tabela.filter(p => p.status === filtro);
     const tbody = document.getElementById('pedidosAdminBody');
-    tbody.innerHTML = pedidos.map(p => {
+    tbody.innerHTML = tabela.map(p => {
         const cliente = DB.clientes.find(c => c.id === p.clienteId);
         const servicoNomes = p.servicos.map(id => DB.servicos.find(s => s.id === id)?.nome || '').filter(Boolean).join(', ');
         return `<tr>
@@ -830,6 +858,109 @@ function renderPedidosAdmin() {
             </td>
         </tr>`;
     }).join('');
+}
+
+function pedidoKanbanCard(p) {
+    const cliente = DB.clientes.find(c => c.id === p.clienteId);
+    const servicoNomes = p.servicos.map(id => DB.servicos.find(s => s.id === id)?.nome || '').filter(Boolean);
+    const mostrar = servicoNomes.slice(0, 2);
+    const extra = servicoNomes.length - mostrar.length;
+    const pagos = valorPagoPedido(p) > 0;
+    return `<div class="kanban-card" draggable="true" ondragstart="dragPedido(event, ${p.id})" ondragend="this.classList.remove('dragging')">
+        <div class="kanban-card-top">
+            <strong>#${p.id}</strong>
+            <span class="kanban-pagamento ${pagos ? 'pag-ok' : 'pag-pend'}">${pagos ? '<i class="fas fa-check-circle"></i> Pago' : '<i class="fas fa-hourglass"></i> Aguardando'}</span>
+        </div>
+        <h5 class="kanban-cliente"><i class="fas fa-user-circle"></i> ${cliente ? cliente.nome : 'N/A'}</h5>
+        <div class="kanban-servicos">
+            ${servicoNomes.length === 0 ? '<span class="kanban-chip chip-material">Materiais</span>' : mostrar.map(n => `<span class="kanban-chip">${n}</span>`).join('')}
+            ${extra > 0 ? `<span class="kanban-chip">+${extra}</span>` : ''}
+        </div>
+        <div class="kanban-card-bottom">
+            <strong class="kanban-total">${formatCurrency(p.total)}</strong>
+            <span class="kanban-data">${formatDate(p.data)}</span>
+        </div>
+        <div class="kanban-card-acoes">
+            <button title="Ver detalhes" onclick="verDetalhesPedido(${p.id})"><i class="fas fa-eye"></i></button>
+            <button title="Avançar etapa" onclick="avancarStagePedido(${p.id})"><i class="fas fa-forward"></i></button>
+            <button title="Editar" onclick="editarPedido(${p.id})"><i class="fas fa-edit"></i></button>
+            <button class="btn-del" title="Excluir" onclick="excluirPedido(${p.id})"><i class="fas fa-trash"></i></button>
+        </div>
+    </div>`;
+}
+
+function renderKanbanPedidos(pedidos) {
+    const cols = [
+        { status: 'pendente', rotulo: 'Pendente', icone: 'fa-hourglass-half', cor: '#fdcb6e' },
+        { status: 'em_andamento', rotulo: 'Em Andamento', icone: 'fa-spinner', cor: '#6c5ce7' },
+        { status: 'concluido', rotulo: 'Concluído', icone: 'fa-check-circle', cor: '#00b894' },
+        { status: 'cancelado', rotulo: 'Cancelado', icone: 'fa-ban', cor: '#d63031' }
+    ];
+    const board = document.getElementById('kanbanPedidos');
+    board.innerHTML = cols.map(col => {
+        const itens = pedidos.filter(p => p.status === col.status);
+        return `<div class="kanban-col" data-status="${col.status}"
+            ondragover="event.preventDefault(); this.classList.add('kanban-over')"
+            ondragleave="this.classList.remove('kanban-over')"
+            ondrop="soltarPedidoKanban(event, '${col.status}')">
+            <div class="kanban-col-header">
+                <span class="kanban-titulo"><i class="fas ${col.icone}" style="color:${col.cor}"></i> ${col.rotulo}</span>
+                <span class="kanban-count">${itens.length}</span>
+            </div>
+            <div class="kanban-col-body">
+                ${itens.length ? itens.map(p => pedidoKanbanCard(p)).join('') : '<p class="kanban-vazio">Nenhum pedido</p>'}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function dragPedido(event, id) {
+    event.dataTransfer.setData('text/plain', String(id));
+    event.dataTransfer.effectAllowed = 'move';
+    event.currentTarget.classList.add('dragging');
+}
+
+async function moverPedidoStatus(id, novoStatus) {
+    const p = DB.pedidos.find(x => x.id === id);
+    if (!p || p.status === novoStatus) return;
+    p.status = novoStatus;
+    if (DBReady) {
+        await DB_SERVICE.updatePedido(p.docId, { clienteId: p.clienteId, servicos: p.servicos, materiais: p.materiais, desconto: p.desconto, status: novoStatus, total: p.total });
+    }
+    const mov = DB.movimentacoes.find(m => m.pedidoId === id && m.pagamento === 'pendente');
+    if (novoStatus === 'cancelado' && mov) {
+        DB.movimentacoes = DB.movimentacoes.filter(m => m.id !== mov.id);
+        if (DBReady && mov.docId) await DB_SERVICE.deleteMovimentacao(mov.docId);
+    }
+    renderPedidosAdmin();
+    renderAdminDashboard();
+    renderFinanceiro();
+    showToast(`Pedido #${id} movido para ${statusLabel(novoStatus)}`, 'success');
+}
+
+async function soltarPedidoKanban(event, status) {
+    event.preventDefault();
+    event.currentTarget.classList.remove('kanban-over');
+    const id = parseInt(event.dataTransfer.getData('text/plain'));
+    if (id) await moverPedidoStatus(id, status);
+}
+
+const ordemPedidoStage = ['pendente', 'em_andamento', 'concluido'];
+function avancarStagePedido(id) {
+    const p = DB.pedidos.find(x => x.id === id);
+    if (!p) return;
+    if (p.status === 'cancelado') { moverPedidoStatus(id, 'pendente'); return; }
+    const idx = ordemPedidoStage.indexOf(p.status);
+    moverPedidoStatus(id, ordemPedidoStage[Math.min(idx + 1, ordemPedidoStage.length - 1)]);
+}
+
+function alternarVisaoPedidos(modo) {
+    document.getElementById('kanbanPedidos').style.display = modo === 'board' ? '' : 'none';
+    document.getElementById('tabelaPedidosWrap').style.display = modo === 'board' ? 'none' : 'block';
+    document.getElementById('btnViewBoard').classList.toggle('active', modo === 'board');
+    document.getElementById('btnViewTable').classList.toggle('active', modo === 'table');
+    document.getElementById('wrapStatusFiltro').style.display = modo === 'board' ? 'none' : 'inline-flex';
+    renderPedidosAdmin();
 }
 
 function preparePedidoModal() {
@@ -2445,6 +2576,193 @@ function showToast(message, type = 'info') {
 }
 
 // ============================================
+// CONFIGURAÇÕES DO APP (título, tema, cores, fonte, backup)
+// ============================================
+const TEMAS_PRESET = {
+    padrao:    { rotulo: 'Padrão',       primary: '#6c5ce7', dark: '#5a4bd1', light: '#a29bfe', grad1: '#0c0c1d', grad2: '#1a1a3e', grad3: '#2d1b69' },
+    neon:      { rotulo: 'Neon',         primary: '#00c2ff', dark: '#00a0d6', light: '#7aedff', grad1: '#0a0a23', grad2: '#11353f', grad3: '#0d4f63' },
+    oceano:    { rotulo: 'Oceano',       primary: '#2f6fed', dark: '#2553c9', light: '#7aa5ff', grad1: '#081125', grad2: '#12326b', grad3: '#1b5aa8' },
+    esmeralda: { rotulo: 'Esmeralda',    primary: '#10b981', dark: '#0d9668', light: '#6ee7b7', grad1: '#06281d', grad2: '#0c5c40', grad3: '#0f8f63' },
+    solar:     { rotulo: 'Solar',        primary: '#f59e0b', dark: '#d97706', light: '#fcd34d', grad1: '#2b1a05', grad2: '#6b3f08', grad3: '#b06a0e' },
+    rosa:      { rotulo: 'Rosa',         primary: '#ec4899', dark: '#d6378b', light: '#f9a8d4', grad1: '#2b0a1d', grad2: '#6b123c', grad3: '#a81f5f' }
+};
+
+function hexToRgb(hex) {
+    const m = (hex || '#6c5ce7').replace('#', '');
+    return { r: parseInt(m.slice(0, 2), 16), g: parseInt(m.slice(2, 4), 16), b: parseInt(m.slice(4, 6), 16) };
+}
+
+function shadeHex(hex, pct) {
+    const { r, g, b } = hexToRgb(hex);
+    const t = pct < 0 ? 0 : 255;
+    const p = Math.abs(pct);
+    const c = v => Math.round((t - v) * p) + v;
+    return `rgb(${c(r)}, ${c(g)}, ${c(b)})`;
+}
+
+function coresConfig() {
+    const cfg = APP_CONFIG || CONFIG_DEFAULT;
+    if (cfg.tema === 'custom') {
+        const cor = cfg.primaryColor && /^#[0-9a-fA-F]{6}$/.test(cfg.primaryColor) ? cfg.primaryColor : '#6c5ce7';
+        return { primary: cor, dark: shadeHex(cor, -0.25), light: shadeHex(cor, 0.4), grad1: '#0c0c1d', grad2: '#1a1a3e', grad3: '#2d1b69' };
+    }
+    return TEMAS_PRESET[cfg.tema] || TEMAS_PRESET.padrao;
+}
+
+function carregarFonte(familia) {
+    const fontes = {
+        'Inter': 'Inter:wght@400;500;600;700',
+        'Poppins': 'Poppins:wght@400;500;600;700',
+        'Roboto': 'Roboto:wght@400;500;700',
+        'Montserrat': 'Montserrat:wght@400;500;600;700',
+        'Open Sans': 'Open+Sans:wght@400;600;700',
+        'Lato': 'Lato:wght@400;700'
+    };
+    const el = document.getElementById('fonteDinamica');
+    if (el) el.remove();
+    const slug = fontes[familia];
+    if (!slug) return;
+    const link = document.createElement('link');
+    link.id = 'fonteDinamica';
+    link.rel = 'stylesheet';
+    link.href = `https://fonts.googleapis.com/css2?family=${slug}&display=swap`;
+    document.head.appendChild(link);
+}
+
+function aplicarConfigLook() {
+    const cfg = APP_CONFIG || CONFIG_DEFAULT;
+    const cor = coresConfig();
+    const root = document.documentElement;
+    root.style.setProperty('--primary', cor.primary);
+    root.style.setProperty('--primary-dark', cor.dark);
+    root.style.setProperty('--primary-light', cor.light);
+    root.style.setProperty('--ff', cfg.fonte);
+    root.style.zoom = Math.max(0.8, Math.min(1.3, (parseFloat(cfg.fontSize) || 14) / 14));
+
+    const titulo = cfg.appTitle || 'FPS Studio';
+    document.title = `${titulo} - Gerenciamento de Estúdio`;
+    document.querySelectorAll('.brand-titulo, #appTitleLogin').forEach(el => { if (el) el.textContent = titulo; });
+
+    const login = document.querySelector('.login-container');
+    if (login && cor.grad1) login.style.background = `linear-gradient(135deg, ${cor.grad1} 0%, ${cor.grad2} 50%, ${cor.grad3} 100%)`;
+
+    if (!localStorage.getItem('fps_tema')) document.body.classList.toggle('dark', !!cfg.darkPadrao);
+    atualizarIconeTema();
+    carregarFonte(cfg.fonte);
+}
+
+async function carregarConfig() {
+    try {
+        const dados = await DB_SERVICE.getConfig();
+        APP_CONFIG = Object.assign({}, CONFIG_DEFAULT, dados || {});
+    } catch (e) {
+        APP_CONFIG = Object.assign({}, CONFIG_DEFAULT);
+    }
+    aplicarConfigLook();
+}
+
+function preencherFormConfig() {
+    if (!document.getElementById('configTitulo')) return;
+    const cfg = APP_CONFIG || CONFIG_DEFAULT;
+    document.getElementById('configTitulo').value = cfg.appTitle;
+    document.getElementById('configTema').value = cfg.tema;
+    document.getElementById('configCorCustom').value = (cfg.tema === 'custom' && cfg.primaryColor) ? cfg.primaryColor : coresConfig().primary;
+    document.getElementById('configFonte').value = cfg.fonte;
+    document.getElementById('configFontSize').value = cfg.fontSize;
+    document.getElementById('configFontSizeVal').textContent = cfg.fontSize + 'px';
+    document.getElementById('configDark').checked = !!cfg.darkPadrao;
+    atualizarVisualConfig();
+}
+
+function atualizarVisualConfig() {
+    const tema = document.getElementById('configTema').value;
+    document.getElementById('linhaCorCustom').style.display = tema === 'custom' ? 'flex' : 'none';
+    const cor = tema === 'custom' ? document.getElementById('configCorCustom').value : (TEMAS_PRESET[tema] || TEMAS_PRESET.padrao).primary;
+    document.getElementById('configCorSwatch') && (document.getElementById('configCorSwatch').style.background = cor);
+    document.getElementById('configPreviewCor').style.background = cor;
+}
+
+function aplicarCorConfig() {
+    const cor = document.getElementById('configCorCustom').value;
+    document.getElementById('configPreviewCor').style.background = cor;
+    showToast('Cor selecionada. Clique em Salvar para aplicar.', 'info');
+}
+
+async function salvarConfig() {
+    if (!DBReady) { showToast('Sem conexão com o servidor para salvar!', 'error'); return; }
+    const cfg = {
+        appTitle: (document.getElementById('configTitulo').value || '').trim() || 'FPS Studio',
+        tema: document.getElementById('configTema').value,
+        primaryColor: document.getElementById('configTema').value === 'custom' ? document.getElementById('configCorCustom').value : '',
+        fonte: document.getElementById('configFonte').value,
+        fontSize: parseFloat(document.getElementById('configFontSize').value) || 14,
+        darkPadrao: document.getElementById('configDark').checked
+    };
+    try {
+        await DB_SERVICE.saveConfig(cfg);
+        APP_CONFIG = cfg;
+        aplicarConfigLook();
+        showToast('Configurações salvas com sucesso!', 'success');
+    } catch (e) {
+        showToast('Erro ao salvar configurações.', 'error');
+    }
+}
+
+async function restaurarConfigPadrao() {
+    if (!confirm('Restaurar as configurações de aparência para o padrão?')) return;
+    try {
+        await DB_SERVICE.saveConfig(Object.assign({}, CONFIG_DEFAULT));
+        APP_CONFIG = Object.assign({}, CONFIG_DEFAULT);
+        aplicarConfigLook();
+        preencherFormConfig();
+        showToast('Configurações padrão restauradas!', 'success');
+    } catch (e) {
+        showToast('Erro ao restaurar.', 'error');
+    }
+}
+
+async function exportarBackup() {
+    try {
+        showToast('Gerando backup...', 'info');
+        const data = await DB_SERVICE.exportBackup();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `fps-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        showToast('Backup gerado com sucesso!', 'success');
+    } catch (e) {
+        showToast('Erro ao gerar backup.', 'error');
+    }
+}
+
+async function importarBackup(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    if (!confirm('Restaurar este backup substituirá TODOS os dados atuais. Deseja continuar?')) { input.value = ''; return; }
+    try {
+        const texto = await file.text();
+        const dados = JSON.parse(texto);
+        if (dados.tipo !== 'fps-studio-backup') {
+            showToast('Este arquivo não é um backup do FPS Studio.', 'error');
+            return;
+        }
+        showToast('Restaurando backup...', 'info');
+        await DB_SERVICE.importBackup(dados);
+        showToast('Backup restaurado! Recarregando...', 'success');
+        setTimeout(() => location.reload(), 1400);
+    } catch (e) {
+        showToast('Erro ao restaurar backup.', 'error');
+    } finally {
+        input.value = '';
+    }
+}
+
+// ============================================
 // TOOLS DA TOPBAR (relógio, tema, calendário, calculadora, avisos)
 // ============================================
 const calcEstado = { '': { display: '0', prev: null, operador: null, reset: false }, 'Client': { display: '0', prev: null, operador: null, reset: false } };
@@ -2479,8 +2797,11 @@ function atualizarRelogio() {
 }
 
 function aplicarTema() {
-    if (!localStorage.getItem('fps_tema')) localStorage.setItem('fps_tema', 'light');
-    document.body.classList.toggle('dark', localStorage.getItem('fps_tema') === 'dark');
+    if (!localStorage.getItem('fps_tema')) {
+        document.body.classList.toggle('dark', !!(APP_CONFIG && APP_CONFIG.darkPadrao));
+    } else {
+        document.body.classList.toggle('dark', localStorage.getItem('fps_tema') === 'dark');
+    }
     atualizarIconeTema();
 }
 

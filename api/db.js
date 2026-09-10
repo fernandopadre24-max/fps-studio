@@ -121,6 +121,14 @@ async function initDb() {
     try { db.run('ALTER TABLE chats ADD COLUMN pedidoId INTEGER DEFAULT NULL'); } catch(e) {}
     try { db.run('ALTER TABLE chats ADD COLUMN imagem TEXT DEFAULT ""'); } catch(e) {}
 
+    db.run(`
+        CREATE TABLE IF NOT EXISTS config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chave TEXT UNIQUE NOT NULL,
+            valor TEXT DEFAULT ''
+        )
+    `);
+
     // Seed se vazio
     const result = db.exec("SELECT COUNT(*) as c FROM servicos");
     const count = result.length > 0 ? result[0].values[0][0] : 0;
