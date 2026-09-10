@@ -12,14 +12,14 @@ const DB = {
     nextId: { servico: 7, material: 7, cliente: 4, pedido: 4, movimentacao: 6 }
 };
 
-let DBReady = false; // Indica se o Firestore está conectado
+let DBReady = false; // Indica se o Supabase está conectado
 
 let currentUser = null;
 let currentChatClient = null;
 let selectedPedidoId = null;
 
 // ============================================
-// INICIALIZAÇÃO COM FIRESTORE
+// INICIALIZAÇÃO COM SUPABASE
 // ============================================
 async function initApp() {
     try {
@@ -28,7 +28,7 @@ async function initApp() {
             // Seed dados iniciais
             await DB_SERVICE.seedAll();
 
-            // Carrega todos os dados do Firestore
+            // Carrega todos os dados do Supabase
             DB.servicos = await DB_SERVICE.getServicos();
             DB.materiais = await DB_SERVICE.getMateriais();
             DB.clientes = await DB_SERVICE.getClientes();
@@ -50,10 +50,10 @@ async function initApp() {
             }
 
             DBReady = true;
-            console.log('Firestore conectado!');
+            console.log('Supabase conectado!');
         }
     } catch (err) {
-        console.warn('Firestore offline. Modo local ativo.', err);
+        console.warn('Supabase offline. Modo local ativo.', err);
         DBReady = false;
     }
 
