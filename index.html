@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FPS Studio - Gerenciamento de Estúdio</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- LOGIN SCREEN -->
+    <div id="loginScreen" class="screen active">
+        <div class="login-container">
+            <div class="login-bg">
+                <div class="login-particles"></div>
+            </div>
+            <div class="login-card">
+                <div class="login-logo">
+                    <i class="fas fa-microphone-alt"></i>
+                    <h1>FPS Studio</h1>
+                    <p>Sistema de Gerenciamento</p>
+                </div>
+
+                <!-- TABS LOGIN -->
+                <div class="login-tabs">
+                    <button class="login-tab active" onclick="switchLoginTab('senha')">
+                        <i class="fas fa-lock"></i> Senha
+                    </button>
+                    <button class="login-tab" onclick="switchLoginTab('pin')">
+                        <i class="fas fa-key"></i> PIN
+                    </button>
+                    <button class="login-tab" onclick="switchLoginTab('conta')">
+                        <i class="fas fa-user-plus"></i> Criar Conta
+                    </button>
+                </div>
+
+                <!-- FORM LOGIN SENHA -->
+                <form id="loginForm" class="login-form active">
+                    <div class="input-group">
+                        <i class="fas fa-user"></i>
+                        <input type="text" id="loginEmail" placeholder="E-mail ou Usuário" required>
+                    </div>
+                    <div class="input-group">
+                        <i class="fas fa-lock"></i>
+                        <input type="password" id="loginPassword" placeholder="Senha" required>
+                    </div>
+                    <button type="submit" class="btn-login">
+                        <span>Entrar</span>
+                        <i class="fas fa-arrow-right"></i>
+                    </button>
+                    <div class="login-hint">
+                        <p><strong>Admin:</strong> admin / admin123</p>
+                        <p><strong>Cliente:</strong> cliente / cliente123</p>
+                    </div>
+                </form>
+
+                <!-- FORM LOGIN PIN -->
+                <form id="pinForm" class="login-form">
+                    <div class="input-group">
+                        <i class="fas fa-user"></i>
+                        <input type="text" id="pinEmail" placeholder="E-mail ou Usuário" required>
+                    </div>
+                    <div class="pin-container">
+                        <label>Digite seu PIN de 4 dígitos</label>
+                        <div class="pin-inputs">
+                            <input type="tel" maxlength="1" class="pin-digit" data-pin="1" oninput="handlePinInput(this, 1)" onkeydown="handlePinKeydown(event, 1)">
+                            <input type="tel" maxlength="1" class="pin-digit" data-pin="2" oninput="handlePinInput(this, 2)" onkeydown="handlePinKeydown(event, 2)">
+                            <input type="tel" maxlength="1" class="pin-digit" data-pin="3" oninput="handlePinInput(this, 3)" onkeydown="handlePinKeydown(event, 3)">
+                            <input type="tel" maxlength="1" class="pin-digit" data-pin="4" oninput="handlePinInput(this, 4)" onkeydown="handlePinKeydown(event, 4)">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-login">
+                        <span>Entrar com PIN</span>
+                        <i class="fas fa-arrow-right"></i>
+                    </button>
+                    <div class="login-hint">
+                        <p><strong>Admin PIN:</strong> 1234</p>
+                        <p><strong>Cliente PIN:</strong> 5678</p>
+                    </div>
+                </form>
+
+                <!-- FORM CRIAR CONTA -->
+                <form id="registerForm" class="login-form">
+                    <div class="input-group">
+                        <i class="fas fa-user"></i>
+                        <input type="text" id="regNome" placeholder="Nome completo" required>
+                    </div>
+                    <div class="input-group">
+                        <i class="fas fa-envelope"></i>
+                        <input type="email" id="regEmail" placeholder="E-mail" required>
+                    </div>
+                    <div class="input-group">
+                        <i class="fas fa-phone"></i>
+                        <input type="tel" id="regTelefone" placeholder="Telefone" required>
+                    </div>
+                    <div class="input-group">
+                        <i class="fas fa-lock"></i>
+                        <input type="password" id="regSenha" placeholder="Crie uma senha" required minlength="6">
+                    </div>
+                    <div class="pin-container">
+                        <label>Crie seu PIN de 4 dígitos</label>
+                        <div class="pin-inputs">
+                            <input type="tel" maxlength="1" class="pin-digit reg-pin" data-regpin="1" oninput="handleRegPinInput(this, 1)" onkeydown="handleRegPinKeydown(event, 1)">
+                            <input type="tel" maxlength="1" class="pin-digit reg-pin" data-regpin="2" oninput="handleRegPinInput(this, 2)" onkeydown="handleRegPinKeydown(event, 2)">
+                            <input type="tel" maxlength="1" class="pin-digit reg-pin" data-regpin="3" oninput="handleRegPinInput(this, 3)" onkeydown="handleRegPinKeydown(event, 3)">
+                            <input type="tel" maxlength="1" class="pin-digit reg-pin" data-regpin="4" oninput="handleRegPinInput(this, 4)" onkeydown="handleRegPinKeydown(event, 4)">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-login">
+                        <span>Criar Conta</span>
+                        <i class="fas fa-check"></i>
+                    </button>
+                </form>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- ADMIN DASHBOARD -->
+    <div id="adminDashboard" class="screen">
+        <aside class="sidebar" id="adminSidebar">
+            <div class="sidebar-header">
+                <i class="fas fa-microphone-alt"></i>
+                <span>FPS Studio</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" data-page="adminHome">
+                    <i class="fas fa-home"></i><span>Inicio</span>
+                </a>
+                <a href="#" class="nav-item" data-page="adminServicos">
+                    <i class="fas fa-concierge-bell"></i><span>Serviços</span>
+                </a>
+                <a href="#" class="nav-item" data-page="adminMateriais">
+                    <i class="fas fa-boxes"></i><span>Materiais</span>
+                </a>
+                <a href="#" class="nav-item" data-page="adminPedidos">
+                    <i class="fas fa-clipboard-list"></i><span>Pedidos</span>
+                </a>
+                <a href="#" class="nav-item" data-page="adminFinanceiro">
+                    <i class="fas fa-chart-line"></i><span>Financeiro</span>
+                </a>
+                <a href="#" class="nav-item" data-page="adminChat">
+                    <i class="fas fa-comments"></i><span>Chat</span>
+                    <span class="badge" id="chatBadge">0</span>
+                </a>
+                <a href="#" class="nav-item" data-page="adminClientes">
+                    <i class="fas fa-users"></i><span>Clientes</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <button class="btn-logout" onclick="logout()">
+                    <i class="fas fa-sign-out-alt"></i><span>Sair</span>
+                </button>
+            </div>
+        </aside>
+        <main class="main-content">
+            <header class="top-bar">
+                <button class="menu-toggle" onclick="toggleSidebar('adminSidebar')">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <h2 id="pageTitle">Painel Administrativo</h2>
+                <div class="user-info">
+                    <span>Administrador</span>
+                    <div class="avatar"><i class="fas fa-user-shield"></i></div>
+                </div>
+            </header>
+            <div class="content-area" id="adminContent">
+                <!-- HOME -->
+                <div class="page active" id="adminHome">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: linear-gradient(135deg, #667eea, #764ba2);">
+                                <i class="fas fa-dollar-sign"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="statReceita">R$ 0,00</h3>
+                                <p>Receita Total</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: linear-gradient(135deg, #f093fb, #f5576c);">
+                                <i class="fas fa-shopping-cart"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="statPedidos">0</h3>
+                                <p>Pedidos Ativos</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: linear-gradient(135deg, #4facfe, #00f2fe);">
+                                <i class="fas fa-users"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="statClientes">0</h3>
+                                <p>Clientes</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: linear-gradient(135deg, #43e97b, #38f9d7);">
+                                <i class="fas fa-boxes"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="statMateriais">0</h3>
+                                <p>Materiais</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="dashboard-grid">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-clock"></i> Últimos Pedidos</h3>
+                            </div>
+                            <div class="card-body" id="ultimosPedidos">
+                                <p class="empty-state">Nenhum pedido encontrado</p>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-exchange-alt"></i> Últimas Movimentações</h3>
+                            </div>
+                            <div class="card-body" id="ultimasMovimentacoes">
+                                <p class="empty-state">Nenhuma movimentação encontrada</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SERVIÇOS -->
+                <div class="page" id="adminServicos">
+                    <div class="page-header">
+                        <h2>Gerenciar Serviços</h2>
+                        <button class="btn-primary" onclick="openModal('servicoModal')">
+                            <i class="fas fa-plus"></i> Novo Serviço
+                        </button>
+                    </div>
+                    <div class="grid-cards" id="listaServicosAdmin"></div>
+                </div>
+
+                <!-- MATERIAIS -->
+                <div class="page" id="adminMateriais">
+                    <div class="page-header">
+                        <h2>Gerenciar Materiais</h2>
+                        <button class="btn-primary" onclick="openModal('materialModal')">
+                            <i class="fas fa-plus"></i> Novo Material
+                        </button>
+                    </div>
+                    <div class="grid-cards" id="listaMateriaisAdmin"></div>
+                </div>
+
+                <!-- PEDIDOS -->
+                <div class="page" id="adminPedidos">
+                    <div class="page-header">
+                        <h2>Gerenciar Pedidos</h2>
+                        <button class="btn-primary" onclick="openModal('pedidoModal')">
+                            <i class="fas fa-plus"></i> Novo Pedido
+                        </button>
+                    </div>
+                    <div class="filter-bar">
+                        <select id="filtroStatusPedido" onchange="renderPedidosAdmin()">
+                            <option value="todos">Todos</option>
+                            <option value="pendente">Pendente</option>
+                            <option value="em_andamento">Em Andamento</option>
+                            <option value="concluido">Concluído</option>
+                            <option value="cancelado">Cancelado</option>
+                        </select>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table" id="tabelaPedidosAdmin">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Cliente</th>
+                                    <th>Serviços</th>
+                                    <th>Total</th>
+                                    <th>Status</th>
+                                    <th>Data</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pedidosAdminBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- FINANCEIRO -->
+                <div class="page" id="adminFinanceiro">
+                    <div class="page-header">
+                        <h2>Controle Financeiro</h2>
+                        <button class="btn-primary" onclick="openModal('movimentacaoModal')">
+                            <i class="fas fa-plus"></i> Nova Movimentação
+                        </button>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: linear-gradient(135deg, #43e97b, #38f9d7);">
+                                <i class="fas fa-arrow-up"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="totalEntradas">R$ 0,00</h3>
+                                <p>Total Entradas</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: linear-gradient(135deg, #f5576c, #ff6b6b);">
+                                <i class="fas fa-arrow-down"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="totalSaidas">R$ 0,00</h3>
+                                <p>Total Saídas</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: linear-gradient(135deg, #667eea, #764ba2);">
+                                <i class="fas fa-balance-scale"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="saldoGeral">R$ 0,00</h3>
+                                <p>Saldo Geral</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="filter-bar">
+                        <select id="filtroTipoMov" onchange="renderMovimentacoes()">
+                            <option value="todos">Todos</option>
+                            <option value="entrada">Entradas</option>
+                            <option value="saida">Saídas</option>
+                        </select>
+                        <input type="date" id="filtroDataInicio" onchange="renderMovimentacoes()">
+                        <input type="date" id="filtroDataFim" onchange="renderMovimentacoes()">
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Descrição</th>
+                                    <th>Tipo</th>
+                                    <th>Categoria</th>
+                                    <th>Valor</th>
+                                    <th>Pagamento</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="movimentacoesBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- CHAT ADMIN -->
+                <div class="page" id="adminChat">
+                    <div class="chat-container">
+                        <div class="chat-sidebar">
+                            <div class="chat-search">
+                                <input type="text" placeholder="Buscar conversas...">
+                                <i class="fas fa-search"></i>
+                            </div>
+                            <div class="chat-list" id="chatListAdmin"></div>
+                        </div>
+                        <div class="chat-main">
+                            <div class="chat-header" id="chatHeaderAdmin">
+                                <div class="chat-user-info">
+                                    <div class="avatar"><i class="fas fa-user"></i></div>
+                                    <div>
+                                        <h4>Selecione uma conversa</h4>
+                                        <span>Escolha um cliente para iniciar</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="chat-messages" id="chatMessagesAdmin">
+                                <div class="empty-chat">
+                                    <i class="fas fa-comments"></i>
+                                    <p>Selecione uma conversa para começar</p>
+                                </div>
+                            </div>
+                            <div class="chat-input-area" id="chatInputAreaAdmin" style="display:none;">
+                                <button class="btn-icon" onclick="openModal('enviarOrcamentoModal')" title="Enviar Orçamento">
+                                    <i class="fas fa-file-invoice-dollar"></i>
+                                </button>
+                                <button class="btn-icon" onclick="openModal('enviarComprovanteModal')" title="Enviar Comprovante">
+                                    <i class="fas fa-receipt"></i>
+                                </button>
+                                <input type="text" id="chatInputAdmin" placeholder="Digite sua mensagem..." onkeypress="if(event.key==='Enter')sendMessageAdmin()">
+                                <button class="btn-send" onclick="sendMessageAdmin()">
+                                    <i class="fas fa-paper-plane"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CLIENTES -->
+                <div class="page" id="adminClientes">
+                    <div class="page-header">
+                        <h2>Gerenciar Clientes</h2>
+                        <button class="btn-primary" onclick="openModal('clienteModal')">
+                            <i class="fas fa-plus"></i> Novo Cliente
+                        </button>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Nome</th>
+                                    <th>E-mail</th>
+                                    <th>Telefone</th>
+                                    <th>Pedidos</th>
+                                    <th>Total Gasto</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="clientesBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- CLIENT DASHBOARD -->
+    <div id="clientDashboard" class="screen">
+        <aside class="sidebar client-sidebar" id="clientSidebar">
+            <div class="sidebar-header">
+                <i class="fas fa-microphone-alt"></i>
+                <span>FPS Studio</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" data-page="clientHome">
+                    <i class="fas fa-home"></i><span>Inicio</span>
+                </a>
+                <a href="#" class="nav-item" data-page="clientServicos">
+                    <i class="fas fa-concierge-bell"></i><span>Serviços</span>
+                </a>
+                <a href="#" class="nav-item" data-page="clientMateriais">
+                    <i class="fas fa-boxes"></i><span>Materiais</span>
+                </a>
+                <a href="#" class="nav-item" data-page="clientPedidos">
+                    <i class="fas fa-clipboard-list"></i><span>Meus Pedidos</span>
+                </a>
+                <a href="#" class="nav-item" data-page="clientChat">
+                    <i class="fas fa-comments"></i><span>Chat</span>
+                    <span class="badge" id="chatBadgeClient">0</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <button class="btn-logout" onclick="logout()">
+                    <i class="fas fa-sign-out-alt"></i><span>Sair</span>
+                </button>
+            </div>
+        </aside>
+        <main class="main-content">
+            <header class="top-bar">
+                <button class="menu-toggle" onclick="toggleSidebar('clientSidebar')">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <h2 id="pageTitleClient">Painel do Cliente</h2>
+                <div class="user-info">
+                    <span id="clientNameDisplay">Cliente</span>
+                    <div class="avatar"><i class="fas fa-user"></i></div>
+                </div>
+            </header>
+            <div class="content-area" id="clientContent">
+                <!-- CLIENT HOME -->
+                <div class="page active" id="clientHome">
+                    <div class="welcome-banner">
+                        <h2>Bem-vindo ao FPS Studio!</h2>
+                        <p>Gerencie seus pedidos, acompanhe serviços e muito mais.</p>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: linear-gradient(135deg, #667eea, #764ba2);">
+                                <i class="fas fa-clipboard-list"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="clientStatPedidos">0</h3>
+                                <p>Meus Pedidos</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: linear-gradient(135deg, #f093fb, #f5576c);">
+                                <i class="fas fa-clock"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="clientStatPendentes">0</h3>
+                                <p>Pendentes</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: linear-gradient(135deg, #43e97b, #38f9d7);">
+                                <i class="fas fa-check-circle"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="clientStatConcluidos">0</h3>
+                                <p>Concluídos</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: linear-gradient(135deg, #4facfe, #00f2fe);">
+                                <i class="fas fa-dollar-sign"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="clientStatTotal">R$ 0,00</h3>
+                                <p>Total Investido</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="dashboard-grid">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-concierge-bell"></i> Serviços em Destaque</h3>
+                            </div>
+                            <div class="card-body" id="servicosDestaque"></div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-clock"></i> Meus Pedidos Recentes</h3>
+                            </div>
+                            <div class="card-body" id="meusPedidosRecentes">
+                                <p class="empty-state">Nenhum pedido realizado</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CLIENT SERVIÇOS -->
+                <div class="page" id="clientServicos">
+                    <div class="page-header">
+                        <h2>Nossos Serviços</h2>
+                    </div>
+                    <div class="grid-cards" id="listaServicosClient"></div>
+                </div>
+
+                <!-- CLIENT MATERIAIS -->
+                <div class="page" id="clientMateriais">
+                    <div class="page-header">
+                        <h2>Materiais Disponíveis</h2>
+                    </div>
+                    <div class="grid-cards" id="listaMateriaisClient"></div>
+                </div>
+
+                <!-- CLIENT PEDIDOS -->
+                <div class="page" id="clientPedidos">
+                    <div class="page-header">
+                        <h2>Meus Pedidos</h2>
+                        <button class="btn-primary" onclick="openModal('novoPedidoClientModal')">
+                            <i class="fas fa-plus"></i> Novo Pedido
+                        </button>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Serviços</th>
+                                    <th>Materiais</th>
+                                    <th>Total</th>
+                                    <th>Status</th>
+                                    <th>Data</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pedidosClientBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- CLIENT CHAT -->
+                <div class="page" id="clientChat">
+                    <div class="chat-container">
+                        <div class="chat-main client-chat-main">
+                            <div class="chat-header">
+                                <div class="chat-user-info">
+                                    <div class="avatar"><i class="fas fa-headset"></i></div>
+                                    <div>
+                                        <h4>FPS Studio - Suporte</h4>
+                                        <span>Converse conosco</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="chat-messages" id="chatMessagesClient">
+                                <div class="chat-welcome">
+                                    <i class="fas fa-microphone-alt"></i>
+                                    <h3>FPS Studio</h3>
+                                    <p>Olá! Como podemos ajudá-lo? Envie sua mensagem ou solicite um orçamento.</p>
+                                </div>
+                            </div>
+                            <div class="chat-input-area">
+                                <input type="text" id="chatInputClient" placeholder="Digite sua mensagem..." onkeypress="if(event.key==='Enter')sendMessageClient()">
+                                <button class="btn-send" onclick="sendMessageClient()">
+                                    <i class="fas fa-paper-plane"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- MODALS -->
+    <div class="modal-overlay" id="modalOverlay" onclick="closeAllModals()">
+        <!-- Serviço Modal -->
+        <div class="modal" id="servicoModal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3><i class="fas fa-concierge-bell"></i> <span id="servicoModalTitle">Novo Serviço</span></h3>
+                <button class="btn-close" onclick="closeAllModals()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="servicoId">
+                <div class="form-group">
+                    <label>Nome do Serviço</label>
+                    <input type="text" id="servicoNome" placeholder="Ex: Gravação de Vocais">
+                </div>
+                <div class="form-group">
+                    <label>Descrição</label>
+                    <textarea id="servicoDescricao" placeholder="Descreva o serviço..."></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Preço (R$)</label>
+                        <input type="number" id="servicoPreco" step="0.01" placeholder="0,00">
+                    </div>
+                    <div class="form-group">
+                        <label>Duração Estimada</label>
+                        <input type="text" id="servicoDuracao" placeholder="Ex: 2 horas">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Ícone (Font Awesome)</label>
+                    <input type="text" id="servicoIcone" placeholder="Ex: fa-microphone">
+                </div>
+                <div class="form-group">
+                    <label>Imagem do Serviço</label>
+                    <div class="upload-area" onclick="document.getElementById('servicoImagem').click()">
+                        <input type="file" id="servicoImagem" accept="image/*" style="display:none" onchange="previewImagem(this, 'servicoImgPreview')">
+                        <div class="upload-placeholder" id="servicoImgPreview">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <p>Clique para selecionar uma foto</p>
+                            <span>ou arraste e solte aqui</span>
+                        </div>
+                    </div>
+                </div>
+                <button class="btn-primary" onclick="salvarServico()">
+                    <i class="fas fa-save"></i> Salvar
+                </button>
+            </div>
+        </div>
+
+        <!-- Material Modal -->
+        <div class="modal" id="materialModal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3><i class="fas fa-boxes"></i> <span id="materialModalTitle">Novo Material</span></h3>
+                <button class="btn-close" onclick="closeAllModals()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="materialId">
+                <div class="form-group">
+                    <label>Nome do Material</label>
+                    <input type="text" id="materialNome" placeholder="Ex: Microfone Condensador">
+                </div>
+                <div class="form-group">
+                    <label>Descrição</label>
+                    <textarea id="materialDescricao" placeholder="Descreva o material..."></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Preço (R$)</label>
+                        <input type="number" id="materialPreco" step="0.01" placeholder="0,00">
+                    </div>
+                    <div class="form-group">
+                        <label>Quantidade em Estoque</label>
+                        <input type="number" id="materialEstoque" placeholder="0">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Categoria</label>
+                    <select id="materialCategoria">
+                        <option value="microfone">Microfone</option>
+                        <option value="fone">Fone de Ouvido</option>
+                        <option value="monitor">Monitor de Áudio</option>
+                        <option value="interface">Interface de Áudio</option>
+                        <option value="cabo">Cabo/Conector</option>
+                        <option value="acessorio">Acessório</option>
+                        <option value="outro">Outro</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Imagem do Material</label>
+                    <div class="upload-area" onclick="document.getElementById('materialImagem').click()">
+                        <input type="file" id="materialImagem" accept="image/*" style="display:none" onchange="previewImagem(this, 'materialImgPreview')">
+                        <div class="upload-placeholder" id="materialImgPreview">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <p>Clique para selecionar uma foto</p>
+                            <span>ou arraste e solte aqui</span>
+                        </div>
+                    </div>
+                </div>
+                <button class="btn-primary" onclick="salvarMaterial()">
+                    <i class="fas fa-save"></i> Salvar
+                </button>
+            </div>
+        </div>
+
+        <!-- Pedido Modal (Admin) -->
+        <div class="modal modal-lg" id="pedidoModal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3><i class="fas fa-clipboard-list"></i> <span id="pedidoModalTitle">Novo Pedido</span></h3>
+                <button class="btn-close" onclick="closeAllModals()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="pedidoId">
+                <div class="form-group">
+                    <label>Cliente</label>
+                    <select id="pedidoCliente"></select>
+                </div>
+                <div class="form-group">
+                    <label>Serviços</label>
+                    <div class="checkbox-group" id="pedidoServicos"></div>
+                </div>
+                <div class="form-group">
+                    <label>Materiais</label>
+                    <div class="checkbox-group" id="pedidoMateriais"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Desconto (R$)</label>
+                        <input type="number" id="pedidoDesconto" step="0.01" value="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Status</label>
+                        <select id="pedidoStatus">
+                            <option value="pendente">Pendente</option>
+                            <option value="em_andamento">Em Andamento</option>
+                            <option value="concluido">Concluído</option>
+                            <option value="cancelado">Cancelado</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="pedido-total">
+                    <span>Total:</span>
+                    <strong id="pedidoTotalPreview">R$ 0,00</strong>
+                </div>
+                <button class="btn-primary" onclick="salvarPedido()">
+                    <i class="fas fa-save"></i> Salvar
+                </button>
+            </div>
+        </div>
+
+        <!-- Pedido Client Modal -->
+        <div class="modal modal-lg" id="novoPedidoClientModal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3><i class="fas fa-clipboard-list"></i> Novo Pedido</h3>
+                <button class="btn-close" onclick="closeAllModals()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Selecione os Serviços</label>
+                    <div class="checkbox-group" id="clientPedidoServicos"></div>
+                </div>
+                <div class="form-group">
+                    <label>Selecione os Materiais</label>
+                    <div class="checkbox-group" id="clientPedidoMateriais"></div>
+                </div>
+                <div class="pedido-total">
+                    <span>Total:</span>
+                    <strong id="clientPedidoTotal">R$ 0,00</strong>
+                </div>
+                <button class="btn-primary" onclick="salvarPedidoClient()">
+                    <i class="fas fa-paper-plane"></i> Enviar Pedido
+                </button>
+            </div>
+        </div>
+
+        <!-- Movimentação Modal -->
+        <div class="modal" id="movimentacaoModal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3><i class="fas fa-exchange-alt"></i> Nova Movimentação</h3>
+                <button class="btn-close" onclick="closeAllModals()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Tipo</label>
+                    <select id="movTipo">
+                        <option value="entrada">Entrada</option>
+                        <option value="saida">Saída</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Descrição</label>
+                    <input type="text" id="movDescricao" placeholder="Ex: Pagamento de cliente">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Valor (R$)</label>
+                        <input type="number" id="movValor" step="0.01" placeholder="0,00">
+                    </div>
+                    <div class="form-group">
+                        <label>Categoria</label>
+                        <select id="movCategoria">
+                            <option value="servico">Serviço</option>
+                            <option value="material">Material</option>
+                            <option value="aluguel">Aluguel</option>
+                            <option value="equipamento">Equipamento</option>
+                            <option value="salario">Salário</option>
+                            <option value="outro">Outro</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Forma de Pagamento</label>
+                    <select id="movPagamento">
+                        <option value="pix">PIX</option>
+                        <option value="cartao_credito">Cartão de Crédito</option>
+                        <option value="cartao_debito">Cartão de Débito</option>
+                        <option value="dinheiro">Dinheiro</option>
+                        <option value="transferencia">Transferência</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Data</label>
+                    <input type="date" id="movData">
+                </div>
+                <button class="btn-primary" onclick="salvarMovimentacao()">
+                    <i class="fas fa-save"></i> Salvar
+                </button>
+            </div>
+        </div>
+
+        <!-- Cliente Modal -->
+        <div class="modal" id="clienteModal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3><i class="fas fa-user-plus"></i> <span id="clienteModalTitle">Novo Cliente</span></h3>
+                <button class="btn-close" onclick="closeAllModals()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="clienteId">
+                <div class="form-group">
+                    <label>Nome Completo</label>
+                    <input type="text" id="clienteNome" placeholder="Nome do cliente">
+                </div>
+                <div class="form-group">
+                    <label>E-mail</label>
+                    <input type="email" id="clienteEmail" placeholder="email@exemplo.com">
+                </div>
+                <div class="form-group">
+                    <label>Telefone</label>
+                    <input type="tel" id="clienteTelefone" placeholder="(00) 00000-0000">
+                </div>
+                <div class="form-group">
+                    <label>Senha de Acesso</label>
+                    <input type="password" id="clienteSenha" placeholder="Senha para login">
+                </div>
+                <div class="form-group">
+                    <label>PIN (4 dígitos)</label>
+                    <input type="password" id="clientePin" maxlength="4" placeholder="0000" pattern="[0-9]{4}" inputmode="numeric">
+                </div>
+                <button class="btn-primary" onclick="salvarCliente()">
+                    <i class="fas fa-save"></i> Salvar
+                </button>
+            </div>
+        </div>
+
+        <!-- Detalhes Pedido Modal -->
+        <div class="modal modal-lg" id="detalhesPedidoModal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3><i class="fas fa-file-invoice"></i> Detalhes do Pedido</h3>
+                <button class="btn-close" onclick="closeAllModals()">&times;</button>
+            </div>
+            <div class="modal-body" id="detalhesPedidoContent"></div>
+        </div>
+
+        <!-- Pagamento Modal -->
+        <div class="modal" id="pagamentoModal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3><i class="fas fa-credit-card"></i> Realizar Pagamento</h3>
+                <button class="btn-close" onclick="closeAllModals()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="pagamento-info" id="pagamentoInfo"></div>
+                <div class="form-group">
+                    <label>Forma de Pagamento</label>
+                    <div class="payment-options">
+                        <label class="payment-option">
+                            <input type="radio" name="pagamentoTipo" value="pix" checked>
+                            <div class="payment-card">
+                                <i class="fas fa-qrcode"></i>
+                                <span>PIX</span>
+                            </div>
+                        </label>
+                        <label class="payment-option">
+                            <input type="radio" name="pagamentoTipo" value="cartao_credito">
+                            <div class="payment-card">
+                                <i class="fas fa-credit-card"></i>
+                                <span>Cartão de Crédito</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+                <div id="pixArea" class="pix-area">
+                    <div class="pix-qr">
+                        <div class="pix-qr-placeholder">
+                            <i class="fas fa-qrcode"></i>
+                            <p>QR Code PIX</p>
+                            <span id="pixCopiaCola">Copia e Cola: 00020126580014br.gov.bcb.pix0136...</span>
+                        </div>
+                        <button class="btn-secondary" onclick="copiarPix()">
+                            <i class="fas fa-copy"></i> Copiar Código PIX
+                        </button>
+                    </div>
+                </div>
+                <div id="cartaoArea" class="cartao-area" style="display:none;">
+                    <div class="form-group">
+                        <label>Número do Cartão</label>
+                        <input type="text" id="cartaoNumero" placeholder="0000 0000 0000 0000" maxlength="19">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Validade</label>
+                            <input type="text" id="cartaoValidade" placeholder="MM/AA" maxlength="5">
+                        </div>
+                        <div class="form-group">
+                            <label>CVV</label>
+                            <input type="text" id="cartaoCvv" placeholder="000" maxlength="4">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Nome no Cartão</label>
+                        <input type="text" id="cartaoNome" placeholder="Nome impresso no cartão">
+                    </div>
+                    <div class="form-group">
+                        <label>Parcelas</label>
+                        <select id="cartaoParcelas">
+                            <option value="1">1x sem juros</option>
+                            <option value="2">2x sem juros</option>
+                            <option value="3">3x sem juros</option>
+                            <option value="6">6x com juros</option>
+                            <option value="12">12x com juros</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn-primary btn-full" onclick="confirmarPagamento()">
+                    <i class="fas fa-check-circle"></i> Confirmar Pagamento
+                </button>
+            </div>
+        </div>
+
+        <!-- Enviar Orçamento Modal -->
+        <div class="modal" id="enviarOrcamentoModal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3><i class="fas fa-file-invoice-dollar"></i> Enviar Orçamento</h3>
+                <button class="btn-close" onclick="closeAllModals()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Descrição do Orçamento</label>
+                    <textarea id="orcamentoDescricao" placeholder="Descreva o orçamento..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Valor (R$)</label>
+                    <input type="number" id="orcamentoValor" step="0.01" placeholder="0,00">
+                </div>
+                <div class="form-group">
+                    <label>Validade</label>
+                    <input type="text" id="orcamentoValidade" placeholder="Ex: 15 dias">
+                </div>
+                <button class="btn-primary" onclick="enviarOrcamento()">
+                    <i class="fas fa-paper-plane"></i> Enviar Orçamento
+                </button>
+            </div>
+        </div>
+
+        <!-- Enviar Comprovante Modal -->
+        <div class="modal" id="enviarComprovanteModal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3><i class="fas fa-receipt"></i> Enviar Comprovante</h3>
+                <button class="btn-close" onclick="closeAllModals()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Pedido</label>
+                    <select id="comprovantePedido"></select>
+                </div>
+                <div class="form-group">
+                    <label>Valor Pago (R$)</label>
+                    <input type="number" id="comprovanteValor" step="0.01" placeholder="0,00">
+                </div>
+                <div class="form-group">
+                    <label>Forma de Pagamento</label>
+                    <select id="comprovanteForma">
+                        <option value="PIX">PIX</option>
+                        <option value="Cartão de Crédito">Cartão de Crédito</option>
+                        <option value="Cartão de Débito">Cartão de Débito</option>
+                        <option value="Dinheiro">Dinheiro</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Data do Pagamento</label>
+                    <input type="date" id="comprovanteData">
+                </div>
+                <button class="btn-primary" onclick="enviarComprovante()">
+                    <i class="fas fa-paper-plane"></i> Enviar Comprovante
+                </button>
+            </div>
+        </div>
+
+        <!-- Pedido Detalhes Client Modal -->
+        <div class="modal modal-lg" id="pedidoDetalhesClientModal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3><i class="fas fa-file-invoice"></i> Detalhes do Pedido</h3>
+                <button class="btn-close" onclick="closeAllModals()">&times;</button>
+            </div>
+            <div class="modal-body" id="pedidoDetalhesClientContent"></div>
+        </div>
+    </div>
+
+    <!-- TOAST NOTIFICATIONS -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+    <!-- App -->
+    <script src="firebase-config.js"></script>
+    <script src="service.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
