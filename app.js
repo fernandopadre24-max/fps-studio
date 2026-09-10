@@ -1687,7 +1687,6 @@ function renderPedidosClient() {
             <td>
                 <div class="table-actions">
                     <button onclick="verDetalhesPedidoClient(${p.id})" title="Ver Detalhes"><i class="fas fa-eye"></i></button>
-                    ${p.status === 'pendente' || p.status === 'em_andamento' ? `<button onclick="abrirPagamento(${p.id})" title="Pagar" style="background:var(--success);color:white;"><i class="fas fa-credit-card"></i></button>` : ''}
                 </div>
             </td>
         </tr>`;
