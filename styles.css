@@ -1670,6 +1670,35 @@ body {
     max-width: 85%;
 }
 
+.comprovante-acoes {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+}
+
+.comprovante-acoes .btn-sm {
+    padding: 8px 12px;
+    font-size: 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    border: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: var(--transition);
+}
+
+.comprovante-acoes .btn-primary {
+    background: var(--primary);
+    color: var(--white);
+}
+
+.comprovante-acoes .btn-secondary {
+    background: var(--gray-light);
+    color: var(--text);
+}
+
 .chat-input-area {
     padding: 14px 20px;
     border-top: 1px solid var(--gray-light);

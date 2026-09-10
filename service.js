@@ -54,6 +54,7 @@ const DB_SERVICE = {
     // CHAT
     async getChat(clienteId) { return apiCall('chat', 'GET', null, { clienteId }); },
     async sendMessage(d) { return apiCall('chat', 'POST', d); },
+    async updateMessage(id, d) { return apiCall('chat', 'PUT', d, { id }); },
 
     // INIT (não precisa de seed, o db.js já faz)
     async init() {

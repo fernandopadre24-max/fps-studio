@@ -148,17 +148,32 @@ module.exports = async (req, res) => {
                     const clienteId = parseInt(query.clienteId);
                     result = queryAll(db, 'SELECT * FROM chats WHERE clienteId=? ORDER BY data', [clienteId]);
                 } else if (method === 'POST') {
-                    const { tipo, remetente, clienteId: cid, mensagem, descricao, valor, validade } = req.body;
-                    db.run('INSERT INTO chats (tipo, remetente, clienteId, mensagem, descricao, valor, validade) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                        [tipo || 'mensagem', remetente || 'client', cid, mensagem || '', descricao || '', valor || 0, validade || '']);
+                    const { tipo, remetente, clienteId: cid, mensagem, descricao, valor, validade, desconto, status, pedidoId } = req.body;
+                    db.run('INSERT INTO chats (tipo, remetente, clienteId, mensagem, descricao, valor, validade, desconto, status, pedidoId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                        [tipo || 'mensagem', remetente || 'client', cid, mensagem || '', descricao || '', valor || 0, validade || '', desconto || 0, status || '', pedidoId || null]);
                     const r = queryOne(db, 'SELECT last_insert_rowid() as id');
                     saveDb(db);
                     result = { id: r.id };
                 } else if (method === 'PUT') {
-                    const { lida, clienteId: cid } = req.body;
-                    db.run('UPDATE chats SET lida=? WHERE clienteId=?', [lida ? 1 : 0, cid]);
+                    const { lida, status, tipo, mensagem, descricao, valor, validade, desconto, pedidoId } = req.body;
+                    if (status !== undefined && id !== null) {
+                        db.run('UPDATE chats SET status=? WHERE id=?', [status, id]);
+                    } else if (lida !== undefined) {
+                        db.run('UPDATE chats SET lida=? WHERE clienteId=?', [lida ? 1 : 0, req.body.clienteId]);
+                    } else if (id !== null) {
+                        db.run('UPDATE chats SET tipo=?, mensagem=?, descricao=?, valor=?, validade=?, desconto=?, pedidoId=? WHERE id=?',
+                            [tipo || 'mensagem', mensagem || '', descricao || '', valor || 0, validade || '', desconto || 0, pedidoId || null, id]);
+                    }
                     saveDb(db);
                     result = { ok: true };
+                } else if (method === 'DELETE') {
+                    if (id !== null) {
+                        db.run('DELETE FROM chats WHERE id=?', [id]);
+                        saveDb(db);
+                        result = { ok: true };
+                    } else {
+                        throw new Error('id obrigatório');
+                    }
                 }
                 break;
 

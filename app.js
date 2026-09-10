@@ -1458,6 +1458,16 @@ function openChatAdmin(clienteId) {
     renderChatList();
 }
 
+function comprovanteStatusBadge(status) {
+    const map = {
+        aguardando: ['status-pendente', 'Aguardando'],
+        recebido: ['status-em_andamento', 'Recebido'],
+        pago: ['status-concluido', 'Pago']
+    };
+    const [cls, label] = map[status] || map.aguardando;
+    return `<span class="status-badge ${cls}">${label}</span>`;
+}
+
 function renderChatMessagesAdmin(chatKey) {
     const container = document.getElementById('chatMessagesAdmin');
     const messages = DB.chats[chatKey] || [];
@@ -1467,7 +1477,7 @@ function renderChatMessagesAdmin(chatKey) {
         return;
     }
 
-    container.innerHTML = messages.map(m => {
+    container.innerHTML = messages.map((m, msgIdx) => {
         if (m.tipo === 'sistema') {
             return `<div class="chat-message system">${m.mensagem}</div>`;
         } else if (m.tipo === 'orcamento') {
@@ -1479,9 +1489,24 @@ function renderChatMessagesAdmin(chatKey) {
                 <div class="chat-message-time">${formatDateTime(m.data)}</div>
             </div>`;
         } else if (m.tipo === 'comprovante') {
+            const isFromClient = m.remetente === 'client';
+            const desconto = m.desconto || 0;
+            const total = Math.max(0, (m.valor || 0) - desconto);
+            let acoes = '';
+            if (isFromClient && m.status !== 'pago') {
+                acoes = `<div class="comprovante-acoes">
+                    ${m.status !== 'recebido' ? `<button class="btn-secondary btn-sm" onclick="confirmarRecebidoComprovante(${msgIdx})"><i class="fas fa-check"></i> Confirmar Recebido</button>` : ''}
+                    <button class="btn-primary btn-sm" onclick="confirmarPagoComprovante(${msgIdx})"><i class="fas fa-check-circle"></i> ${m.status === 'recebido' ? 'Confirmar Pago' : 'Confirmar Pagamento'}</button>
+                </div>`;
+            }
             return `<div class="chat-message comprovante">
-                <h4><i class="fas fa-receipt"></i> Comprovante de Pagamento</h4>
+                <h4><i class="fas fa-receipt"></i> ${isFromClient ? 'Comprovante de Pagamento (Cliente)' : 'Comprovante de Pagamento'}</h4>
                 <p>${m.mensagem}</p>
+                ${m.valor ? `<p>Valor: <strong>${formatCurrency(m.valor)}</strong></p>` : ''}
+                ${desconto > 0 ? `<p>Desconto: <strong>-${formatCurrency(desconto)}</strong></p>` : ''}
+                ${isFromClient ? `<p>Total a pagar: <strong>${formatCurrency(total)}</strong></p>` : ''}
+                <p>Status: ${comprovanteStatusBadge(m.status || 'aguardando')}</p>
+                ${acoes}
                 <div class="chat-message-time">${formatDateTime(m.data)}</div>
             </div>`;
         } else {
@@ -1515,7 +1540,10 @@ async function sendMessageAdmin() {
 
     DB.chats[chatKey].push(msgData);
 
-    if (DBReady) await DB_SERVICE.sendMessage(msgData);
+    if (DBReady) {
+        const res = await DB_SERVICE.sendMessage(msgData);
+        if (res && res.id) msgData.id = res.id;
+    }
 
     input.value = '';
     renderChatMessagesAdmin(chatKey);
@@ -1539,7 +1567,10 @@ async function enviarOrcamento() {
     };
 
     DB.chats[chatKey].push(msgData);
-    if (DBReady) await DB_SERVICE.sendMessage(msgData);
+    if (DBReady) {
+        const res = await DB_SERVICE.sendMessage(msgData);
+        if (res && res.id) msgData.id = res.id;
+    }
 
     closeAllModals();
     renderChatMessagesAdmin(chatKey);
@@ -1566,11 +1597,88 @@ async function enviarComprovante() {
     };
 
     DB.chats[chatKey].push(msgData);
-    if (DBReady) await DB_SERVICE.sendMessage(msgData);
+    if (DBReady) {
+        const res = await DB_SERVICE.sendMessage(msgData);
+        if (res && res.id) msgData.id = res.id;
+    }
 
     closeAllModals();
     renderChatMessagesAdmin(chatKey);
     showToast('Comprovante enviado!', 'success');
+}
+
+async function confirmarRecebidoComprovante(msgIdx) {
+    if (!currentChatClient) return;
+    const chatKey = `admin_${currentChatClient}`;
+    const msgs = DB.chats[chatKey] || [];
+    const m = msgs[msgIdx];
+    if (!m || m.tipo !== 'comprovante') return;
+
+    m.status = 'recebido';
+    m.lida = true;
+    if (DBReady && m.id) await DB_SERVICE.updateMessage(m.id, { status: 'recebido' });
+
+    renderChatMessagesAdmin(chatKey);
+    updateChatBadge();
+    showToast('Comprovante confirmado como recebido!', 'success');
+}
+
+async function confirmarPagoComprovante(msgIdx) {
+    if (!currentChatClient) return;
+    const chatKey = `admin_${currentChatClient}`;
+    const msgs = DB.chats[chatKey] || [];
+    const m = msgs[msgIdx];
+    if (!m || m.tipo !== 'comprovante') return;
+
+    m.status = 'pago';
+    m.lida = true;
+    if (DBReady && m.id) await DB_SERVICE.updateMessage(m.id, { status: 'pago' });
+
+    const pedidoId = m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0);
+    const pedido = DB.pedidos.find(x => x.id === pedidoId);
+    const totalPago = Math.max(0, (m.valor || (pedido ? pedido.total : 0)) - (m.desconto || 0));
+
+    if (pedido && totalPago > 0) {
+        const mov = DB.movimentacoes.find(mm => mm.pedidoId === pedido.id) ||
+            DB.movimentacoes.find(mm => mm.tipo === 'entrada' && (mm.descricao || '').includes(`Pedido #${pedido.id}`) && mm.pagamento === 'pendente');
+        if (mov) {
+            mov.tipo = 'entrada';
+            mov.descricao = `Pagamento Pedido #${pedido.id}`;
+            mov.valor = totalPago;
+            mov.categoria = mov.categoria || 'servico';
+            mov.pagamento = 'pix';
+            mov.pedidoId = pedido.id;
+            if (DBReady && mov.docId) await DB_SERVICE.updateMovimentacao(mov.docId, { tipo: mov.tipo, descricao: mov.descricao, valor: mov.valor, categoria: mov.categoria, pagamento: mov.pagamento, data: mov.data });
+        } else {
+            const nova = {
+                id: DB.nextId.movimentacao++,
+                tipo: 'entrada',
+                descricao: `Pagamento Pedido #${pedido.id}`,
+                valor: totalPago,
+                categoria: 'servico',
+                pagamento: 'pix',
+                data: new Date().toISOString().split('T')[0],
+                pedidoId: pedido.id
+            };
+            DB.movimentacoes.push(nova);
+            if (DBReady) DB_SERVICE.addMovimentacao(nova).then(d => { if (d && d.id) nova.docId = d.id; });
+        }
+
+        pedido.materiais.forEach(mId => {
+            const mat = DB.materiais.find(x => x.id === mId);
+            if (mat && mat.estoque > 0) mat.estoque--;
+        });
+
+        if (pedido.status === 'pendente') {
+            pedido.status = 'em_andamento';
+            if (DBReady && pedido.docId) await DB_SERVICE.updatePedido(pedido.docId, { clienteId: pedido.clienteId, servicos: pedido.servicos, materiais: pedido.materiais, desconto: pedido.desconto, status: pedido.status, total: pedido.total });
+        }
+    }
+
+    renderChatMessagesAdmin(chatKey);
+    renderFinanceiro();
+    updateChatBadge();
+    showToast('Pagamento confirmado como PAGO!', 'success');
 }
 
 function updateChatBadge() {
@@ -1633,8 +1741,10 @@ function renderClientChat() {
             </div>`;
         } else if (m.tipo === 'comprovante') {
             return `<div class="chat-message comprovante">
-                <h4><i class="fas fa-receipt"></i> Comprovante</h4>
+                <h4><i class="fas fa-receipt"></i> ${m.remetente === 'client' ? 'Pagamento Enviado' : 'Comprovante'}</h4>
                 <p>${m.mensagem}</p>
+                ${m.desconto ? `<p>Desconto: <strong>-${formatCurrency(m.desconto)}</strong></p>` : ''}
+                <p>Status: ${comprovanteStatusBadge(m.status || 'aguardando')}</p>
                 <div class="chat-message-time">${formatDateTime(m.data)}</div>
             </div>`;
         } else {
@@ -1671,11 +1781,76 @@ async function sendMessageClient() {
     DB.chats[chatKey].push(msgData);
 
     if (DBReady) {
-        await DB_SERVICE.sendMessage(msgData);
+        const res = await DB_SERVICE.sendMessage(msgData);
+        if (res && res.id) msgData.id = res.id;
     }
 
     input.value = '';
     renderClientChat();
+}
+
+function prepareClientPagamentoModal() {
+    if (!currentUser || currentUser.role !== 'client') return;
+    const select = document.getElementById('clientPagamentoPedido');
+    const meusPedidos = DB.pedidos.filter(p => p.clienteId === currentUser.id && p.status !== 'cancelado');
+    select.innerHTML = meusPedidos.map(p => `<option value="${p.id}">#${p.id} - ${formatCurrency(p.total)}</option>`).join('') || '<option value="">Nenhum pedido</option>';
+
+    document.getElementById('clientPagamentoValor').value = '';
+    document.getElementById('clientPagamentoDesconto').value = '0';
+    preencherValorPedidoClient();
+}
+
+function preencherValorPedidoClient() {
+    const pedidoId = parseInt(document.getElementById('clientPagamentoPedido').value);
+    const p = DB.pedidos.find(x => x.id === pedidoId);
+    if (p) {
+        document.getElementById('clientPagamentoValor').value = p.total.toFixed(2);
+    }
+    atualizarTotalPagamentoClient();
+}
+
+function atualizarTotalPagamentoClient() {
+    const valor = parseFloat(document.getElementById('clientPagamentoValor').value) || 0;
+    const desconto = parseFloat(document.getElementById('clientPagamentoDesconto').value) || 0;
+    document.getElementById('clientPagamentoTotal').textContent = formatCurrency(Math.max(0, valor - desconto));
+}
+
+async function enviarPagamentoClient() {
+    if (!currentUser || currentUser.role !== 'client') return;
+    const pedidoId = parseInt(document.getElementById('clientPagamentoPedido').value);
+    const valor = parseFloat(document.getElementById('clientPagamentoValor').value) || 0;
+    const desconto = parseFloat(document.getElementById('clientPagamentoDesconto').value) || 0;
+
+    if (!pedidoId) { showToast('Selecione um pedido!', 'error'); return; }
+    if (valor - desconto <= 0) { showToast('Informe um valor válido!', 'error'); return; }
+
+    const total = Math.max(0, valor - desconto);
+    const chatKey = `admin_${currentUser.id}`;
+    if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
+
+    const msgData = {
+        tipo: 'comprovante',
+        remetente: 'client',
+        clienteId: currentUser.id,
+        mensagem: `Pedido #${pedidoId} - Valor: ${formatCurrency(valor)}${desconto > 0 ? ` com desconto de ${formatCurrency(desconto)}` : ''} - Total a pagar: ${formatCurrency(total)}`,
+        descricao: `Pagamento do Pedido #${pedidoId}`,
+        valor,
+        desconto,
+        pedidoId,
+        status: 'aguardando',
+        data: new Date().toISOString(),
+        lida: false
+    };
+
+    DB.chats[chatKey].push(msgData);
+    if (DBReady) {
+        const res = await DB_SERVICE.sendMessage(msgData);
+        if (res && res.id) msgData.id = res.id;
+    }
+
+    closeAllModals();
+    renderClientChat();
+    showToast('Pagamento enviado para confirmação!', 'success');
 }
 
 // ============================================
@@ -1698,6 +1873,7 @@ function openModal(id) {
         }
         document.getElementById('comprovanteData').value = new Date().toISOString().split('T')[0];
     }
+    if (id === 'enviarPagamentoClientModal') prepareClientPagamentoModal();
 }
 
 function closeAllModals() {
