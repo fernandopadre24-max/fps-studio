@@ -65,9 +65,26 @@ async function initDb() {
             email TEXT UNIQUE NOT NULL,
             telefone TEXT DEFAULT '',
             senha TEXT NOT NULL,
-            pin TEXT DEFAULT ''
+            pin TEXT DEFAULT '',
+            cpf TEXT DEFAULT '',
+            endereco TEXT DEFAULT '',
+            numero TEXT DEFAULT '',
+            complemento TEXT DEFAULT '',
+            bairro TEXT DEFAULT '',
+            cep TEXT DEFAULT '',
+            cidade TEXT DEFAULT '',
+            estado TEXT DEFAULT ''
         )
     `);
+
+    try { db.run('ALTER TABLE clientes ADD COLUMN cpf TEXT DEFAULT ""'); } catch(e) {}
+    try { db.run('ALTER TABLE clientes ADD COLUMN endereco TEXT DEFAULT ""'); } catch(e) {}
+    try { db.run('ALTER TABLE clientes ADD COLUMN numero TEXT DEFAULT ""'); } catch(e) {}
+    try { db.run('ALTER TABLE clientes ADD COLUMN complemento TEXT DEFAULT ""'); } catch(e) {}
+    try { db.run('ALTER TABLE clientes ADD COLUMN bairro TEXT DEFAULT ""'); } catch(e) {}
+    try { db.run('ALTER TABLE clientes ADD COLUMN cep TEXT DEFAULT ""'); } catch(e) {}
+    try { db.run('ALTER TABLE clientes ADD COLUMN cidade TEXT DEFAULT ""'); } catch(e) {}
+    try { db.run('ALTER TABLE clientes ADD COLUMN estado TEXT DEFAULT ""'); } catch(e) {}
 
     db.run(`
         CREATE TABLE IF NOT EXISTS pedidos (

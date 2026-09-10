@@ -153,6 +153,7 @@ function restaurarSessao() {
             currentUser = { role: 'client', ...cliente };
             showDashboard('client');
             document.getElementById('clientNameDisplay').textContent = cliente.nome;
+            atualizarAvisoPerfil();
         } else {
             currentUser = { role: 'admin', nome: 'Administrador' };
             showDashboard('admin');
@@ -185,6 +186,7 @@ document.getElementById('loginForm').addEventListener('submit', function(e) {
             document.getElementById('clientNameDisplay').textContent = cliente.nome;
             salvarSessao();
             showToast(`Bem-vindo, ${cliente.nome}!`, 'success');
+            atualizarAvisoPerfil(true);
         } else {
             showToast('Credenciais inválidas!', 'error');
         }
@@ -216,6 +218,7 @@ document.getElementById('pinForm').addEventListener('submit', function(e) {
             document.getElementById('clientNameDisplay').textContent = cliente.nome;
             salvarSessao();
             showToast(`Bem-vindo, ${cliente.nome}! (PIN)`, 'success');
+            atualizarAvisoPerfil(true);
         } else {
             showToast('E-mail ou PIN inválido!', 'error');
         }
@@ -346,6 +349,7 @@ function logout() {
     currentUser = null;
     currentChatClient = null;
     selectedPedidoId = null;
+    window.__perfilAvisoAberto = false;
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     document.getElementById('loginScreen').classList.add('active');
     document.getElementById('loginEmail').value = '';
@@ -1562,8 +1566,20 @@ async function salvarCliente() {
     if (id) {
         const idx = DB.clientes.findIndex(c => c.id === parseInt(id));
         if (idx !== -1) {
-            DB.clientes[idx] = { ...DB.clientes[idx], ...data };
-            if (DBReady) await DB_SERVICE.updateCliente(DB.clientes[idx].docId, data);
+            const existente = DB.clientes[idx];
+            const persistido = {
+                ...data,
+                cpf: existente.cpf || '',
+                endereco: existente.endereco || '',
+                numero: existente.numero || '',
+                complemento: existente.complemento || '',
+                bairro: existente.bairro || '',
+                cep: existente.cep || '',
+                cidade: existente.cidade || '',
+                estado: existente.estado || ''
+            };
+            DB.clientes[idx] = { ...existente, ...data };
+            if (DBReady) await DB_SERVICE.updateCliente(DB.clientes[idx].docId, persistido);
         }
     } else {
         data.id = DB.nextId.cliente++;
@@ -1579,6 +1595,94 @@ async function salvarCliente() {
     renderAdminDashboard();
     showToast(id ? 'Cliente atualizado!' : 'Cliente criado!', 'success');
     clearForm('cliente');
+}
+
+// ============================================
+// MEUS DADOS (cadastro completo do cliente)
+// ============================================
+function perfilClienteCompleto(c) {
+    const u = c || currentUser;
+    if (!u || u.role !== 'client') return true;
+    return !!(u.cpf && u.endereco && u.cep && u.cidade && u.estado);
+}
+
+function atualizarAvisoPerfil(autoOpen) {
+    if (!currentUser || currentUser.role !== 'client') return;
+    const banner = document.getElementById('avisoPerfilBanner');
+    if (!banner) return;
+    const completo = perfilClienteCompleto();
+    if (completo) { banner.style.display = 'none'; return; }
+    banner.style.display = '';
+    if (autoOpen && !window.__perfilAvisoAberto) {
+        window.__perfilAvisoAberto = true;
+        mostrarPerfilClient();
+    }
+}
+
+function mostrarPerfilClient() {
+    if (!currentUser || currentUser.role !== 'client') return;
+    const u = currentUser;
+    document.getElementById('perfilNome').value = u.nome || '';
+    document.getElementById('perfilTelefone').value = u.telefone || '';
+    document.getElementById('perfilCpf').value = u.cpf || '';
+    document.getElementById('perfilEndereco').value = u.endereco || '';
+    document.getElementById('perfilNumero').value = u.numero || '';
+    document.getElementById('perfilComplemento').value = u.complemento || '';
+    document.getElementById('perfilBairro').value = u.bairro || '';
+    document.getElementById('perfilCep').value = u.cep || '';
+    document.getElementById('perfilCidade').value = u.cidade || '';
+    document.getElementById('perfilEstado').value = u.estado || '';
+    openModal('perfilClientModal');
+}
+
+async function salvarPerfilClient() {
+    if (!currentUser || currentUser.role !== 'client') return;
+    const atual = DB.clientes.find(c => c.id === currentUser.id);
+    if (!atual) return;
+    const v = id => (document.getElementById(id).value || '').trim();
+    const dados = {
+        nome: v('perfilNome'),
+        telefone: v('perfilTelefone'),
+        cpf: v('perfilCpf'),
+        endereco: v('perfilEndereco'),
+        numero: v('perfilNumero'),
+        complemento: v('perfilComplemento'),
+        bairro: v('perfilBairro'),
+        cep: v('perfilCep'),
+        cidade: v('perfilCidade'),
+        estado: v('perfilEstado')
+    };
+    if (!dados.nome) { showToast('Informe seu nome!', 'error'); return; }
+
+    const persistido = { ...atual, ...dados };
+    const dbUpdate = {
+        nome: persistido.nome,
+        email: atual.email,
+        telefone: persistido.telefone,
+        senha: atual.senha,
+        pin: atual.pin || '',
+        cpf: persistido.cpf,
+        endereco: persistido.endereco,
+        numero: persistido.numero,
+        complemento: persistido.complemento,
+        bairro: persistido.bairro,
+        cep: persistido.cep,
+        cidade: persistido.cidade,
+        estado: persistido.estado
+    };
+    Object.assign(atual, dados);
+    currentUser = { role: 'client', ...atual };
+
+    if (DBReady) {
+        try { await DB_SERVICE.updateCliente(atual.docId, dbUpdate); }
+        catch (e) { showToast('Erro ao salvar. Tente novamente.', 'error'); return; }
+    }
+
+    salvarSessao();
+    document.getElementById('clientNameDisplay').textContent = currentUser.nome;
+    atualizarAvisoPerfil();
+    closeAllModals();
+    showToast('Dados cadastrais atualizados!', 'success');
 }
 
 // ============================================
@@ -2644,7 +2748,22 @@ function prepareClientPagamentoModal() {
     select.innerHTML = meusPedidos.map(p => `<option value="${p.id}">#${p.id} - ${formatCurrency(p.total)}</option>`).join('') || '<option value="">Nenhum pedido</option>';
 
     document.getElementById('clientPagamentoValor').value = '';
+    preencherDestinoPagamento();
     preencherValorPedidoClient();
+}
+
+function preencherDestinoPagamento() {
+    const el = document.getElementById('pagamentoDestinoInfo');
+    if (!el) return;
+    const st = studioDados();
+    const destNome = st.nome || st.pixBeneficiario || 'FPS Studio';
+    let html = `<div class="pag-destino-titulo"><i class="fas fa-paper-plane"></i> Para onde vai o pagamento</div>
+        <div class="pag-destino-linha"><span>Destinatário</span><strong>${destNome}</strong></div>`;
+    if (st.pixBeneficiario && st.pixBeneficiario !== destNome) html += `<div class="pag-destino-linha"><span>Beneficiário PIX</span><strong>${st.pixBeneficiario}</strong></div>`;
+    if (st.email) html += `<div class="pag-destino-linha"><span>E-mail</span><strong>${st.email}</strong></div>`;
+    if (st.telefone) html += `<div class="pag-destino-linha"><span>Telefone</span><strong>${st.telefone}</strong></div>`;
+    html += `<p class="field-hint">O comprovante será enviado para o estúdio confirmar o recebimento. Anexe o comprovante real do seu aplicativo de banco.</p>`;
+    el.innerHTML = html;
 }
 
 function preencherValorPedidoClient() {

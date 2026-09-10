@@ -70,16 +70,16 @@ module.exports = async (req, res) => {
                 if (method === 'GET') {
                     result = queryAll(db, 'SELECT * FROM clientes ORDER BY id');
                 } else if (method === 'POST') {
-                    const { nome, email, telefone, senha, pin } = req.body;
-                    db.run('INSERT INTO clientes (nome, email, telefone, senha, pin) VALUES (?, ?, ?, ?, ?)',
-                        [nome, email, telefone || '', senha, pin || '']);
+                    const { nome, email, telefone, senha, pin, cpf, endereco, numero, complemento, bairro, cep, cidade, estado } = req.body;
+                    db.run('INSERT INTO clientes (nome, email, telefone, senha, pin, cpf, endereco, numero, complemento, bairro, cep, cidade, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                        [nome, email, telefone || '', senha, pin || '', cpf || '', endereco || '', numero || '', complemento || '', bairro || '', cep || '', cidade || '', estado || '']);
                     const r = queryOne(db, 'SELECT last_insert_rowid() as id');
                     saveDb(db);
                     result = { id: r.id };
                 } else if (method === 'PUT') {
-                    const { nome, email, telefone, senha, pin } = req.body;
-                    db.run('UPDATE clientes SET nome=?, email=?, telefone=?, senha=?, pin=? WHERE id=?',
-                        [nome, email, telefone, senha, pin, id]);
+                    const { nome, email, telefone, senha, pin, cpf, endereco, numero, complemento, bairro, cep, cidade, estado } = req.body;
+                    db.run('UPDATE clientes SET nome=?, email=?, telefone=?, senha=?, pin=?, cpf=?, endereco=?, numero=?, complemento=?, bairro=?, cep=?, cidade=?, estado=? WHERE id=?',
+                        [nome, email, telefone, senha, pin, cpf || '', endereco || '', numero || '', complemento || '', bairro || '', cep || '', cidade || '', estado || '', id]);
                     saveDb(db);
                     result = { ok: true };
                 } else if (method === 'DELETE') {
@@ -247,7 +247,7 @@ module.exports = async (req, res) => {
                         (data.servicos || []).forEach(insServico);
                         const insMaterial = ins('materiais', ['id', 'nome', 'descricao', 'preco', 'estoque', 'categoria', 'imagem']);
                         (data.materiais || []).forEach(insMaterial);
-                        const insCliente = ins('clientes', ['id', 'nome', 'email', 'telefone', 'senha', 'pin']);
+                        const insCliente = ins('clientes', ['id', 'nome', 'email', 'telefone', 'senha', 'pin', 'cpf', 'endereco', 'numero', 'complemento', 'bairro', 'cep', 'cidade', 'estado']);
                         (data.clientes || []).forEach(insCliente);
                         const insPedido = ins('pedidos', ['id', 'clienteId', 'servicos', 'materiais', 'desconto', 'status', 'data', 'total', 'parcial', 'descontoPct']);
                         ((data.pedidos || []).map(p => ({ ...p, servicos: JSON.stringify(p.servicos || []), materiais: JSON.stringify(p.materiais || []) }))).forEach(insPedido);
