@@ -1721,6 +1721,64 @@ body {
     font-weight: 600;
 }
 
+.pag-linha {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    padding: 2px 0;
+}
+
+.pag-linha small {
+    color: var(--dark-light);
+    margin-left: auto;
+}
+
+.pag-metodo {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-weight: 700;
+    color: var(--dark);
+    white-space: nowrap;
+}
+
+.pag-metodo i {
+    color: var(--primary);
+}
+
+.pag-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--dark-light);
+}
+
+.pag-badge.pag-pend {
+    color: var(--danger);
+}
+
+.pag-cond {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    background: rgba(108, 92, 231, 0.1);
+    color: var(--primary);
+}
+
+.sub-table tfoot .valor-pago strong {
+    color: var(--success);
+}
+
+.sub-table tfoot .valor-aberto strong {
+    color: var(--danger);
+}
+
 /* FILTER BAR */
 .filter-bar {
     display: flex;

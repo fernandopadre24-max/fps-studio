@@ -540,7 +540,7 @@ function renderAdminDashboard() {
                     <div class="mov-item-info">
                         <h5>${m.descricao}</h5>
                         <p>${formatDate(m.data)}${cliente ? ` · ${cliente}` : ''} · ${capitalize(m.categoria)}</p>
-                        <span class="status-badge status-${pendente ? 'pendente' : m.tipo === 'entrada' ? 'concluido' : 'cancelado'}">${pendente ? 'Pendente' : capitalize(m.pagamento)}</span>
+                        <span class="status-badge status-${pendente ? 'pendente' : m.tipo === 'entrada' ? 'concluido' : 'cancelado'}">${pendente ? 'Pendente' : metodoPagamentoRotulo(m.pagamento)}</span>
                     </div>
                 </div>
                 <div class="mov-item-value ${m.tipo}">${m.tipo === 'entrada' ? '+' : '-'}${formatCurrency(m.valor)}</div>
@@ -1269,7 +1269,7 @@ function renderMovimentacoes() {
         <td class="mov-item-value ${m.tipo}">${m.tipo === 'entrada' ? '+' : '-'}${formatCurrency(m.valor)}</td>
         <td>${m.pagamento === 'pendente'
             ? `<span class="status-badge status-pendente">Pendente</span>`
-            : capitalize(m.pagamento)}</td>
+            : metodoPagamentoRotulo(m.pagamento)}</td>
         <td>
             <div class="table-actions">
                 <button class="btn-del" onclick="excluirMovimentacao(${m.id})" title="Excluir"><i class="fas fa-trash"></i></button>
@@ -1326,17 +1326,43 @@ function valorPagoPedido(p) {
 }
 
 function pedidoPagamentoCompleto(p) {
-    const pago = valorPagoPedido(p);
-    let esperado = p.total || 0;
-    if (!p.parcial && p.descontoPct) esperado = p.total * (1 - p.descontoPct / 100);
-    return pago >= esperado;
+    return valorPagoPedido(p) >= valorEsperadoPedido(p);
+}
+
+function valorEsperadoPedido(p) {
+    if (p && !p.parcial && p.descontoPct) return Math.max(0, (p.total || 0) * (1 - p.descontoPct / 100));
+    return p.total || 0;
+}
+
+function metodoPagamentoRotulo(pagamento) {
+    if (pagamento === 'cartao_credito') return 'Cartão';
+    if (pagamento === 'pix') return 'PIX';
+    if (pagamento === 'pendente') return 'Pendente';
+    return (pagamento || '').charAt(0).toUpperCase() + (pagamento || '').slice(1);
+}
+
+function pagamentosPedidoResumo(p) {
+    const pagamentos = DB.movimentacoes
+        .filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente' && (m.descricao || '').includes(`Pedido #${p.id}`))
+        .sort((a, b) => (a.data || '').localeCompare(b.data || '') || (a.id || 0) - (b.id || 0));
+    if (pagamentos.length === 0) {
+        const temPendente = DB.movimentacoes.some(m => m.pagamento === 'pendente' && (m.pedidoId === p.id || (m.descricao || '').includes(`Pedido #${p.id}`)));
+        return temPendente
+            ? '<span class="pag-badge pag-pend"><i class="fas fa-hourglass-half"></i> Aguardando pagamento</span>'
+            : '<span class="pag-badge">Sem pagamento</span>';
+    }
+    return pagamentos.map((m, i) => {
+        const icon = m.pagamento === 'cartao_credito' ? 'fa-credit-card' : 'fa-qrcode';
+        const parcela = pagamentos.length > 1 ? ` · ${i + 1}ª parcela` : '';
+        return `<div class="pag-linha"><span class="pag-metodo"><i class="fas ${icon}"></i> ${metodoPagamentoRotulo(m.pagamento)}${parcela}</span> ${formatCurrency(m.valor)} <small>${formatDate(m.data)}</small></div>`;
+    }).join('');
 }
 
 function renderClientes() {
     const tbody = document.getElementById('clientesBody');
     tbody.innerHTML = DB.clientes.map(c => {
         const pedidos = DB.pedidos.filter(p => p.clienteId === c.id);
-        const totalGasto = pedidos.reduce((s, p) => s + p.total, 0);
+        const totalGasto = pedidos.reduce((s, p) => s + valorEsperadoPedido(p), 0);
         const aberto = clientesExpandidos.has(c.id);
         return `<tr class="cliente-row" onclick="toggleClienteDetalhe(${c.id})">
             <td><strong>${c.nome}</strong></td>
@@ -1412,7 +1438,7 @@ function toggleClienteDetalhe(id) {
     const content = document.createElement('div');
     const c = DB.clientes.find(x => x.id === id);
     const pedidos = DB.pedidos.filter(p => p.clienteId === id);
-    const totalGasto = pedidos.reduce((s, p) => s + p.total, 0);
+    const totalGasto = pedidos.reduce((s, p) => s + valorEsperadoPedido(p), 0);
     const totalPago = pedidos.reduce((s, p) => s + valorPagoPedido(p), 0);
     const emAberto = totalGasto - totalPago;
 
@@ -1429,29 +1455,44 @@ function toggleClienteDetalhe(id) {
             ? '<p class="empty-state">Este cliente ainda não possui pedidos.</p>'
             : `<table class="data-table sub-table">
                 <thead>
-                    <tr><th>#</th><th>Data</th><th>Serviços / Materiais</th><th>Total</th><th>Pago</th><th>Em aberto</th><th>Status</th></tr>
+                    <tr><th>#</th><th>Data</th><th>O que foi feito</th><th>Como foi pago</th><th>Total</th><th>Pago</th><th>Em aberto</th><th>Status</th></tr>
                 </thead>
                 <tbody>
                     ${pedidos.map(p => {
-                        const nomes = [
+                        const itens = [
                             ...p.servicos.map(id => DB.servicos.find(s => s.id === id)?.nome).filter(Boolean),
                             ...p.materiais.map(id => DB.materiais.find(m => m.id === id)?.nome).filter(Boolean)
-                        ].join(', ');
+                        ];
+                        const nomes = itens.join('<br>');
+                        const esperado = valorEsperadoPedido(p);
                         const pago = valorPagoPedido(p);
-                        const restante = p.total - pago;
-                        const pagoCls = pago >= p.total ? 'valor-pago' : '';
+                        const restante = Math.max(0, esperado - pago);
+                        const pagoCls = pago >= esperado ? 'valor-pago' : '';
                         const abertoCls = restante > 0 ? 'valor-aberto' : '';
+                        const cond = p.parcial
+                            ? '<span class="pag-cond">50% + 50%</span>'
+                            : (p.descontoPct ? `<span class="pag-cond">-${p.descontoPct}% à vista</span>` : '');
                         return `<tr>
                             <td><strong>#${p.id}</strong></td>
                             <td>${formatDate(p.data)}</td>
                             <td style="max-width:280px;white-space:normal;">${nomes || '-'}</td>
-                            <td><strong>${formatCurrency(p.total)}</strong></td>
+                            <td>${pagamentosPedidoResumo(p)}${cond ? `<div style="margin-top:4px;">${cond}</div>` : ''}</td>
+                            <td><strong>${formatCurrency(esperado)}</strong></td>
                             <td class="${pagoCls}">${formatCurrency(pago)}</td>
-                            <td class="${abertoCls}">${formatCurrency(Math.max(0, restante))}</td>
+                            <td class="${abertoCls}">${formatCurrency(restante)}</td>
                             <td><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></td>
                         </tr>`;
                     }).join('')}
                 </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="4"><strong>Somatória</strong></td>
+                        <td class="valor-total"><strong>${formatCurrency(totalGasto)}</strong></td>
+                        <td class="valor-pago" style="font-size:14px;"><strong>${formatCurrency(totalPago)}</strong></td>
+                        <td class="valor-aberto" style="font-size:14px;"><strong>${formatCurrency(Math.max(0, emAberto))}</strong></td>
+                        <td></td>
+                    </tr>
+                </tfoot>
             </table>`}
     `;
 
@@ -2384,6 +2425,7 @@ async function confirmarPagoComprovante(msgIdx) {
     const pedidoId = m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0);
     const pedido = DB.pedidos.find(x => x.id === pedidoId);
     const totalPago = Math.max(0, (m.valor || (pedido ? pedido.total : 0)) - descontoAdmin);
+    const metodoPag = (m.mensagem || '').includes('Cartão') ? 'cartao_credito' : 'pix';
 
     if (pedido && totalPago > 0) {
         const jaConfirmado = DB.movimentacoes.find(mm => mm.pedidoId === pedido.id && mm.pagamento !== 'pendente');
@@ -2394,7 +2436,7 @@ async function confirmarPagoComprovante(msgIdx) {
                 descricao: `Pagamento Pedido #${pedido.id} (2ª parcela)`,
                 valor: totalPago,
                 categoria: 'servico',
-                pagamento: 'pix',
+                pagamento: metodoPag,
                 data: new Date().toISOString().split('T')[0],
                 pedidoId: pedido.id
             };
@@ -2407,7 +2449,7 @@ async function confirmarPagoComprovante(msgIdx) {
                 mov.descricao = `Pagamento Pedido #${pedido.id}`;
                 mov.valor = totalPago;
                 mov.categoria = mov.categoria || 'servico';
-                mov.pagamento = 'pix';
+                mov.pagamento = metodoPag;
                 mov.pedidoId = pedido.id;
                 if (DBReady && mov.docId) await DB_SERVICE.updateMovimentacao(mov.docId, { tipo: mov.tipo, descricao: mov.descricao, valor: mov.valor, categoria: mov.categoria, pagamento: mov.pagamento, data: mov.data });
             } else {
@@ -2417,7 +2459,7 @@ async function confirmarPagoComprovante(msgIdx) {
                     descricao: `Pagamento Pedido #${pedido.id}`,
                     valor: totalPago,
                     categoria: 'servico',
-                    pagamento: 'pix',
+                    pagamento: metodoPag,
                     data: new Date().toISOString().split('T')[0],
                     pedidoId: pedido.id
                 };
