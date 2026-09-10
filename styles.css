@@ -828,6 +828,98 @@ body {
     border-radius: 3px;
 }
 
+/* APP FOOTER */
+.app-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px 24px;
+    background: var(--white);
+    border-top: 1px solid var(--gray-light);
+    font-size: 13px;
+    color: var(--dark-light);
+}
+
+.footer-bloco {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    min-width: 0;
+}
+
+.footer-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: var(--dark);
+    white-space: nowrap;
+}
+
+.footer-brand i {
+    color: var(--primary);
+}
+
+.footer-linha {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.footer-linha i {
+    color: var(--primary);
+}
+
+.footer-rotas {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.footer-rotas-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.footer-rotas-label i {
+    color: var(--primary);
+}
+
+.btn-rota {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #fff;
+    text-decoration: none;
+    transition: var(--transition);
+}
+
+.btn-rota:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.1);
+    color: #fff;
+}
+
+.btn-rota-google {
+    background: #4285f4;
+}
+
+.btn-rota-waze {
+    background: #33ccff;
+    color: #1b1b1b;
+}
+
 /* PAGES */
 .page {
     display: none;
@@ -3258,6 +3350,17 @@ body {
         margin-left: 0;
     }
 
+    .app-footer {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 12px 16px;
+    }
+
+    .footer-linha {
+        white-space: normal;
+    }
+
     .menu-toggle {
         display: block;
     }
@@ -3323,6 +3426,7 @@ body.dark {
 body.dark .login-card,
 body.dark .top-bar,
 body.dark .tool-popover,
+body.dark .app-footer,
 body.dark .stat-card,
 body.dark .card,
 body.dark .item-card,

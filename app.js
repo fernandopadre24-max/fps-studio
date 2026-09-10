@@ -28,6 +28,30 @@ function studioDados() {
     return Object.assign({}, CONFIG_DEFAULT.studio, (cfg.studio && typeof cfg.studio === 'object' ? cfg.studio : {}));
 }
 
+function renderFooterStudio() {
+    const st = studioDados();
+    const enderecoCompleto = [st.endereco, st.cidade].filter(Boolean).join(', ');
+    ['', 'Client'].forEach(sfx => {
+        const nomeEl = document.getElementById('footerStudioNome' + sfx);
+        if (!nomeEl) return;
+        nomeEl.textContent = st.nome || 'FPS Studio';
+        const linhas = { footerStudioEndereco: st.endereco, footerStudioCidade: st.cidade, footerStudioTelefone: st.telefone, footerStudioEmail: st.email };
+        Object.keys(linhas).forEach(base => {
+            const el = document.getElementById(base + sfx);
+            if (!el) return;
+            const val = linhas[base];
+            if (val) { el.style.display = ''; el.querySelector('span').textContent = val; }
+            else el.style.display = 'none';
+        });
+        const maps = document.getElementById('rotaGoogle' + sfx);
+        const waze = document.getElementById('rotaWaze' + sfx);
+        if (maps) maps.href = 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(enderecoCompleto);
+        if (waze) waze.href = 'https://waze.com/ul?q=' + encodeURIComponent(enderecoCompleto) + '&navigate=yes';
+        const rotas = document.getElementById('footerRotas' + sfx);
+        if (rotas) rotas.style.display = enderecoCompleto ? '' : 'none';
+    });
+}
+
 // ============================================
 // INICIALIZAÇÃO COM SQLITE (via API)
 // ============================================
@@ -2973,6 +2997,7 @@ async function carregarConfig() {
         APP_CONFIG = Object.assign({}, CONFIG_DEFAULT);
     }
     aplicarConfigLook();
+    renderFooterStudio();
 }
 
 function preencherFormConfig() {
@@ -3041,6 +3066,7 @@ async function salvarConfig() {
         await DB_SERVICE.saveConfig(cfg);
         APP_CONFIG = cfg;
         aplicarConfigLook();
+        renderFooterStudio();
         showToast('Configurações salvas com sucesso!', 'success');
     } catch (e) {
         showToast('Erro ao salvar configurações.', 'error');
@@ -3054,6 +3080,7 @@ async function restaurarConfigPadrao() {
         APP_CONFIG = Object.assign({}, CONFIG_DEFAULT);
         aplicarConfigLook();
         preencherFormConfig();
+        renderFooterStudio();
         showToast('Configurações padrão restauradas!', 'success');
     } catch (e) {
         showToast('Erro ao restaurar.', 'error');
