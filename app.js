@@ -1835,7 +1835,7 @@ function renderClientChat() {
         return;
     }
 
-    container.innerHTML = messages.map(m => {
+    container.innerHTML = messages.map((m, msgIdx) => {
         if (m.tipo === 'sistema') {
             return `<div class="chat-message system">${m.mensagem}</div>`;
         } else if (m.tipo === 'pedido') {
@@ -1855,6 +1855,9 @@ function renderClientChat() {
                 ${desconto > 0 ? `<p>Desconto: <strong>-${formatCurrency(desconto)}</strong></p>` : ''}
                 <p>Total a pagar: <strong>${formatCurrency(total)}</strong></p>
                 <p>Validade: ${m.validade}</p>
+                ${m.pedidoId ? `<div class="comprovante-acoes">
+                    <button class="btn-primary btn-sm" onclick="pagarOrcamento(${msgIdx})"><i class="fas fa-credit-card"></i> Realizar Pagamento</button>
+                </div>` : ''}
                 <div class="chat-message-time">${formatDateTime(m.data)}</div>
             </div>`;
         } else if (m.tipo === 'comprovante') {
@@ -1905,6 +1908,14 @@ async function sendMessageClient() {
 
     input.value = '';
     renderClientChat();
+}
+
+function pagarOrcamento(msgIdx) {
+    if (!currentUser || currentUser.role !== 'client') return;
+    const msgs = DB.chats[`admin_${currentUser.id}`] || [];
+    const m = msgs[msgIdx];
+    if (!m || m.tipo !== 'orcamento' || !m.pedidoId) return;
+    abrirPagamento(m.pedidoId);
 }
 
 function prepareClientPagamentoModal() {
