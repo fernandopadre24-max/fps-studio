@@ -1827,6 +1827,38 @@ body {
     border-color: var(--primary);
 }
 
+.chat-comprovante-img {
+    display: block;
+    max-width: 280px;
+    max-height: 280px;
+    border-radius: 10px;
+    margin: 10px 0;
+    object-fit: cover;
+    cursor: pointer;
+    border: 1px solid rgba(0,184,148,0.3);
+}
+
+.chat-comprovante-img:hover {
+    opacity: 0.9;
+}
+
+.imagem-preview {
+    display: block;
+    max-width: 100%;
+    max-height: 200px;
+    border-radius: 8px;
+    margin-top: 8px;
+    object-fit: cover;
+    border: 1px solid var(--gray-light);
+}
+
+.field-optional {
+    font-size: 11px;
+    color: var(--text-light, #999);
+    font-weight: normal;
+    margin-left: 4px;
+}
+
 .pix-qr {
     text-align: center;
 }

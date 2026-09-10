@@ -111,13 +111,15 @@ async function initDb() {
             lida INTEGER DEFAULT 0,
             desconto REAL DEFAULT 0,
             status TEXT DEFAULT '',
-            pedidoId INTEGER DEFAULT NULL
+            pedidoId INTEGER DEFAULT NULL,
+            imagem TEXT DEFAULT ''
         )
     `);
 
     try { db.run('ALTER TABLE chats ADD COLUMN desconto REAL DEFAULT 0'); } catch(e) {}
     try { db.run('ALTER TABLE chats ADD COLUMN status TEXT DEFAULT ""'); } catch(e) {}
     try { db.run('ALTER TABLE chats ADD COLUMN pedidoId INTEGER DEFAULT NULL'); } catch(e) {}
+    try { db.run('ALTER TABLE chats ADD COLUMN imagem TEXT DEFAULT ""'); } catch(e) {}
 
     // Seed se vazio
     const result = db.exec("SELECT COUNT(*) as c FROM servicos");

@@ -1375,11 +1375,14 @@ function copiarPix() {
     });
 }
 
-function confirmarPagamento() {
+async function confirmarPagamento() {
     if (!selectedPedidoId) return;
     const tipo = document.querySelector('input[name="pagamentoTipo"]:checked').value;
     const p = DB.pedidos.find(x => x.id === selectedPedidoId);
     if (!p) return;
+
+    const fileInput = document.getElementById('pagamentoComprovanteImagem');
+    const imagem = fileInput && fileInput.files && fileInput.files[0] ? await processarImagem(fileInput.files[0]) : '';
 
     const chatKey = `admin_${currentUser.id}`;
     if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
@@ -1395,7 +1398,8 @@ function confirmarPagamento() {
         pedidoId: p.id,
         status: 'aguardando',
         data: new Date().toISOString(),
-        lida: false
+        lida: false,
+        imagem
     };
 
     DB.chats[chatKey].push(msgData);
@@ -1457,6 +1461,13 @@ function openChatAdmin(clienteId) {
 
     renderChatMessagesAdmin(chatKey);
     renderChatList();
+}
+
+function chatImagemHtml(imagem) {
+    if (!imagem) return '';
+    return `<a href="${imagem}" target="_blank" rel="noopener">
+        <img src="${imagem}" class="chat-comprovante-img" alt="Comprovante">
+    </a>`;
 }
 
 function comprovanteStatusBadge(status) {
@@ -1533,6 +1544,7 @@ function renderChatMessagesAdmin(chatKey) {
                 ${desconto > 0 ? `<p>Desconto: <strong>-${formatCurrency(desconto)}</strong></p>` : ''}
                 ${isFromClient ? `<p>Total a pagar: <strong id="totalComp_${msgIdx}">${formatCurrency(total)}</strong></p>` : ''}
                 <p>Status: ${comprovanteStatusBadge(m.status || 'aguardando')}</p>
+                ${chatImagemHtml(m.imagem)}
                 ${acoes}
                 <div class="chat-message-time">${formatDateTime(m.data)}</div>
             </div>`;
@@ -1659,12 +1671,16 @@ async function enviarComprovante() {
     const forma = document.getElementById('comprovanteForma').value;
     const data = document.getElementById('comprovanteData').value;
 
+    const fileInput = document.getElementById('comprovanteImagem');
+    const imagem = fileInput && fileInput.files && fileInput.files[0] ? await processarImagem(fileInput.files[0]) : '';
+
     const msgData = {
         tipo: 'comprovante',
         remetente: 'admin',
         clienteId: currentChatClient,
         mensagem: `Pedido #${pedidoId} - Valor: ${formatCurrency(valor)} via ${forma} em ${formatDate(data)}`,
-        data: new Date().toISOString()
+        data: new Date().toISOString(),
+        imagem
     };
 
     DB.chats[chatKey].push(msgData);
@@ -1866,6 +1882,7 @@ function renderClientChat() {
                 <p>${m.mensagem}</p>
                 ${m.desconto ? `<p>Desconto: <strong>-${formatCurrency(m.desconto)}</strong></p>` : ''}
                 <p>Status: ${comprovanteStatusBadge(m.status || 'aguardando')}</p>
+                ${chatImagemHtml(m.imagem)}
                 <div class="chat-message-time">${formatDateTime(m.data)}</div>
             </div>`;
         } else {
@@ -1954,6 +1971,9 @@ async function enviarPagamentoClient() {
     if (!pedidoId) { showToast('Selecione um pedido!', 'error'); return; }
     if (valor <= 0) { showToast('Informe um valor válido!', 'error'); return; }
 
+    const fileInput = document.getElementById('clientPagamentoImagem');
+    const imagem = fileInput && fileInput.files && fileInput.files[0] ? await processarImagem(fileInput.files[0]) : '';
+
     const chatKey = `admin_${currentUser.id}`;
     if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
 
@@ -1968,7 +1988,8 @@ async function enviarPagamentoClient() {
         pedidoId,
         status: 'aguardando',
         data: new Date().toISOString(),
-        lida: false
+        lida: false,
+        imagem
     };
 
     DB.chats[chatKey].push(msgData);
@@ -2013,11 +2034,55 @@ function closeAllModals() {
     clearForm('pedido');
     clearForm('cliente');
     clearForm('mov');
+    clearForm('comprovante');
+    clearForm('orcamento');
+    document.querySelectorAll('.imagem-preview').forEach(img => { img.src = ''; img.style.display = 'none'; });
 }
 
 // ============================================
 // UTILITIES
 // ============================================
+function previewImagem(input, previewId) {
+    const preview = document.getElementById(previewId);
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = e => { preview.src = e.target.result; preview.style.display = 'block'; };
+        reader.readAsDataURL(input.files[0]);
+    } else if (preview) {
+        preview.style.display = 'none';
+        preview.src = '';
+    }
+}
+
+function lerArquivoComoDataURL(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+async function processarImagem(file) {
+    if (!file) return '';
+    const dataUrl = await lerArquivoComoDataURL(file);
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = dataUrl; });
+    const maxDim = 900;
+    let { width, height } = img;
+    if (width > maxDim || height > maxDim) {
+        const scale = Math.min(maxDim / width, maxDim / height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, width, height);
+    return canvas.toDataURL('image/jpeg', 0.7);
+}
+
 function formatCurrency(value) {
     return 'R$ ' + value.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
@@ -2140,6 +2205,7 @@ function clearForm(prefix) {
         pedido: ['pedidoId', 'pedidoDesconto'],
         cliente: ['clienteId', 'clienteNome', 'clienteEmail', 'clienteTelefone', 'clienteSenha', 'clientePin'],
         mov: ['movDescricao', 'movValor'],
+        comprovante: ['comprovantePedido', 'comprovanteValor', 'comprovanteData', 'comprovanteImagem'],
         orcamento: ['orcamentoPedidoInfo', 'orcamentoDescricao', 'orcamentoValor', 'orcamentoDesconto', 'orcamentoValidade']
     };
 

@@ -148,14 +148,14 @@ module.exports = async (req, res) => {
                     const clienteId = parseInt(query.clienteId);
                     result = queryAll(db, 'SELECT * FROM chats WHERE clienteId=? ORDER BY data', [clienteId]);
                 } else if (method === 'POST') {
-                    const { tipo, remetente, clienteId: cid, mensagem, descricao, valor, validade, desconto, status, pedidoId } = req.body;
-                    db.run('INSERT INTO chats (tipo, remetente, clienteId, mensagem, descricao, valor, validade, desconto, status, pedidoId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                        [tipo || 'mensagem', remetente || 'client', cid, mensagem || '', descricao || '', valor || 0, validade || '', desconto || 0, status || '', pedidoId || null]);
+                    const { tipo, remetente, clienteId: cid, mensagem, descricao, valor, validade, desconto, status, pedidoId, imagem } = req.body;
+                    db.run('INSERT INTO chats (tipo, remetente, clienteId, mensagem, descricao, valor, validade, desconto, status, pedidoId, imagem) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                        [tipo || 'mensagem', remetente || 'client', cid, mensagem || '', descricao || '', valor || 0, validade || '', desconto || 0, status || '', pedidoId || null, imagem || '']);
                     const r = queryOne(db, 'SELECT last_insert_rowid() as id');
                     saveDb(db);
                     result = { id: r.id };
                 } else if (method === 'PUT') {
-                    const { lida, status, desconto, tipo, mensagem, descricao, valor, validade, pedidoId } = req.body;
+                    const { lida, status, desconto, tipo, mensagem, descricao, valor, validade, pedidoId, imagem } = req.body;
                     if (status !== undefined && id !== null) {
                         const cur = queryOne(db, 'SELECT * FROM chats WHERE id=?', [id]);
                         const novoDesconto = desconto !== undefined ? desconto : (cur && cur.desconto ? cur.desconto : 0);
@@ -163,8 +163,8 @@ module.exports = async (req, res) => {
                     } else if (lida !== undefined) {
                         db.run('UPDATE chats SET lida=? WHERE clienteId=?', [lida ? 1 : 0, req.body.clienteId]);
                     } else if (id !== null) {
-                        db.run('UPDATE chats SET tipo=?, mensagem=?, descricao=?, valor=?, validade=?, desconto=?, pedidoId=? WHERE id=?',
-                            [tipo || 'mensagem', mensagem || '', descricao || '', valor || 0, validade || '', desconto || 0, pedidoId || null, id]);
+                        db.run('UPDATE chats SET tipo=?, mensagem=?, descricao=?, valor=?, validade=?, desconto=?, pedidoId=?, imagem=? WHERE id=?',
+                            [tipo || 'mensagem', mensagem || '', descricao || '', valor || 0, validade || '', desconto || 0, pedidoId || null, imagem || '', id]);
                     }
                     saveDb(db);
                     result = { ok: true };
