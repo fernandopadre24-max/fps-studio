@@ -721,8 +721,12 @@ body {
 .notif-popover {
     width: 320px;
     max-height: 400px;
-    display: flex;
+    display: none;
     flex-direction: column;
+}
+
+.tool-popover.notif-popover.active {
+    display: flex;
 }
 
 .notif-list {
