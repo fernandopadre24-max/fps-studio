@@ -21,7 +21,12 @@ let selectedPagamentoValor = 0;
 const clientesExpandidos = new Set();
 
 let APP_CONFIG = null;
-const CONFIG_DEFAULT = { appTitle: 'FPS Studio', tema: 'padrao', primaryColor: '', fonte: 'Inter', fontSize: 14, darkPadrao: false };
+const CONFIG_DEFAULT = { appTitle: 'FPS Studio', tema: 'padrao', primaryColor: '', fonte: 'Inter', fontSize: 14, darkPadrao: false, studio: { nome: '', cnpj: '', telefone: '', email: '', endereco: '', cidade: '', pixChave: '', pixTipo: 'email', pixBeneficiario: '' } };
+
+function studioDados() {
+    const cfg = APP_CONFIG || CONFIG_DEFAULT;
+    return Object.assign({}, CONFIG_DEFAULT.studio, (cfg.studio && typeof cfg.studio === 'object' ? cfg.studio : {}));
+}
 
 // ============================================
 // INICIALIZAÇÃO COM SQLITE (via API)
@@ -842,11 +847,12 @@ function renderPedidosAdmin() {
     tbody.innerHTML = tabela.map(p => {
         const cliente = DB.clientes.find(c => c.id === p.clienteId);
         const servicoNomes = p.servicos.map(id => DB.servicos.find(s => s.id === id)?.nome || '').filter(Boolean).join(', ');
+        const condRotulo = p.parcial ? '50% + 50%' : (p.descontoPct ? `-${p.descontoPct}% à vista` : '');
         return `<tr>
             <td><strong>#${p.id}</strong></td>
             <td>${cliente ? cliente.nome : 'N/A'}</td>
             <td>${servicoNomes || '-'}</td>
-            <td><strong>${formatCurrency(p.total)}</strong></td>
+            <td><strong>${formatCurrency(p.total)}</strong>${condRotulo ? `<small class="cond-badge">${condRotulo}</small>` : ''}</td>
             <td><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></td>
             <td>${formatDate(p.data)}</td>
             <td>
@@ -866,11 +872,18 @@ function pedidoKanbanCard(p) {
     const mostrar = servicoNomes.slice(0, 2);
     const extra = servicoNomes.length - mostrar.length;
     const pagos = valorPagoPedido(p) > 0;
+    const pagoTotal = pedidoPagamentoCompleto(p);
+    const condRotulo = p.parcial ? 'Dividido 50%+50%' : (p.descontoPct ? `À vista -${p.descontoPct}%` : '');
     return `<div class="kanban-card" draggable="true" ondragstart="dragPedido(event, ${p.id})" ondragend="this.classList.remove('dragging')">
         <div class="kanban-card-top">
             <strong>#${p.id}</strong>
-            <span class="kanban-pagamento ${pagos ? 'pag-ok' : 'pag-pend'}">${pagos ? '<i class="fas fa-check-circle"></i> Pago' : '<i class="fas fa-hourglass"></i> Aguardando'}</span>
+            ${pagoTotal
+                ? '<span class="kanban-pagamento pag-ok"><i class="fas fa-check-circle"></i> Pago</span>'
+                : pagos
+                    ? '<span class="kanban-pagamento pag-parc"><i class="fas fa-adjust"></i> Parcial</span>'
+                    : '<span class="kanban-pagamento pag-pend"><i class="fas fa-hourglass"></i> Aguardando</span>'}
         </div>
+        ${condRotulo ? `<span class="kanban-chip chip-cond">${condRotulo}</span>` : ''}
         <h5 class="kanban-cliente"><i class="fas fa-user-circle"></i> ${cliente ? cliente.nome : 'N/A'}</h5>
         <div class="kanban-servicos">
             ${servicoNomes.length === 0 ? '<span class="kanban-chip chip-material">Materiais</span>' : mostrar.map(n => `<span class="kanban-chip">${n}</span>`).join('')}
@@ -925,7 +938,7 @@ async function moverPedidoStatus(id, novoStatus) {
     if (!p || p.status === novoStatus) return;
     p.status = novoStatus;
     if (DBReady) {
-        await DB_SERVICE.updatePedido(p.docId, { clienteId: p.clienteId, servicos: p.servicos, materiais: p.materiais, desconto: p.desconto, status: novoStatus, total: p.total });
+        await DB_SERVICE.updatePedido(p.docId, { clienteId: p.clienteId, servicos: p.servicos, materiais: p.materiais, desconto: p.desconto, status: novoStatus, total: p.total, parcial: p.parcial || 0, descontoPct: p.descontoPct || 0 });
     }
     const mov = DB.movimentacoes.find(m => m.pedidoId === id && m.pagamento === 'pendente');
     if (novoStatus === 'cancelado' && mov) {
@@ -1021,7 +1034,7 @@ async function salvarPedido() {
         if (idx !== -1) {
             DB.pedidos[idx] = { ...DB.pedidos[idx], clienteId, servicos, materiais, desconto, status, total };
             pedidoSalvo = DB.pedidos[idx];
-            if (DBReady) await DB_SERVICE.updatePedido(pedidoSalvo.docId, { clienteId, servicos, materiais, desconto, status, total });
+            if (DBReady) await DB_SERVICE.updatePedido(pedidoSalvo.docId, { clienteId, servicos, materiais, desconto, status, total, parcial: pedidoSalvo.parcial || 0, descontoPct: pedidoSalvo.descontoPct || 0 });
         }
     } else {
         const novoPedido = {
@@ -1260,6 +1273,13 @@ function valorPagoPedido(p) {
     return DB.movimentacoes
         .filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente' && (m.descricao || '').includes(`Pedido #${p.id}`))
         .reduce((s, m) => s + m.valor, 0);
+}
+
+function pedidoPagamentoCompleto(p) {
+    const pago = valorPagoPedido(p);
+    let esperado = p.total || 0;
+    if (!p.parcial && p.descontoPct) esperado = p.total * (1 - p.descontoPct / 100);
+    return pago >= esperado;
 }
 
 function renderClientes() {
@@ -1515,11 +1535,12 @@ function renderPedidosClient() {
     tbody.innerHTML = meusPedidos.map(p => {
         const servicoNomes = p.servicos.map(id => DB.servicos.find(s => s.id === id)?.nome || '').filter(Boolean).join(', ');
         const materialNomes = p.materiais.map(id => DB.materiais.find(m => m.id === id)?.nome || '').filter(Boolean).join(', ');
+        const condRotulo = p.parcial ? '50% + 50%' : (p.descontoPct ? `-${p.descontoPct}% à vista` : '');
         return `<tr>
             <td><strong>#${p.id}</strong></td>
             <td>${servicoNomes || '-'}</td>
             <td>${materialNomes || '-'}</td>
-            <td><strong>${formatCurrency(p.total)}</strong></td>
+            <td><strong>${formatCurrency(p.total)}</strong>${condRotulo ? `<small class="cond-badge">${condRotulo}</small>` : ''}</td>
             <td><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></td>
             <td>${formatDate(p.data)}</td>
             <td>
@@ -1564,6 +1585,21 @@ function verDetalhesPedidoClient(id) {
 
     html += `<div class="pedido-total"><span>Total</span><strong>${formatCurrency(p.total)}</strong></div>`;
 
+    html += `<div class="detalhe-section"><h4><i class="fas fa-hand-holding-usd"></i> Condição de Pagamento</h4>`;
+    if (p.parcial) {
+        html += `<div class="detalhe-item"><span>Condição</span><strong>Dividido em 2x (50% + 50%)</strong></div>`;
+        html += `<div class="detalhe-item"><span>Entrada agora</span><strong>${formatCurrency(p.total / 2)}</strong></div>`;
+        html += `<div class="detalhe-item"><span>Saldo ao finalizar</span><strong>${formatCurrency(p.total / 2)}</strong></div>`;
+        html += `<div class="detalhe-item"><span>Já pago</span><strong>${formatCurrency(valorPagoPedido(p))}</strong></div>`;
+    } else if (p.descontoPct) {
+        html += `<div class="detalhe-item"><span>Condição</span><strong>À vista com ${p.descontoPct}% de desconto</strong></div>`;
+        html += `<div class="detalhe-item"><span>Total a pagar</span><strong>${formatCurrency(p.total * (1 - p.descontoPct / 100))}</strong></div>`;
+    } else {
+        html += `<div class="detalhe-item"><span>Condição</span><strong>Pagamento integral</strong></div>`;
+        html += `<div class="detalhe-item"><span>Já pago</span><strong>${formatCurrency(valorPagoPedido(p))}</strong></div>`;
+    }
+    html += `</div>`;
+
     document.getElementById('pedidoDetalhesClientContent').innerHTML = html;
     openModal('pedidoDetalhesClientModal');
 }
@@ -1582,9 +1618,32 @@ function prepareClientPedidoModal() {
         <label for="cpm_${m.id}">${m.nome}</label>
         ${formatMaterialPrice(m, 'item-price')}
     </div>`).join('');
+
+    const nomeEl = document.getElementById('clientResumoNome');
+    const emailEl = document.getElementById('clientResumoEmail');
+    if (nomeEl && currentUser) {
+        nomeEl.textContent = currentUser.nome || 'Cliente';
+        if (emailEl) emailEl.textContent = currentUser.email || '';
+    }
+
+    const radioVista = document.getElementById('clientCondVista');
+    if (radioVista) { radioVista.checked = true; }
+
+    const estudioDiv = document.getElementById('clientResumoEstudio');
+    if (estudioDiv) {
+        const st = studioDados();
+        const nome = st.nome || (APP_CONFIG && APP_CONFIG.appTitle) || 'FPS Studio';
+        let txt = `<i class="fas fa-credit-card"></i> Pagamento via PIX de <strong>${nome}</strong>`;
+        if (st.pixChave) txt += ` <span title="Chave PIX">(chave: ${st.pixChave})</span>`;
+        if (st.telefone || st.email) txt += ` · ${st.telefone || st.email}`;
+        estudioDiv.innerHTML = txt;
+        estudioDiv.style.display = 'block';
+    }
+
+    updateClientPedidoTotal();
 }
 
-function updateClientPedidoTotal() {
+function valoresPedidoClient() {
     let total = 0;
     document.querySelectorAll('#clientPedidoServicos input:checked').forEach(cb => {
         const s = DB.servicos.find(x => x.id === parseInt(cb.value));
@@ -1594,7 +1653,36 @@ function updateClientPedidoTotal() {
         const m = DB.materiais.find(x => x.id === parseInt(cb.value));
         if (m) total += m.preco;
     });
-    document.getElementById('clientPedidoTotal').textContent = formatCurrency(total);
+    const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
+    return { subTotal: total, condicao };
+}
+
+function atualizarCondicaoClient() {
+    updateClientPedidoTotal();
+}
+
+function updateClientPedidoTotal() {
+    const { subTotal } = valoresPedidoClient();
+    const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
+
+    const desconto = condicao === 'vista' ? subTotal * 0.10 : 0;
+    const totalFinal = subTotal - desconto;
+    const entrada = condicao === 'metade' ? subTotal / 2 : totalFinal;
+    const saldo = condicao === 'metade' ? subTotal / 2 : 0;
+
+    document.getElementById('clientCondVistaValor').textContent = formatCurrency(subTotal * 0.90);
+    document.getElementById('clientCondMetaValor').textContent = formatCurrency(subTotal / 2);
+
+    document.getElementById('clientResSubtotal').textContent = formatCurrency(subTotal);
+    const vistaLinha = document.getElementById('clientResVista');
+    vistaLinha.style.display = condicao === 'vista' ? 'flex' : 'none';
+    document.getElementById('clientResDesconto').textContent = '-' + formatCurrency(desconto);
+    document.getElementById('clientResTotal').textContent = formatCurrency(totalFinal);
+    document.getElementById('clientResPagarRotulo').textContent = condicao === 'metade' ? 'Entrada (50%) agora' : 'Pagar agora (à vista)';
+    document.getElementById('clientResPagar').textContent = formatCurrency(entrada);
+    const saldoLinha = document.getElementById('clientResSaldoLinha');
+    saldoLinha.style.display = condicao === 'metade' ? 'flex' : 'none';
+    document.getElementById('clientResSaldo').textContent = formatCurrency(saldo);
 }
 
 async function salvarPedidoClient() {
@@ -1611,6 +1699,10 @@ async function salvarPedidoClient() {
     servicos.forEach(id => { const s = DB.servicos.find(x => x.id === id); if (s) total += s.preco; });
     materiais.forEach(id => { const m = DB.materiais.find(x => x.id === id); if (m) total += m.preco; });
 
+    const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
+    const descontoPct = condicao === 'vista' ? 10 : 0;
+    const parcial = condicao === 'metade' ? 1 : 0;
+
     const novoPedido = {
         id: DB.nextId.pedido++,
         clienteId: currentUser.id,
@@ -1618,7 +1710,9 @@ async function salvarPedidoClient() {
         desconto: 0,
         status: 'pendente',
         data: new Date().toISOString().split('T')[0],
-        total
+        total,
+        parcial,
+        descontoPct
     };
     DB.pedidos.push(novoPedido);
     if (DBReady) {
@@ -1634,6 +1728,9 @@ async function salvarPedidoClient() {
     const nomesServicos = servicos.map(id => { const s = DB.servicos.find(x => x.id === id); return s ? s.nome : ''; }).filter(Boolean);
     const nomesMateriais = materiais.map(id => { const m = DB.materiais.find(x => x.id === id); return m ? m.nome : ''; }).filter(Boolean);
     const detalhes = [...nomesServicos, ...nomesMateriais].join(', ');
+    const rotuloCondicao = condicao === 'vista'
+        ? `Pagamento à vista (10% de desconto): R$ ${formatCurrency(total * 0.90)}`
+        : `Dividido em 2x: entrada de R$ ${formatCurrency(total / 2)} agora e R$ ${formatCurrency(total / 2)} ao finalizar`;
 
     const msgData = {
         tipo: 'pedido',
@@ -1641,7 +1738,7 @@ async function salvarPedidoClient() {
         clienteId: currentUser.id,
         pedidoId: novoPedido.id,
         mensagem: `Novo pedido #${novoPedido.id} - ${formatCurrency(total)}`,
-        descricao: detalhes,
+        descricao: detalhes + ' · ' + rotuloCondicao,
         valor: total,
         data: new Date().toISOString(),
         lida: false
@@ -1658,25 +1755,96 @@ async function salvarPedidoClient() {
     showToast('Pedido enviado com sucesso!', 'success');
 }
 
+function pixCrc16(str) {
+    let crc = 0xFFFF;
+    for (let i = 0; i < str.length; i++) {
+        crc ^= str.charCodeAt(i) << 8;
+        for (let j = 0; j < 8; j++) {
+            crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1);
+        }
+    }
+    return (crc & 0xFFFF).toString(16).toUpperCase().padStart(4, '0');
+}
+
+function gerarPixEmv(chave, nome, cidade, valor, txid) {
+    const idL = (id, v) => `${id}${String(String(v).length).padStart(2, '0')}${v}`;
+    const conta = `0014BR.GOV.BCB.PIX` + `01${String(String(chave).length).padStart(2, '0')}${chave}`;
+    let payload = '000201';
+    payload += idL('26', conta);
+    payload += '52040000' + '5303986';
+    if (valor > 0) payload += idL('54', valor.toFixed(2));
+    payload += '5802BR';
+    payload += idL('59', (nome || 'FPS STUDIO').substring(0, 25));
+    payload += idL('60', (cidade || 'BRASIL').substring(0, 15));
+    if (txid) payload += idL('62', idL('05', String(txid).substring(0, 25)));
+    payload += '6304';
+    return payload + pixCrc16(payload);
+}
+
 function abrirPagamento(pedidoId) {
     selectedPedidoId = pedidoId;
     const p = DB.pedidos.find(x => x.id === pedidoId);
     if (!p) return;
+    if (!currentUser || currentUser.role !== 'client') return;
 
     const chatKey = `admin_${currentUser.id}`;
     const orc = (DB.chats[chatKey] || []).filter(m => m.tipo === 'orcamento' && m.pedidoId === pedidoId).pop();
-    const valorPag = orc ? Math.max(0, (orc.valor || 0) - (orc.desconto || 0)) : p.total;
-    selectedPagamentoValor = valorPag;
+    const base = Math.max(0, orc ? ((orc.valor || 0) - (orc.desconto || 0)) : p.total);
 
-    document.getElementById('pagamentoInfo').innerHTML = `
+    let valorPag = base;
+    let condRotulo = 'Pagamento integral';
+    let saldo = 0;
+    const jaPago = valorPagoPedido(p);
+
+    if (p.parcial) {
+        const falta = Math.max(0, base - jaPago);
+        if (falta <= 0) {
+            showToast('Este pedido já está totalmente pago!', 'info');
+            return;
+        }
+        valorPag = Math.min(base / 2, falta);
+        saldo = Math.max(0, base - (jaPago + valorPag));
+        condRotulo = jaPago > 0 ? 'Pagamento da 2ª parcela (50%)' : 'Entrada de 50%';
+    } else if (p.descontoPct) {
+        valorPag = base * (1 - p.descontoPct / 100);
+        condRotulo = `Pagamento à vista com ${p.descontoPct}% de desconto`;
+    } else {
+        valorPag = base;
+        condRotulo = 'Pagamento integral';
+    }
+
+    selectedPagamentoValor = Math.round(valorPag * 100) / 100;
+
+    let infoHtml = `
         <div class="pedido-total" style="margin-bottom:16px;">
             <span>Pedido #${p.id}</span>
-            <strong>${formatCurrency(valorPag)}</strong>
+            <strong>${formatCurrency(selectedPagamentoValor)}</strong>
         </div>`;
+    if (orc) {
+        infoHtml += `<div class="pagamento-linha"><span>Valor orçado (com desconto do admin)</span><strong>${formatCurrency(base)}</strong></div>`;
+    }
+    infoHtml += `<div class="pagamento-linha"><span>Condição</span><strong>${condRotulo}</strong></div>`;
+    if (p.parcial && jaPago > 0) infoHtml += `<div class="pagamento-linha"><span>Já pago</span><strong>${formatCurrency(jaPago)}</strong></div>`;
+    if (saldo > 0) infoHtml += `<div class="pagamento-linha"><span>Saldo a pagar depois</span><strong>${formatCurrency(saldo)}</strong></div>`;
+    infoHtml += `<p class="field-hint">Envie o comprovante para o administrador confirmar o recebimento.</p>`;
+    document.getElementById('pagamentoInfo').innerHTML = infoHtml;
 
-    // Generate PIX code
-    const pixCode = `00020126580014br.gov.bcb.pix0136fps-studio-${p.id}@fps.com520400005303986540${valorPag.toFixed(2)}5802BR5913FPS STUDIO6009SAO PAULO62070503***6304`;
+    const st = studioDados();
+    const chavePix = st.pixChave || 'fps-studio@fps.com';
+    const beneficiario = st.pixBeneficiario || st.nome || 'FPS Studio';
+    const cidade = st.cidade || 'SAO PAULO';
+    const pixCode = gerarPixEmv(chavePix, beneficiario, cidade, selectedPagamentoValor, `p${p.id}`);
     document.getElementById('pixCopiaCola').textContent = pixCode;
+
+    const pixDados = document.getElementById('pixDadosEstudio');
+    if (pixDados) {
+        pixDados.innerHTML = st.pixChave
+            ? `<div class="pix-dados-item"><span>Beneficiário</span><strong>${beneficiario}</strong></div>
+               <div class="pix-dados-item"><span>Chave PIX</span><strong>${st.pixChave}</strong></div>
+               <div class="pix-dados-item"><span>Tipo</span><strong>${(st.pixTipo || 'email').toUpperCase()}</strong></div>
+               <div class="pix-dados-item"><span>Valor</span><strong>${formatCurrency(selectedPagamentoValor)}</strong></div>`
+            : `<div class="pix-dados-aviso"><i class="fas fa-exclamation-triangle"></i> Chave PIX não cadastrada. Cadastre os dados do estúdio em Configurações.</div>`;
+    }
 
     openModal('pagamentoModal');
 }
@@ -1709,12 +1877,16 @@ async function confirmarPagamento() {
     const chatKey = `admin_${currentUser.id}`;
     if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
 
+    let rotuloCond = 'Pagamento integral';
+    if (p.parcial) rotuloCond = valorPagoPedido(p) > 0 && (selectedPagamentoValor || 0) >= (p.total / 2) ? '2ª parcela (50% restante)' : 'Entrada de 50%';
+    else if (p.descontoPct) rotuloCond = `À vista com ${p.descontoPct}% de desconto`;
+
     const msgData = {
         tipo: 'comprovante',
         remetente: 'client',
         clienteId: currentUser.id,
-        mensagem: `Pagamento de ${formatCurrency(selectedPagamentoValor || p.total)} realizado via ${tipo === 'pix' ? 'PIX' : 'Cartão de Crédito'} para o Pedido #${p.id}`,
-        descricao: `Pagamento do Pedido #${p.id}`,
+        mensagem: `Pagamento de ${formatCurrency(selectedPagamentoValor || p.total)} (${rotuloCond}) realizado via ${tipo === 'pix' ? 'PIX' : 'Cartão de Crédito'} para o Pedido #${p.id}`,
+        descricao: `Pagamento do Pedido #${p.id} - ${rotuloCond}`,
         valor: selectedPagamentoValor || p.total,
         desconto: 0,
         pedidoId: p.id,
@@ -2065,21 +2237,12 @@ async function confirmarPagoComprovante(msgIdx) {
     const totalPago = Math.max(0, (m.valor || (pedido ? pedido.total : 0)) - descontoAdmin);
 
     if (pedido && totalPago > 0) {
-        const mov = DB.movimentacoes.find(mm => mm.pedidoId === pedido.id) ||
-            DB.movimentacoes.find(mm => mm.tipo === 'entrada' && (mm.descricao || '').includes(`Pedido #${pedido.id}`) && mm.pagamento === 'pendente');
-        if (mov) {
-            mov.tipo = 'entrada';
-            mov.descricao = `Pagamento Pedido #${pedido.id}`;
-            mov.valor = totalPago;
-            mov.categoria = mov.categoria || 'servico';
-            mov.pagamento = 'pix';
-            mov.pedidoId = pedido.id;
-            if (DBReady && mov.docId) await DB_SERVICE.updateMovimentacao(mov.docId, { tipo: mov.tipo, descricao: mov.descricao, valor: mov.valor, categoria: mov.categoria, pagamento: mov.pagamento, data: mov.data });
-        } else {
+        const jaConfirmado = DB.movimentacoes.find(mm => mm.pedidoId === pedido.id && mm.pagamento !== 'pendente');
+        if (pedido.parcial && jaConfirmado) {
             const nova = {
                 id: DB.nextId.movimentacao++,
                 tipo: 'entrada',
-                descricao: `Pagamento Pedido #${pedido.id}`,
+                descricao: `Pagamento Pedido #${pedido.id} (2ª parcela)`,
                 valor: totalPago,
                 categoria: 'servico',
                 pagamento: 'pix',
@@ -2088,6 +2251,30 @@ async function confirmarPagoComprovante(msgIdx) {
             };
             DB.movimentacoes.push(nova);
             if (DBReady) DB_SERVICE.addMovimentacao(nova).then(d => { if (d && d.id) nova.docId = d.id; });
+        } else {
+            const mov = DB.movimentacoes.find(mm => mm.pagamento === 'pendente' && (mm.pedidoId === pedido.id || (mm.descricao || '').includes(`Pedido #${pedido.id}`)));
+            if (mov) {
+                mov.tipo = 'entrada';
+                mov.descricao = `Pagamento Pedido #${pedido.id}`;
+                mov.valor = totalPago;
+                mov.categoria = mov.categoria || 'servico';
+                mov.pagamento = 'pix';
+                mov.pedidoId = pedido.id;
+                if (DBReady && mov.docId) await DB_SERVICE.updateMovimentacao(mov.docId, { tipo: mov.tipo, descricao: mov.descricao, valor: mov.valor, categoria: mov.categoria, pagamento: mov.pagamento, data: mov.data });
+            } else {
+                const nova = {
+                    id: DB.nextId.movimentacao++,
+                    tipo: 'entrada',
+                    descricao: `Pagamento Pedido #${pedido.id}`,
+                    valor: totalPago,
+                    categoria: 'servico',
+                    pagamento: 'pix',
+                    data: new Date().toISOString().split('T')[0],
+                    pedidoId: pedido.id
+                };
+                DB.movimentacoes.push(nova);
+                if (DBReady) DB_SERVICE.addMovimentacao(nova).then(d => { if (d && d.id) nova.docId = d.id; });
+            }
         }
 
         pedido.materiais.forEach(mId => {
@@ -2097,7 +2284,7 @@ async function confirmarPagoComprovante(msgIdx) {
 
         if (pedido.status === 'pendente') {
             pedido.status = 'em_andamento';
-            if (DBReady && pedido.docId) await DB_SERVICE.updatePedido(pedido.docId, { clienteId: pedido.clienteId, servicos: pedido.servicos, materiais: pedido.materiais, desconto: pedido.desconto, status: pedido.status, total: pedido.total });
+            if (DBReady && pedido.docId) await DB_SERVICE.updatePedido(pedido.docId, { clienteId: pedido.clienteId, servicos: pedido.servicos, materiais: pedido.materiais, desconto: pedido.desconto, status: pedido.status, total: pedido.total, parcial: pedido.parcial || 0, descontoPct: pedido.descontoPct || 0 });
         }
     }
 
@@ -2106,11 +2293,12 @@ async function confirmarPagoComprovante(msgIdx) {
         const nomesServicos = (pedido.servicos || []).map(id2 => { const s = DB.servicos.find(x => x.id === id2); return s ? s.nome : ''; }).filter(Boolean);
         const nomesMateriais = (pedido.materiais || []).map(id2 => { const mm = DB.materiais.find(x => x.id === id2); return mm ? mm.nome : ''; }).filter(Boolean);
         const detalhes = [...nomesServicos, ...nomesMateriais].join(', ') || 'Serviço solicitado';
+        const faltante = pedido.parcial ? Math.max(0, (pedido.total || 0) - valorPagoPedido(pedido)) : 0;
         const confMsg = {
             tipo: 'sistema',
             remetente: 'admin',
             clienteId: currentChatClient,
-            mensagem: `Pagamento do Pedido #${pedido.id} confirmado! Detalhes do serviço: ${detalhes}. Valor: ${formatCurrency(Math.max(0, totalPago))}. Status: em andamento.`,
+            mensagem: `Pagamento do Pedido #${pedido.id} confirmado! Detalhes do serviço: ${detalhes}. Valor recebido: ${formatCurrency(Math.max(0, totalPago))}.${faltante > 0 ? ` Falta pagar ${formatCurrency(Math.round(faltante * 100) / 100)} (50% restante).` : ' Status: em andamento.'}`,
             data: new Date().toISOString()
         };
         DB.chats[chatKey].push(confMsg);
@@ -2671,6 +2859,20 @@ function preencherFormConfig() {
     document.getElementById('configFontSize').value = cfg.fontSize;
     document.getElementById('configFontSizeVal').textContent = cfg.fontSize + 'px';
     document.getElementById('configDark').checked = !!cfg.darkPadrao;
+
+    const st = studioDados();
+    if (document.getElementById('configStudioNome')) {
+        document.getElementById('configStudioNome').value = st.nome;
+        document.getElementById('configStudioCnpj').value = st.cnpj;
+        document.getElementById('configStudioTelefone').value = st.telefone;
+        document.getElementById('configStudioEmail').value = st.email;
+        document.getElementById('configStudioEndereco').value = st.endereco;
+        document.getElementById('configStudioCidade').value = st.cidade;
+        document.getElementById('configStudioPixChave').value = st.pixChave;
+        document.getElementById('configStudioPixTipo').value = st.pixTipo;
+        document.getElementById('configStudioPixBeneficiario').value = st.pixBeneficiario;
+    }
+
     atualizarVisualConfig();
 }
 
@@ -2696,7 +2898,18 @@ async function salvarConfig() {
         primaryColor: document.getElementById('configTema').value === 'custom' ? document.getElementById('configCorCustom').value : '',
         fonte: document.getElementById('configFonte').value,
         fontSize: parseFloat(document.getElementById('configFontSize').value) || 14,
-        darkPadrao: document.getElementById('configDark').checked
+        darkPadrao: document.getElementById('configDark').checked,
+        studio: document.getElementById('configStudioNome') ? {
+            nome: (document.getElementById('configStudioNome').value || '').trim(),
+            cnpj: (document.getElementById('configStudioCnpj').value || '').trim(),
+            telefone: (document.getElementById('configStudioTelefone').value || '').trim(),
+            email: (document.getElementById('configStudioEmail').value || '').trim(),
+            endereco: (document.getElementById('configStudioEndereco').value || '').trim(),
+            cidade: (document.getElementById('configStudioCidade').value || '').trim(),
+            pixChave: (document.getElementById('configStudioPixChave').value || '').trim(),
+            pixTipo: document.getElementById('configStudioPixTipo').value,
+            pixBeneficiario: (document.getElementById('configStudioPixBeneficiario').value || '').trim()
+        } : CONFIG_DEFAULT.studio
     };
     try {
         await DB_SERVICE.saveConfig(cfg);

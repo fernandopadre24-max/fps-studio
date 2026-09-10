@@ -604,6 +604,63 @@
                             </div>
                         </div>
                         <div class="card">
+                            <div class="card-header"><h3><i class="fas fa-building"></i> Dados do Estúdio</h3></div>
+                            <div class="card-body">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Nome do Estúdio</label>
+                                        <input type="text" id="configStudioNome" maxlength="40" placeholder="Ex.: FPS Studio">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>CNPJ / CPF</label>
+                                        <input type="text" id="configStudioCnpj" placeholder="00.000.000/0000-00">
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Telefone / WhatsApp</label>
+                                        <input type="text" id="configStudioTelefone" placeholder="(00) 00000-0000">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>E-mail de Contato</label>
+                                        <input type="email" id="configStudioEmail" placeholder="contato@estudio.com.br">
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Endereço</label>
+                                        <input type="text" id="configStudioEndereco" placeholder="Rua, número, bairro">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Cidade</label>
+                                        <input type="text" id="configStudioCidade" maxlength="15" placeholder="Ex.: São Paulo">
+                                    </div>
+                                </div>
+                                <div class="card-separator"></div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Chave PIX</label>
+                                        <input type="text" id="configStudioPixChave" placeholder="E-mail, CPF, CNPJ, telefone ou chave aleatória">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Tipo da Chave PIX</label>
+                                        <select id="configStudioPixTipo">
+                                            <option value="email">E-mail</option>
+                                            <option value="telefone">Telefone</option>
+                                            <option value="cpf">CPF</option>
+                                            <option value="cnpj">CNPJ</option>
+                                            <option value="aleatoria">Chave Aleatória</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Beneficiário (nome que aparece no PIX)</label>
+                                    <input type="text" id="configStudioPixBeneficiario" maxlength="25" placeholder="Nome do responsável / razão social">
+                                    <small class="field-hint">Usado no QR Code PIX gerado para o cliente pagar.</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card">
                             <div class="card-header"><h3><i class="fas fa-database"></i> Backup e Restauração</h3></div>
                             <div class="card-body backup-actions">
                                 <button class="btn-primary" onclick="exportarBackup()"><i class="fas fa-download"></i> Exportar Backup</button>
@@ -995,7 +1052,17 @@
                 <h3><i class="fas fa-clipboard-list"></i> Novo Pedido</h3>
                 <button class="btn-close" onclick="closeAllModals()">&times;</button>
             </div>
-            <div class="modal-body">
+            <div class="modal-body pedido-client-body">
+                <div class="form-group">
+                    <label>Cliente</label>
+                    <div class="cliente-resumo" id="clientResumoCliente">
+                        <i class="fas fa-user-circle"></i>
+                        <div>
+                            <strong id="clientResumoNome">-</strong>
+                            <span id="clientResumoEmail">-</span>
+                        </div>
+                    </div>
+                </div>
                 <div class="form-group">
                     <label>Selecione os Serviços</label>
                     <div class="checkbox-group" id="clientPedidoServicos"></div>
@@ -1004,11 +1071,38 @@
                     <label>Selecione os Materiais</label>
                     <div class="checkbox-group" id="clientPedidoMateriais"></div>
                 </div>
-                <div class="pedido-total">
-                    <span>Total:</span>
-                    <strong id="clientPedidoTotal">R$ 0,00</strong>
+                <div class="form-group">
+                    <label>Condição de Pagamento</label>
+                    <div class="condicao-pagamento">
+                        <label class="condicao-option" for="clientCondVista">
+                            <input type="radio" name="clientCondicao" id="clientCondVista" value="vista" checked onchange="atualizarCondicaoClient()">
+                            <div class="condicao-card">
+                                <span class="condicao-titulo"><i class="fas fa-hand-holding-usd"></i> Pagamento à vista</span>
+                                <span class="condicao-desc">10% de desconto no total</span>
+                                <strong id="clientCondVistaValor">R$ 0,00</strong>
+                            </div>
+                        </label>
+                        <label class="condicao-option" for="clientCondMeta">
+                            <input type="radio" name="clientCondicao" id="clientCondMeta" value="metade" onchange="atualizarCondicaoClient()">
+                            <div class="condicao-card">
+                                <span class="condicao-titulo"><i class="fas fa-sync-alt"></i> Dividir em 2x</span>
+                                <span class="condicao-desc">50% agora, 50% ao finalizar</span>
+                                <strong id="clientCondMetaValor">R$ 0,00</strong>
+                            </div>
+                        </label>
+                    </div>
                 </div>
-                <button class="btn-primary" onclick="salvarPedidoClient()">
+                <div class="pedido-resumo" id="clientPedidoResumo">
+                    <div class="resumo-linha"><span>Subtotal</span><strong id="clientResSubtotal">R$ 0,00</strong></div>
+                    <div class="resumo-linha resumo-vista" id="clientResVista" style="display:none">
+                        <span>Desconto à vista (10%)</span><strong class="texto-positivo" id="clientResDesconto">-R$ 0,00</strong>
+                    </div>
+                    <div class="resumo-linha"><span>Total do pedido</span><strong id="clientResTotal">R$ 0,00</strong></div>
+                    <div class="resumo-linha resumo-entrada"><span id="clientResPagarRotulo">Pagar agora</span><strong id="clientResPagar">R$ 0,00</strong></div>
+                    <div class="resumo-linha" id="clientResSaldoLinha" style="display:none"><span>Saldo ao finalizar</span><strong id="clientResSaldo">R$ 0,00</strong></div>
+                </div>
+                <div class="estudio-info" id="clientResumoEstudio" style="display:none"></div>
+                <button class="btn-primary btn-full" onclick="salvarPedidoClient()">
                     <i class="fas fa-paper-plane"></i> Enviar Pedido
                 </button>
             </div>
@@ -1144,8 +1238,9 @@
                         <div class="pix-qr-placeholder">
                             <i class="fas fa-qrcode"></i>
                             <p>QR Code PIX</p>
-                            <span id="pixCopiaCola">Copia e Cola: 00020126580014br.gov.bcb.pix0136...</span>
+                            <span id="pixCopiaCola">00020126580014br.gov.bcb.pix0136...</span>
                         </div>
+                        <div class="pix-dados" id="pixDadosEstudio"></div>
                         <button class="btn-secondary" onclick="copiarPix()">
                             <i class="fas fa-copy"></i> Copiar Código PIX
                         </button>

@@ -78,9 +78,14 @@ async function initDb() {
             desconto REAL DEFAULT 0,
             status TEXT DEFAULT 'pendente',
             data TEXT DEFAULT (date('now')),
-            total REAL DEFAULT 0
+            total REAL DEFAULT 0,
+            parcial INTEGER DEFAULT 0,
+            descontoPct REAL DEFAULT 0
         )
     `);
+
+    try { db.run('ALTER TABLE pedidos ADD COLUMN parcial INTEGER DEFAULT 0'); } catch(e) {}
+    try { db.run('ALTER TABLE pedidos ADD COLUMN descontoPct REAL DEFAULT 0'); } catch(e) {}
 
     db.run(`
         CREATE TABLE IF NOT EXISTS movimentacoes (

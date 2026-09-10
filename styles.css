@@ -1790,6 +1790,11 @@ body {
     color: #b07c0e;
 }
 
+.kanban-pagamento.pag-parc {
+    background: rgba(108, 92, 231, 0.15);
+    color: var(--primary);
+}
+
 .kanban-cliente {
     font-size: 13px;
     font-weight: 600;
@@ -1823,6 +1828,13 @@ body {
 .kanban-chip.chip-material {
     background: rgba(0, 206, 201, 0.15);
     color: #00958f;
+}
+
+.kanban-chip.chip-cond {
+    background: rgba(108, 92, 231, 0.12);
+    color: var(--primary);
+    margin-top: 6px;
+    display: inline-block;
 }
 
 .kanban-card-bottom {
@@ -2272,6 +2284,212 @@ body {
 .pedido-total strong {
     font-size: 24px;
     color: var(--primary);
+}
+
+/* CLIENT PEDIDO */
+.cliente-resumo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: rgba(108,92,231,0.06);
+    border: 1px solid var(--gray-light);
+    border-radius: var(--radius-sm);
+}
+
+.cliente-resumo i {
+    font-size: 26px;
+    color: var(--primary);
+}
+
+.cliente-resumo div {
+    display: flex;
+    flex-direction: column;
+}
+
+.cliente-resumo strong {
+    font-size: 14px;
+    color: var(--dark);
+}
+
+.cliente-resumo span {
+    font-size: 12px;
+    color: var(--gray);
+}
+
+.condicao-pagamento {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.condicao-option {
+    cursor: pointer;
+}
+
+.condicao-option input {
+    display: none;
+}
+
+.condicao-card {
+    padding: 14px;
+    border: 2px solid var(--gray-light);
+    border-radius: var(--radius-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    transition: var(--transition);
+    height: 100%;
+    box-sizing: border-box;
+}
+
+.condicao-card .condicao-titulo {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--dark);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.condicao-card .condicao-titulo i {
+    color: var(--primary);
+}
+
+.condicao-card .condicao-desc {
+    font-size: 11px;
+    color: var(--gray);
+}
+
+.condicao-card strong {
+    font-size: 16px;
+    color: var(--primary);
+    margin-top: 6px;
+}
+
+.condicao-option input:checked + .condicao-card {
+    border-color: var(--primary);
+    background: rgba(108,92,231,0.05);
+}
+
+.pedido-resumo {
+    padding: 16px;
+    background: linear-gradient(135deg, rgba(108,92,231,0.05), rgba(139,92,246,0.05));
+    border-radius: var(--radius-sm);
+    margin: 16px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.resumo-linha {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    color: var(--dark-light);
+}
+
+.resumo-linha strong {
+    font-size: 14px;
+    color: var(--dark);
+}
+
+.resumo-linha.resumo-entrada {
+    border-top: 1px dashed var(--gray-light);
+    padding-top: 10px;
+}
+
+.resumo-linha.resumo-entrada strong {
+    font-size: 18px;
+    color: var(--primary);
+}
+
+.texto-positivo {
+    color: var(--success) !important;
+}
+
+.estudio-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--gray);
+    background: var(--gray-light);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    margin: 12px 0;
+    line-height: 1.5;
+}
+
+.estudio-info i {
+    color: var(--primary);
+    flex-shrink: 0;
+}
+
+.pagamento-linha {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    color: var(--dark-light);
+    padding: 3px 0;
+}
+
+.pagamento-linha strong {
+    color: var(--dark);
+}
+
+.pix-dados {
+    margin: 14px 0 10px;
+    padding: 12px;
+    border: 1px dashed var(--gray-light);
+    border-radius: var(--radius-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    text-align: left;
+}
+
+.pix-dados-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12px;
+}
+
+.pix-dados-item span {
+    color: var(--gray);
+}
+
+.pix-dados-item strong {
+    font-size: 12px;
+    color: var(--dark);
+    word-break: break-all;
+    text-align: right;
+}
+
+.pix-dados-aviso {
+    font-size: 12px;
+    color: var(--warning, #d97706);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.card-separator {
+    border: none;
+    border-top: 1px solid var(--gray-light);
+    margin: 14px 0;
+}
+
+.cond-badge {
+    display: block;
+    font-size: 10px;
+    color: var(--primary);
+    margin-top: 2px;
+    font-weight: 600;
 }
 
 /* EMPTY STATE */
