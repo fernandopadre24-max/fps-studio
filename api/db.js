@@ -121,6 +121,7 @@ async function initDb() {
     try { db.run('ALTER TABLE pedidos ADD COLUMN horaInicial TEXT DEFAULT ""'); } catch(e) {}
     try { db.run('ALTER TABLE pedidos ADD COLUMN dataFinal TEXT DEFAULT ""'); } catch(e) {}
     try { db.run('ALTER TABLE pedidos ADD COLUMN horaFinal TEXT DEFAULT ""'); } catch(e) {}
+    try { db.run('ALTER TABLE pedidos ADD COLUMN audios TEXT DEFAULT "[]"'); } catch(e) {}
 
     db.run(`
         CREATE TABLE IF NOT EXISTS movimentacoes (
