@@ -3,7 +3,13 @@
     "version": "1.0.0",
     "description": "Sistema de gerenciamento de estúdio de gravação",
     "main": "api/db.js",
+    "scripts": {
+        "dev": "node server.js",
+        "start": "node server.js",
+        "build": "echo 'No build step required'"
+    },
     "dependencies": {
+        "express": "^4.18.2",
         "sql.js": "^1.11.0"
     }
 }

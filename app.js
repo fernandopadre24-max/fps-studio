@@ -1445,7 +1445,65 @@ function htmlResumoServicosCliente(clienteId) {
         </table>`;
 }
 
-function toggleClienteDetalhe(id) {
+
+function htmlResumoMovimentacoesCliente(pedidos) {
+    const pedidosIds = pedidos.map(p => p.id);
+    const movs = DB.movimentacoes.filter(m => 
+        (m.pedidoId && pedidosIds.includes(m.pedidoId)) || 
+        pedidosIds.some(id => (m.descricao || '').includes(`Pedido #${id}`))
+    ).sort((a, b) => (b.data || '').localeCompare(a.data || '') || b.id - a.id);
+
+    if (movs.length === 0) return '';
+
+    return `
+        <div class="sub-secao-titulo" style="margin-top:20px;"><i class="fas fa-money-check-alt"></i> Histórico de Movimentações (Pagamentos)</div>
+        <table class="data-table sub-table">
+            <thead>
+                <tr>
+                    <th>Data/Hora</th>
+                    <th>Descrição</th>
+                    <th>Forma de Pgto</th>
+                    <th>Valor Pago</th>
+                    <th>Falta Pagar (do Pedido)</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${movs.map(m => {
+                    const icon = m.tipo === 'entrada' ? '<i class="fas fa-arrow-up" style="color:var(--success)"></i>' : '<i class="fas fa-arrow-down" style="color:var(--danger)"></i>';
+                    const cor = m.tipo === 'entrada' ? 'var(--success)' : 'var(--danger)';
+                    let faltaPagar = '-';
+                    let pid = m.pedidoId;
+                    if (!pid && m.descricao) {
+                        const match = m.descricao.match(/Pedido #(\d+)/);
+                        if (match) pid = parseInt(match[1]);
+                    }
+                    if (pid) {
+                        const p = DB.pedidos.find(x => x.id === pid);
+                        if (p) {
+                            const esperado = valorEsperadoPedido(p);
+                            const pago = valorPagoPedido(p);
+                            const restante = Math.max(0, esperado - pago);
+                            if (restante > 0) {
+                                faltaPagar = \`<span style="color:var(--danger)">\${formatCurrency(restante)}</span>\`;
+                            } else {
+                                faltaPagar = \`<span style="color:var(--success)"><i class="fas fa-check"></i> Pago</span>\`;
+                            }
+                        }
+                    }
+                    
+                    return \`<tr>
+                        <td>\${formatDate(m.data)} \${m.hora ? m.hora : ''}</td>
+                        <td style="max-width:280px;white-space:normal;">\${m.descricao || 'Sem descrição'}</td>
+                        <td><span class="pag-badge pag-\${m.pagamento}">\${(m.pagamento || 'N/A').toUpperCase()}</span></td>
+                        <td style="color:\${cor};"><strong>\${icon} \${formatCurrency(m.valor)}</strong></td>
+                        <td><strong>\${faltaPagar}</strong></td>
+                    </tr>\`;
+                }).join('')}
+            </tbody>
+        </table>
+    `;
+}
+\nfunction toggleClienteDetalhe(id) {
     const row = document.getElementById(`detalhe_${id}`);
     const content = document.createElement('div');
     const c = DB.clientes.find(x => x.id === id);
@@ -1505,7 +1563,7 @@ function toggleClienteDetalhe(id) {
                         <td></td>
                     </tr>
                 </tfoot>
-            </table>`}
+            </table>`}\n        ${htmlResumoMovimentacoesCliente(pedidos)}
     `;
 
     const td = row.firstElementChild;
