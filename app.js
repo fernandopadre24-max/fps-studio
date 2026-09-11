@@ -2457,9 +2457,36 @@ function openChatAdmin(clienteId) {
 
 function chatImagemHtml(imagem) {
     if (!imagem) return '';
-    return `<a href="${imagem}" target="_blank" rel="noopener">
-        <img src="${imagem}" class="chat-comprovante-img" alt="Comprovante">
-    </a>`;
+    return `<img src="${imagem}" class="chat-comprovante-img" alt="Comprovante" onclick="visualizarImagem(this.src)">`;
+}
+
+function visualizarImagem(src) {
+    const img = document.getElementById('lightboxImg');
+    if (img && src) img.src = src;
+    document.getElementById('lightboxOverlay').classList.add('active');
+}
+
+function fecharLightbox() {
+    document.getElementById('lightboxOverlay').classList.remove('active');
+    document.getElementById('lightboxImg').src = '';
+}
+
+function chatAudioHtml(m, msgIdx, isSent) {
+    return `<div class="chat-message audio ${isSent ? 'sent' : 'received'}">
+        <div class="chat-audio-info">
+            <i class="fas fa-file-audio"></i>
+            <span>${m.arquivoNome || (isSent ? 'Áudio enviado' : 'Áudio recebido')}</span>
+        </div>
+        <audio controls preload="none" data-idx="${msgIdx}"></audio>
+        <div class="chat-message-time">${formatDateTime(m.data)}</div>
+    </div>`;
+}
+
+function bindChatAudio(container, messages) {
+    container.querySelectorAll('audio[data-idx]').forEach(a => {
+        const m = messages[parseInt(a.dataset.idx)];
+        if (m && m.audio) a.src = m.audio;
+    });
 }
 
 function comprovanteStatusBadge(status) {
@@ -2541,6 +2568,8 @@ function renderChatMessagesAdmin(chatKey) {
                 ${acoes}
                 <div class="chat-message-time">${formatDateTime(m.data)}</div>
             </div>`;
+        } else if (m.tipo === 'audio') {
+            return chatAudioHtml(m, msgIdx, m.remetente === 'admin');
         } else {
             const isSent = m.remetente === 'admin';
             return `<div class="chat-message ${isSent ? 'sent' : 'received'}">
@@ -2550,6 +2579,7 @@ function renderChatMessagesAdmin(chatKey) {
         }
     }).join('');
 
+    bindChatAudio(container, messages);
     container.scrollTop = container.scrollHeight;
 }
 
@@ -2948,6 +2978,8 @@ function renderClientChat() {
                 ${chatImagemHtml(m.imagem)}
                 <div class="chat-message-time">${formatDateTime(m.data)}</div>
             </div>`;
+        } else if (m.tipo === 'audio') {
+            return chatAudioHtml(m, msgIdx, m.remetente === 'client');
         } else {
             const isSent = m.remetente === 'client';
             return `<div class="chat-message ${isSent ? 'sent' : 'received'}">
@@ -2957,32 +2989,36 @@ function renderClientChat() {
         }
     }).join('');
 
+    bindChatAudio(container, messages);
     container.scrollTop = container.scrollHeight;
     updateChatBadge();
 }
 
 async function sendAudioChat(remetente, inputElement) {
     if (!inputElement.files || inputElement.files.length === 0) return;
-    
+
     let clienteId = null;
     if (remetente === 'client') {
         clienteId = currentUser.id;
     } else {
-        clienteId = document.getElementById('chatClienteSelect') ? parseInt(document.getElementById('chatClienteSelect').value) : null;
+        clienteId = currentChatClient;
     }
-    
+
     if (!clienteId) {
         showToast('Selecione um cliente para enviar o áudio.', 'error');
         return;
     }
-    
+
+    const chatKey = `admin_${clienteId}`;
+    if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
+
     for (let i = 0; i < inputElement.files.length; i++) {
         const file = inputElement.files[i];
         if (!file.type.includes('audio') && !file.name.toLowerCase().endsWith('.mp3') && !file.name.toLowerCase().endsWith('.wav')) {
             showToast('Apenas arquivos de áudio são permitidos!', 'error');
             continue;
         }
-        
+
         try {
             const b64 = await fileToBase64(file);
             const msgAudio = {
@@ -2995,19 +3031,23 @@ async function sendAudioChat(remetente, inputElement) {
                 data: new Date().toISOString(),
                 lida: false
             };
-            DB.chats.push(msgAudio);
-            if (DBReady) await DB_SERVICE.createChat(msgAudio);
+            DB.chats[chatKey].push(msgAudio);
+            if (DBReady) {
+                const res = await DB_SERVICE.sendMessage(msgAudio);
+                if (res && res.id) msgAudio.id = res.id;
+            }
         } catch(e) {
             console.error(e);
             showToast('Erro ao processar áudio.', 'error');
         }
     }
-    
-    inputElement.value = ''; // clear
+
+    inputElement.value = '';
     if (remetente === 'client') {
-        renderChatMessagesClient();
+        renderClientChat();
     } else {
-        renderChatMessagesAdmin();
+        renderChatMessagesAdmin(chatKey);
+        renderChatList();
     }
     showToast('Áudio enviado!', 'success');
 }

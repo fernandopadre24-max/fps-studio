@@ -1596,6 +1596,19 @@
         </div>
     </div>
 
+    <!-- LIGHTBOX COMPROVANTE -->
+    <div class="modal-overlay" id="lightboxOverlay" onclick="fecharLightbox()">
+        <div class="modal modal-lg lightbox-modal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3><i class="fas fa-image"></i> Comprovante</h3>
+                <button class="btn-icon" onclick="fecharLightbox()" title="Fechar"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body lightbox-body">
+                <img id="lightboxImg" alt="Comprovante">
+            </div>
+        </div>
+    </div>
+
     <!-- TOAST NOTIFICATIONS -->
     <div class="toast-container" id="toastContainer"></div>
 

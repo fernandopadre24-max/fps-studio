@@ -3754,3 +3754,100 @@ body.dark .tarja-funcionamento.tarja-alerta {
     background: rgba(220, 53, 69, 0.18);
     border-color: rgba(220, 53, 69, 0.55);
 }
+
+/* Lightbox comprovante */
+#lightboxOverlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(0,0,0,0.85);
+    align-items: center;
+    justify-content: center;
+}
+
+#lightboxOverlay.active {
+    display: flex;
+}
+
+#lightboxOverlay .modal {
+    max-width: 90vw;
+    max-height: 90vh;
+    background: var(--bg-card, #1e1e2f);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+#lightboxOverlay .modal-header {
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--gray-light, #eee);
+}
+
+#lightboxOverlay .modal-header .btn-icon {
+    padding: 4px 8px;
+    font-size: 16px;
+}
+
+.lightbox-body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    overflow: hidden;
+}
+
+.lightbox-body img {
+    max-width: 100%;
+    max-height: 78vh;
+    object-fit: contain;
+    border-radius: 6px;
+}
+
+/* Chat áudio */
+.chat-message.audio {
+    background: rgba(108, 92, 231, 0.12);
+    border: 1px solid rgba(108, 92, 231, 0.25);
+    border-radius: 10px;
+    padding: 10px 12px;
+}
+
+.chat-message.audio.sent {
+    background: rgba(108, 92, 231, 0.22);
+    border-color: rgba(108, 92, 231, 0.45);
+}
+
+.chat-message.audio.received {
+    background: rgba(255,255,255,0.06);
+}
+
+body.dark .chat-message.audio.received {
+    background: rgba(255,255,255,0.06);
+}
+
+.chat-audio-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    font-size: 13px;
+    color: var(--text-muted, #888);
+}
+
+.chat-audio-info i {
+    color: var(--primary, #6c5ce7);
+}
+
+.chat-message.audio audio {
+    width: 100%;
+    max-width: 320px;
+    height: 36px;
+    outline: none;
+}
+
+.chat-message.audio audio::-webkit-media-controls-panel {
+    background: rgba(108, 92, 231, 0.15);
+    border-radius: 8px;
+}
