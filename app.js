@@ -3240,8 +3240,8 @@ function formatDataHoraMov(m) {
     return d + (h ? ' <span class="hora-pedido">' + h + '</span>' : '');
 }
 
-function validarDiaFuncionamento() {
-    const dp = document.getElementById('clientPedidoDataPref') || document.getElementById('pedidoDataPref');
+function validarDiaFuncionamento(campoId) {
+    const dp = campoId ? document.getElementById(campoId) : (document.getElementById('clientPedidoDataInicial') || document.getElementById('pedidoDataInicial'));
     if (!dp || !dp.value) return;
     const d = new Date(dp.value + 'T12:00:00');
     const dia = d.getDay();

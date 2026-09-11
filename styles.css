@@ -3717,3 +3717,40 @@ body.dark .btn-logout:hover {
 body.dark .modal-header {
     border-bottom-color: #2b313c;
 }
+
+/* Tarja de funcionamento (terça a sexta) */
+.tarja-funcionamento {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    margin: 8px 0 12px;
+    border-radius: 8px;
+    background: var(--bg-info, rgba(108, 92, 231, 0.1));
+    border: 1px solid rgba(108, 92, 231, 0.3);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.tarja-funcionamento.tarja-topo {
+    max-width: 1200px;
+    margin: 12px auto 4px;
+    justify-content: center;
+    text-align: center;
+}
+
+.tarja-funcionamento.tarja-alerta {
+    background: rgba(220, 53, 69, 0.12);
+    border-color: rgba(220, 53, 69, 0.5);
+}
+
+body.dark .tarja-funcionamento {
+    background: rgba(108, 92, 231, 0.15);
+    border-color: rgba(108, 92, 231, 0.35);
+}
+
+body.dark .tarja-funcionamento.tarja-alerta {
+    background: rgba(220, 53, 69, 0.18);
+    border-color: rgba(220, 53, 69, 0.55);
+}
