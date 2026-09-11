@@ -1,3 +1,11 @@
+const TEMAS_PRESET = {
+    padrao:    { rotulo: 'Padrão',       primary: '#6c5ce7', dark: '#5a4bd1', light: '#a29bfe', grad1: '#0c0c1d', grad2: '#1a1a3e', grad3: '#2d1b69' },
+    neon:      { rotulo: 'Neon',         primary: '#00c2ff', dark: '#00a0d6', light: '#7aedff', grad1: '#0a0a23', grad2: '#11353f', grad3: '#0d4f63' },
+    oceano:    { rotulo: 'Oceano',       primary: '#2f6fed', dark: '#2553c9', light: '#7aa5ff', grad1: '#081125', grad2: '#12326b', grad3: '#1b5aa8' },
+    esmeralda: { rotulo: 'Esmeralda',    primary: '#10b981', dark: '#0d9668', light: '#6ee7b7', grad1: '#06281d', grad2: '#0c5c40', grad3: '#0f8f63' },
+    solar:     { rotulo: 'Solar',        primary: '#f59e0b', dark: '#d97706', light: '#fcd34d', grad1: '#2b1a05', grad2: '#6b3f08', grad3: '#b06a0e' },
+    rosa:      { rotulo: 'Rosa',         primary: '#ec4899', dark: '#d6378b', light: '#f9a8d4', grad1: '#2b0a1d', grad2: '#6b123c', grad3: '#a81f5f' }
+};
 // FPS STUDIO - SISTEMA DE GERENCIAMENTO
 // ============================================
 
@@ -1503,26 +1511,27 @@ function htmlResumoMovimentacoesCliente(pedidos) {
                             const pago = valorPagoPedido(p);
                             const restante = Math.max(0, esperado - pago);
                             if (restante > 0) {
-                                faltaPagar = \`<span style="color:var(--danger)">\${formatCurrency(restante)}</span>\`;
+                                faltaPagar = `<span style="color:var(--danger)">${formatCurrency(restante)}</span>`;
                             } else {
-                                faltaPagar = \`<span style="color:var(--success)"><i class="fas fa-check"></i> Pago</span>\`;
+                                faltaPagar = `<span style="color:var(--success)"><i class="fas fa-check"></i> Pago</span>`;
                             }
                         }
                     }
                     
-                    return \`<tr>
-                        <td>\${formatDate(m.data)} \${m.hora ? m.hora : ''}</td>
-                        <td style="max-width:280px;white-space:normal;">\${m.descricao || 'Sem descrição'}</td>
-                        <td><span class="pag-badge pag-\${m.pagamento}">\${(m.pagamento || 'N/A').toUpperCase()}</span></td>
-                        <td style="color:\${cor};"><strong>\${icon} \${formatCurrency(m.valor)}</strong></td>
-                        <td><strong>\${faltaPagar}</strong></td>
-                    </tr>\`;
+                    return `<tr>
+                        <td>${formatDate(m.data)} ${m.hora ? m.hora : ''}</td>
+                        <td style="max-width:280px;white-space:normal;">${m.descricao || 'Sem descrição'}</td>
+                        <td><span class="pag-badge pag-${m.pagamento}">${(m.pagamento || 'N/A').toUpperCase()}</span></td>
+                        <td style="color:${cor};"><strong>${icon} ${formatCurrency(m.valor)}</strong></td>
+                        <td><strong>${faltaPagar}</strong></td>
+                    </tr>`;
                 }).join('')}
             </tbody>
         </table>
     `;
 }
-\nfunction toggleClienteDetalhe(id) {
+
+function toggleClienteDetalhe(id) {
     const row = document.getElementById(`detalhe_${id}`);
     const content = document.createElement('div');
     const c = DB.clientes.find(x => x.id === id);
@@ -2882,7 +2891,6 @@ function renderClientChat() {
     updateChatBadge();
 }
 
-async 
 async function sendAudioChat(remetente, inputElement) {
     if (!inputElement.files || inputElement.files.length === 0) return;
     
@@ -2934,7 +2942,7 @@ async function sendAudioChat(remetente, inputElement) {
     showToast('Áudio enviado!', 'success');
 }
 
-function sendMessageClient() {
+async function sendMessageClient() {
     if (!currentUser || currentUser.role !== 'client') return;
     const input = document.getElementById('chatInputClient');
     const msg = input.value.trim();
@@ -3324,14 +3332,7 @@ function showToast(message, type = 'info') {
 // ============================================
 // CONFIGURAÇÕES DO APP (título, tema, cores, fonte, backup)
 // ============================================
-const TEMAS_PRESET = {
-    padrao:    { rotulo: 'Padrão',       primary: '#6c5ce7', dark: '#5a4bd1', light: '#a29bfe', grad1: '#0c0c1d', grad2: '#1a1a3e', grad3: '#2d1b69' },
-    neon:      { rotulo: 'Neon',         primary: '#00c2ff', dark: '#00a0d6', light: '#7aedff', grad1: '#0a0a23', grad2: '#11353f', grad3: '#0d4f63' },
-    oceano:    { rotulo: 'Oceano',       primary: '#2f6fed', dark: '#2553c9', light: '#7aa5ff', grad1: '#081125', grad2: '#12326b', grad3: '#1b5aa8' },
-    esmeralda: { rotulo: 'Esmeralda',    primary: '#10b981', dark: '#0d9668', light: '#6ee7b7', grad1: '#06281d', grad2: '#0c5c40', grad3: '#0f8f63' },
-    solar:     { rotulo: 'Solar',        primary: '#f59e0b', dark: '#d97706', light: '#fcd34d', grad1: '#2b1a05', grad2: '#6b3f08', grad3: '#b06a0e' },
-    rosa:      { rotulo: 'Rosa',         primary: '#ec4899', dark: '#d6378b', light: '#f9a8d4', grad1: '#2b0a1d', grad2: '#6b123c', grad3: '#a81f5f' }
-};
+
 
 function hexToRgb(hex) {
     const m = (hex || '#6c5ce7').replace('#', '');
