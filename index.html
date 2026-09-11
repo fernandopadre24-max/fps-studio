@@ -491,6 +491,10 @@
                                 <button class="btn-icon" onclick="openModal('enviarComprovanteModal')" title="Enviar Comprovante">
                                     <i class="fas fa-receipt"></i>
                                 </button>
+                                <button class="btn-icon" onclick="document.getElementById('chatAudioAdmin').click()" title="Enviar Áudio">
+                                    <i class="fas fa-music"></i>
+                                </button>
+                                <input type="file" id="chatAudioAdmin" accept="audio/mpeg, audio/mp3, audio/wav, .mp3, .wav" style="display:none;" onchange="sendAudioChat('admin', this)">
                                 <input type="text" id="chatInputAdmin" placeholder="Digite sua mensagem..." onkeypress="if(event.key==='Enter')sendMessageAdmin()">
                                 <button class="btn-send" onclick="sendMessageAdmin()">
                                     <i class="fas fa-paper-plane"></i>
@@ -915,6 +919,10 @@
                                 <button class="btn-icon" onclick="openModal('enviarPagamentoClientModal')" title="Enviar Pagamento / Comprovante">
                                     <i class="fas fa-file-invoice"></i>
                                 </button>
+                                <button class="btn-icon" onclick="document.getElementById('chatAudioClient').click()" title="Enviar Áudio">
+                                    <i class="fas fa-music"></i>
+                                </button>
+                                <input type="file" id="chatAudioClient" accept="audio/mpeg, audio/mp3, audio/wav, .mp3, .wav" style="display:none;" onchange="sendAudioChat('client', this)">
                                 <input type="text" id="chatInputClient" placeholder="Digite sua mensagem..." onkeypress="if(event.key==='Enter')sendMessageClient()">
                                 <button class="btn-send" onclick="sendMessageClient()">
                                     <i class="fas fa-paper-plane"></i>

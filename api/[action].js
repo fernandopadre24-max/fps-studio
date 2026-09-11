@@ -253,7 +253,7 @@ module.exports = async (req, res) => {
                         ((data.pedidos || []).map(p => ({ ...p, servicos: JSON.stringify(p.servicos || []), materiais: JSON.stringify(p.materiais || []) }))).forEach(insPedido);
                         const insMov = ins('movimentacoes', ['id', 'tipo', 'descricao', 'valor', 'categoria', 'pagamento', 'data', 'pedidoId']);
                         (data.movimentacoes || []).forEach(insMov);
-                        const insChat = ins('chats', ['id', 'tipo', 'remetente', 'clienteId', 'mensagem', 'descricao', 'valor', 'validade', 'data', 'lida', 'desconto', 'status', 'pedidoId', 'imagem']);
+                        const insChat = ins('chats', ['id', 'tipo', 'remetente', 'clienteId', 'mensagem', 'descricao', 'valor', 'validade', 'data', 'lida', 'desconto', 'status', 'pedidoId', 'imagem', 'audio', 'arquivoNome']);
                         (data.chats || []).forEach(insChat);
 
                         db.run('COMMIT');

@@ -1094,7 +1094,26 @@ async function salvarPedido() {
             if (DBReady) await DB_SERVICE.updatePedido(pedidoSalvo.docId, { clienteId, servicos, materiais, desconto, status, total, parcial: pedidoSalvo.parcial || 0, descontoPct: pedidoSalvo.descontoPct || 0, dataInicial, horaInicial, horaFinal });
         }
     } else {
-        const novoPedido = {
+    
+    const audioInput = document.getElementById('clientPedidoAudios');
+    const audiosBase64 = [];
+    if (audioInput && audioInput.files.length > 0) {
+        for (let i=0; i<audioInput.files.length; i++) {
+            const file = audioInput.files[i];
+            if (!file.type.includes('audio') && !file.name.toLowerCase().endsWith('.mp3') && !file.name.toLowerCase().endsWith('.wav')) {
+                showToast('Apenas arquivos de áudio são permitidos!', 'error');
+                return;
+            }
+            try {
+                const b64 = await fileToBase64(file);
+                audiosBase64.push({ name: file.name, data: b64 });
+            } catch(e) {
+                console.error(e);
+            }
+        }
+    }
+
+    const novoPedido = {
             id: DB.nextId.pedido++, clienteId, servicos, materiais, desconto, status, total, dataInicial, horaInicial, horaFinal,
             data: new Date().toISOString().split('T')[0]
         };
@@ -2030,6 +2049,25 @@ function valoresPedidoClient() {
     return { subTotal: total, condicao };
 }
 
+
+function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = error => reject(error);
+    });
+}
+
+function limitAudiosClient(input) {
+    if (input.files.length > 10) {
+        showToast('Você pode anexar no máximo 10 áudios.', 'error');
+        const dt = new DataTransfer();
+        for (let i = 0; i < 10; i++) dt.items.add(input.files[i]);
+        input.files = dt.files;
+    }
+}
+
 function atualizarCondicaoClient() {
     updateClientPedidoTotal();
 }
@@ -2844,7 +2882,59 @@ function renderClientChat() {
     updateChatBadge();
 }
 
-async function sendMessageClient() {
+async 
+async function sendAudioChat(remetente, inputElement) {
+    if (!inputElement.files || inputElement.files.length === 0) return;
+    
+    let clienteId = null;
+    if (remetente === 'client') {
+        clienteId = currentUser.id;
+    } else {
+        clienteId = document.getElementById('chatClienteSelect') ? parseInt(document.getElementById('chatClienteSelect').value) : null;
+    }
+    
+    if (!clienteId) {
+        showToast('Selecione um cliente para enviar o áudio.', 'error');
+        return;
+    }
+    
+    for (let i = 0; i < inputElement.files.length; i++) {
+        const file = inputElement.files[i];
+        if (!file.type.includes('audio') && !file.name.toLowerCase().endsWith('.mp3') && !file.name.toLowerCase().endsWith('.wav')) {
+            showToast('Apenas arquivos de áudio são permitidos!', 'error');
+            continue;
+        }
+        
+        try {
+            const b64 = await fileToBase64(file);
+            const msgAudio = {
+                tipo: 'audio',
+                remetente: remetente,
+                clienteId: clienteId,
+                mensagem: remetente === 'client' ? 'Áudio de referência enviado' : 'Áudio enviado',
+                audio: b64,
+                arquivoNome: file.name,
+                data: new Date().toISOString(),
+                lida: false
+            };
+            DB.chats.push(msgAudio);
+            if (DBReady) await DB_SERVICE.createChat(msgAudio);
+        } catch(e) {
+            console.error(e);
+            showToast('Erro ao processar áudio.', 'error');
+        }
+    }
+    
+    inputElement.value = ''; // clear
+    if (remetente === 'client') {
+        renderChatMessagesClient();
+    } else {
+        renderChatMessagesAdmin();
+    }
+    showToast('Áudio enviado!', 'success');
+}
+
+function sendMessageClient() {
     if (!currentUser || currentUser.role !== 'client') return;
     const input = document.getElementById('chatInputClient');
     const msg = input.value.trim();
