@@ -2476,6 +2476,7 @@ function chatAudioHtml(m, msgIdx, isSent) {
         <div class="chat-audio-info">
             <i class="fas fa-file-audio"></i>
             <span>${m.arquivoNome || (isSent ? 'Áudio enviado' : 'Áudio recebido')}</span>
+            <a class="chat-audio-download" data-idx="${msgIdx}" title="Baixar áudio" onclick="event.stopPropagation()"><i class="fas fa-download"></i></a>
         </div>
         <audio controls preload="none" data-idx="${msgIdx}"></audio>
         <div class="chat-message-time">${formatDateTime(m.data)}</div>
@@ -2486,6 +2487,15 @@ function bindChatAudio(container, messages) {
     container.querySelectorAll('audio[data-idx]').forEach(a => {
         const m = messages[parseInt(a.dataset.idx)];
         if (m && m.audio) a.src = m.audio;
+    });
+    container.querySelectorAll('a.chat-audio-download[data-idx]').forEach(a => {
+        const m = messages[parseInt(a.dataset.idx)];
+        if (m && m.audio) {
+            a.href = m.audio;
+            a.download = m.arquivoNome || 'audio.mp3';
+        } else {
+            a.style.display = 'none';
+        }
     });
 }
 

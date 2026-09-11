@@ -3840,6 +3840,20 @@ body.dark .chat-message.audio.received {
     color: var(--primary, #6c5ce7);
 }
 
+.chat-audio-download {
+    margin-left: auto;
+    color: var(--primary, #6c5ce7);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 3px 7px;
+    border-radius: 6px;
+    text-decoration: none;
+}
+
+.chat-audio-download:hover {
+    background: rgba(108, 92, 231, 0.15);
+}
+
 .chat-message.audio audio {
     width: 100%;
     max-width: 320px;
