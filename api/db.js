@@ -132,11 +132,13 @@ async function initDb() {
             categoria TEXT DEFAULT 'outro',
             pagamento TEXT DEFAULT 'pix',
             data TEXT DEFAULT (date('now')),
+            hora TEXT DEFAULT '',
             pedidoId INTEGER DEFAULT NULL
         )
     `);
 
     try { db.run('ALTER TABLE movimentacoes ADD COLUMN pedidoId INTEGER DEFAULT NULL'); } catch(e) {}
+    try { db.run('ALTER TABLE movimentacoes ADD COLUMN hora TEXT DEFAULT ""'); } catch(e) {}
 
     db.run(`
         CREATE TABLE IF NOT EXISTS chats (

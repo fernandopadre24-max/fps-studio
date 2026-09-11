@@ -123,16 +123,16 @@ module.exports = async (req, res) => {
                 if (method === 'GET') {
                     result = queryAll(db, 'SELECT * FROM movimentacoes ORDER BY data DESC, id DESC');
                 } else if (method === 'POST') {
-                    const { tipo, descricao, valor, categoria, pagamento, data, pedidoId } = req.body;
-                    db.run('INSERT INTO movimentacoes (tipo, descricao, valor, categoria, pagamento, data, pedidoId) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                        [tipo, descricao, valor || 0, categoria || 'outro', pagamento || 'pix', data, pedidoId || null]);
+                    const { tipo, descricao, valor, categoria, pagamento, data, hora, pedidoId } = req.body;
+                    db.run('INSERT INTO movimentacoes (tipo, descricao, valor, categoria, pagamento, data, hora, pedidoId) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                        [tipo, descricao, valor || 0, categoria || 'outro', pagamento || 'pix', data, hora || '', pedidoId || null]);
                     const r = queryOne(db, 'SELECT last_insert_rowid() as id');
                     saveDb(db);
                     result = { id: r.id };
                 } else if (method === 'PUT') {
-                    const { tipo, descricao, valor, categoria, pagamento, data, pedidoId } = req.body;
-                    db.run('UPDATE movimentacoes SET tipo=?, descricao=?, valor=?, categoria=?, pagamento=?, data=?, pedidoId=? WHERE id=?',
-                        [tipo, descricao, valor || 0, categoria || 'outro', pagamento || 'pix', data, pedidoId || null, id]);
+                    const { tipo, descricao, valor, categoria, pagamento, data, hora, pedidoId } = req.body;
+                    db.run('UPDATE movimentacoes SET tipo=?, descricao=?, valor=?, categoria=?, pagamento=?, data=?, hora=?, pedidoId=? WHERE id=?',
+                        [tipo, descricao, valor || 0, categoria || 'outro', pagamento || 'pix', data, hora || '', pedidoId || null, id]);
                     saveDb(db);
                     result = { ok: true };
                 } else if (method === 'DELETE') {
@@ -251,7 +251,7 @@ module.exports = async (req, res) => {
                         (data.clientes || []).forEach(insCliente);
                         const insPedido = ins('pedidos', ['id', 'clienteId', 'servicos', 'materiais', 'desconto', 'status', 'data', 'total', 'parcial', 'descontoPct', 'dataPref', 'horarioPref', 'dataInicial', 'horaInicial', 'dataFinal', 'horaFinal']);
                         ((data.pedidos || []).map(p => ({ ...p, servicos: JSON.stringify(p.servicos || []), materiais: JSON.stringify(p.materiais || []) }))).forEach(insPedido);
-                        const insMov = ins('movimentacoes', ['id', 'tipo', 'descricao', 'valor', 'categoria', 'pagamento', 'data', 'pedidoId']);
+                        const insMov = ins('movimentacoes', ['id', 'tipo', 'descricao', 'valor', 'categoria', 'pagamento', 'data', 'hora', 'pedidoId']);
                         (data.movimentacoes || []).forEach(insMov);
                         const insChat = ins('chats', ['id', 'tipo', 'remetente', 'clienteId', 'mensagem', 'descricao', 'valor', 'validade', 'data', 'lida', 'desconto', 'status', 'pedidoId', 'imagem', 'audio', 'arquivoNome']);
                         (data.chats || []).forEach(insChat);

@@ -1262,7 +1262,7 @@ async function sincronizarFinanceiroPedido(p) {
     }
 
     if (existente) {
-        const mudancas = { tipo: 'entrada', descricao: `Pedido #${p.id}`, valor: p.total, categoria: 'servico', pagamento: existente.pagamento || 'pendente', data: existente.data, pedidoId: p.id };
+        const mudancas = { tipo: 'entrada', descricao: `Pedido #${p.id}`, valor: p.total, categoria: 'servico', pagamento: existente.pagamento || 'pendente', data: existente.data, hora: existente.hora || agoraHora(), pedidoId: p.id };
         Object.assign(existente, mudancas);
         if (DBReady && existente.docId) await DB_SERVICE.updateMovimentacao(existente.docId, mudancas);
         return existente;
@@ -1276,6 +1276,7 @@ async function sincronizarFinanceiroPedido(p) {
         categoria: 'servico',
         pagamento: 'pendente',
         data: new Date().toISOString().split('T')[0],
+        hora: agoraHora(),
         pedidoId: p.id
     };
     DB.movimentacoes.push(nova);
@@ -1300,7 +1301,7 @@ function renderMovimentacoes() {
 
     const tbody = document.getElementById('movimentacoesBody');
     tbody.innerHTML = movs.map(m => `<tr class="${m.pagamento === 'pendente' ? 'mov-pendente' : ''}">
-        <td>${formatDate(m.data)}</td>
+        <td>${formatDataHoraMov(m)}</td>
         <td>${m.descricao}</td>
         <td><span class="status-badge status-${m.tipo === 'entrada' ? 'concluido' : 'cancelado'}">${capitalize(m.tipo)}</span></td>
         <td>${capitalize(m.categoria)}</td>
@@ -1323,7 +1324,8 @@ async function salvarMovimentacao() {
         valor: parseFloat(document.getElementById('movValor').value) || 0,
         categoria: document.getElementById('movCategoria').value,
         pagamento: document.getElementById('movPagamento').value,
-        data: document.getElementById('movData').value || new Date().toISOString().split('T')[0]
+        data: document.getElementById('movData').value || new Date().toISOString().split('T')[0],
+        hora: agoraHora()
     };
 
     if (!data.descricao || !data.valor) {
@@ -1403,9 +1405,12 @@ function renderClientes() {
         const pedidos = DB.pedidos.filter(p => p.clienteId === c.id);
         const totalGasto = pedidos.reduce((s, p) => s + valorEsperadoPedido(p), 0);
         const aberto = clientesExpandidos.has(c.id);
+        const tipoBadge = c.tipoPessoa === 'juridica'
+            ? '<span class="cond-badge" style="margin-left:6px;font-size:10px;">PJ</span>'
+            : (c.cpf ? '<span class="cond-badge" style="margin-left:6px;font-size:10px;">PF</span>' : '');
         return `<tr class="cliente-row" onclick="toggleClienteDetalhe(${c.id})">
-            <td><strong>${c.nome}</strong></td>
-            <td>${c.email}</td>
+            <td><strong>${c.nome}</strong>${tipoBadge}</td>
+            <td>${c.email}${c.instagram ? `<br><small style="color:var(--text-muted);"><i class="fab fa-instagram"></i> ${c.instagram}</small>` : ''}</td>
             <td>${c.telefone}</td>
             <td>${pedidos.length}</td>
             <td><strong>${formatCurrency(totalGasto)}</strong></td>
@@ -1532,16 +1537,122 @@ function htmlResumoMovimentacoesCliente(pedidos) {
 }
 
 function toggleClienteDetalhe(id) {
-    const row = document.getElementById(`detalhe_${id}`);
     const content = document.createElement('div');
-    const c = DB.clientes.find(x => x.id === id);
+    const cliente = DB.clientes.find(c => c.id === id);
     const pedidos = DB.pedidos.filter(p => p.clienteId === id);
     const totalGasto = pedidos.reduce((s, p) => s + valorEsperadoPedido(p), 0);
     const totalPago = pedidos.reduce((s, p) => s + valorPagoPedido(p), 0);
     const emAberto = totalGasto - totalPago;
+    const abrindo = !clientesExpandidos.has(id);
 
     content.className = 'cliente-detalhe-content';
+
+    const tipoRot = cliente && cliente.tipoPessoa === 'juridica' ? 'Pessoa Jurídica' : 'Pessoa Física';
+    const docPrincipal = cliente && cliente.tipoPessoa === 'juridica' ? (cliente.cnpj || '') : (cliente && cliente.cpf) || '';
+    const perfilHtml = cliente ? `
+        <div class="cliente-perfil-topo">
+            <div class="cliente-perfil-avatar"><i class="fas ${cliente.tipoPessoa === 'juridica' ? 'fa-building' : 'fa-user'}"></i></div>
+            <div class="cliente-perfil-info">
+                <div class="cliente-perfil-nome">${cliente.nome} ${cliente.tipoPessoa === 'juridica' ? '<span class="cond-badge">PJ</span>' : (cliente.cpf || cliente.cnpj ? '<span class="cond-badge">PF</span>' : '')}</div>
+                <div class="cliente-perfil-linha">
+                    <span><i class="fas fa-tag"></i> ${tipoRot}</span>
+                    ${docPrincipal ? `<span><i class="fas ${cliente.tipoPessoa === 'juridica' ? 'fa-building' : 'fa-id-card'}"></i> ${docPrincipal}</span>` : '<span class="sem-dado"><i class="fas fa-id-card"></i> Sem CPF/CNPJ</span>'}
+                </div>
+                <div class="cliente-perfil-linha">
+                    <span><i class="fas fa-envelope"></i> ${cliente.email || '-'}</span>
+                    ${cliente.telefone ? `<span><i class="fas fa-phone"></i> ${cliente.telefone}</span>` : ''}
+                    ${cliente.instagram ? `<span><i class="fab fa-instagram"></i> ${cliente.instagram}</span>` : ''}
+                </div>
+                ${(cliente.endereco || cliente.cidade) ? `<div class="cliente-perfil-linha"><span><i class="fas fa-map-marker-alt"></i> ${[cliente.endereco, cliente.numero, cliente.complemento, cliente.bairro, cliente.cep, cliente.cidade, cliente.estado].filter(Boolean).join(', ')}</span></div>` : ''}
+            </div>
+        </div>` : '';
+
+    const pedidosHtml = pedidos.length === 0
+        ? '<p class="empty-state">Este cliente ainda n\u00e3o possui pedidos.</p>'
+        : pedidos.map(p => {
+            const itens = [
+                ...p.servicos.map(sid => DB.servicos.find(s => s.id === sid)?.nome).filter(Boolean),
+                ...p.materiais.map(mid => DB.materiais.find(m => m.id === mid)?.nome).filter(Boolean)
+            ];
+            const esperado = valorEsperadoPedido(p);
+            const pago = valorPagoPedido(p);
+            const restante = Math.max(0, esperado - pago);
+            const cond = p.parcial
+                ? '<span class="pag-cond">50% + 50%</span>'
+                : (p.descontoPct ? `<span class="pag-cond">-${p.descontoPct}% \u00e0 vista</span>` : '<span class="pag-cond">Integral</span>');
+
+            const movs = DB.movimentacoes.filter(m => m.pedidoId === p.id || (m.descricao || '').includes(`Pedido #${p.id}`));
+            const compsPendentes = (DB.chats[`admin_${id}`] || [])
+                .filter(m => m.tipo === 'comprovante' && m.status === 'aguardando' && (m.pedidoId === p.id || (m.mensagem || '').includes(`#${p.id}`) || (m.descricao || '').includes(`#${p.id}`)))
+                .map(m => ({ ...m, orig: 'chat', tipo: 'entrada', valor: m.valor || 0, categoria: m.categoria || 'servico' }));
+            const todos = [...movs, ...compsPendentes].sort((a, b) => {
+                const da = a.data || '', db_ = b.data || '';
+                return da.localeCompare(db_) || String(a.id || 0).localeCompare(String(b.id || 0));
+            });
+
+            const movRows = todos.length === 0
+                ? `<tr><td colspan="5" style="padding:8px 12px;font-size:12px;color:var(--text-muted);text-align:center;">Nenhum movimento registrado</td></tr>`
+                : todos.map(m => {
+                    const isChat = m.orig === 'chat';
+                    const isPendente = isChat || m.pagamento === 'pendente';
+                    const icon = m.pagamento === 'cartao_credito' ? 'fa-credit-card' : m.pagamento === 'pix' ? 'fa-qrcode' : 'fa-hourglass-half';
+                    let metodoHtml;
+                    if (isChat) {
+                        const temCartao = !!(m.mensagem || '').includes('Cart\u00e3o');
+                        metodoHtml = `<i class="fas ${temCartao ? 'fa-credit-card' : 'fa-receipt'}"></i> Comprovante ${temCartao ? '(Cart\u00e3o)' : '(PIX)'}`;
+                    } else {
+                        const parcela = (m.descricao || '').includes('(2\u00aa parcela)') ? ' <span class="pag-cond">2\u00aa parcela</span>' : '';
+                        metodoHtml = `<i class="fas ${icon}"></i> ${isPendente ? '<em>Aguardando</em>' : metodoPagamentoRotulo(m.pagamento)}${parcela}`;
+                    }
+                    const dataHora = isChat ? formatDateTime(m.data) : formatDataHoraMov(m);
+                    return `<tr class="${isPendente ? 'mov-pendente' : ''}">
+                        <td>${dataHora}</td>
+                        <td>${m.descricao || (isChat ? 'Comprovante de pagamento' : '-')}</td>
+                        <td>${metodoHtml}</td>
+                        <td class="${m.tipo === 'entrada' ? 'valor-pago' : 'valor-aberto'}"><strong>${m.tipo === 'entrada' ? '+' : '-'}${formatCurrency(m.valor)}</strong></td>
+                        <td><span class="status-badge status-${isPendente ? 'pendente' : 'concluido'}">${isPendente ? 'Aguardando' : 'Confirmado'}</span></td>
+                    </tr>`;
+                }).join('');
+
+            const somaConfirmado = movs.filter(m => m.pagamento !== 'pendente').reduce((s, m) => s + (m.valor || 0), 0);
+            const somaPendente = movs.filter(m => m.pagamento === 'pendente').reduce((s, m) => s + (m.valor || 0), 0)
+                + compsPendentes.reduce((s, m) => s + (m.valor || 0), 0);
+
+            const horaAgend = p.horaInicial ? `${p.horaInicial}${p.horaFinal ? ' &rarr; ' + p.horaFinal : ''}` : '';
+            const dataAgend = p.dataInicial ? `<span style="font-size:11px;color:var(--text-muted);"><i class="fas fa-calendar-alt"></i> ${formatDate(p.dataInicial)} ${horaAgend}</span>` : '';
+            return `<div class="cliente-pedido-bloco">
+                <div class="cliente-pedido-header">
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                        <strong style="font-size:14px;">Pedido #${p.id}</strong>
+                        <span class="status-badge status-${p.status}">${statusLabel(p.status)}</span>
+                        ${cond} ${dataAgend}
+                    </div>
+                    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:13px;">
+                        <span style="color:var(--text-muted);">${itens.join(', ') || '-'}</span>
+                        <span>Total: <strong>${formatCurrency(esperado)}</strong></span>
+                        <span class="valor-pago">Pago: <strong>${formatCurrency(pago)}</strong></span>
+                        ${restante > 0 ? `<span class="valor-aberto">Falta: <strong>${formatCurrency(restante)}</strong></span>` : `<span style="color:#26cc00;"><i class="fas fa-check-circle"></i> Quitado</span>`}
+                    </div>
+                </div>
+                <table class="data-table sub-table" style="margin:0;">
+                    <thead><tr>
+                        <th>Data / Hora</th><th>Descri\u00e7\u00e3o</th><th>Pagamento</th><th>Valor</th><th>Situa\u00e7\u00e3o</th>
+                    </tr></thead>
+                    <tbody>${movRows}</tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="2"><strong>Totais</strong></td>
+                            <td class="${somaPendente > 0 ? 'valor-aberto' : 'valor-pago'}">${somaPendente > 0 ? `<span>Aguardando: <strong>${formatCurrency(somaPendente)}</strong></span>` : '<span>Sem pend\u00eancia</span>'}</td>
+                            <td class="valor-pago"><strong>Confirmado: ${formatCurrency(somaConfirmado)}</strong></td>
+                            <td class="${restante > 0 ? 'valor-aberto' : 'valor-pago'}"><strong>${restante > 0 ? 'Falta ' + formatCurrency(restante) : 'Quitado'}</strong></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>`;
+        }).join('');
+
     content.innerHTML = `
+        ${perfilHtml}
         <div class="cliente-resumo">
             <div class="resumo-card"><span>Pedidos</span><strong>${pedidos.length}</strong></div>
             <div class="resumo-card"><span>Total</span><strong>${formatCurrency(totalGasto)}</strong></div>
@@ -1549,63 +1660,20 @@ function toggleClienteDetalhe(id) {
             <div class="resumo-card resumo-aberto"><span>Em aberto</span><strong>${formatCurrency(Math.max(0, emAberto))}</strong></div>
         </div>
         ${htmlResumoServicosCliente(id)}
-        ${pedidos.length === 0
-            ? '<p class="empty-state">Este cliente ainda não possui pedidos.</p>'
-            : `<table class="data-table sub-table">
-                <thead>
-                    <tr><th>#</th><th>Data</th><th>O que foi feito</th><th>Como foi pago</th><th>Total</th><th>Pago</th><th>Em aberto</th><th>Status</th></tr>
-                </thead>
-                <tbody>
-                    ${pedidos.map(p => {
-                        const itens = [
-                            ...p.servicos.map(id => DB.servicos.find(s => s.id === id)?.nome).filter(Boolean),
-                            ...p.materiais.map(id => DB.materiais.find(m => m.id === id)?.nome).filter(Boolean)
-                        ];
-                        const nomes = itens.join('<br>');
-                        const esperado = valorEsperadoPedido(p);
-                        const pago = valorPagoPedido(p);
-                        const restante = Math.max(0, esperado - pago);
-                        const pagoCls = pago >= esperado ? 'valor-pago' : '';
-                        const abertoCls = restante > 0 ? 'valor-aberto' : '';
-                        const cond = p.parcial
-                            ? '<span class="pag-cond">50% + 50%</span>'
-                            : (p.descontoPct ? `<span class="pag-cond">-${p.descontoPct}% à vista</span>` : '');
-                        return `<tr>
-                            <td><strong>#${p.id}</strong></td>
-                            <td>${formatPedidoDataHora(p)}</td>
-                            <td style="max-width:280px;white-space:normal;">${nomes || '-'}</td>
-                            <td>${pagamentosPedidoResumo(p)}${cond ? `<div style="margin-top:4px;">${cond}</div>` : ''}</td>
-                            <td><strong>${formatCurrency(esperado)}</strong></td>
-                            <td class="${pagoCls}">${formatCurrency(pago)}</td>
-                            <td class="${abertoCls}">${formatCurrency(restante)}</td>
-                            <td><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></td>
-                        </tr>`;
-                    }).join('')}
-                </tbody>
-                <tfoot>
-                    <tr>
-                        <td colspan="4"><strong>Somatória</strong></td>
-                        <td class="valor-total"><strong>${formatCurrency(totalGasto)}</strong></td>
-                        <td class="valor-pago" style="font-size:14px;"><strong>${formatCurrency(totalPago)}</strong></td>
-                        <td class="valor-aberto" style="font-size:14px;"><strong>${formatCurrency(Math.max(0, emAberto))}</strong></td>
-                        <td></td>
-                    </tr>
-                </tfoot>
-            </table>`}\n        ${htmlResumoMovimentacoesCliente(pedidos)}
+        ${pedidosHtml}
     `;
 
-    const td = row.firstElementChild;
-    if (clientesExpandidos.has(id)) {
-        clientesExpandidos.delete(id);
-        row.style.display = 'none';
-        td.innerHTML = '';
-    } else {
-        clientesExpandidos.add(id);
+    clientesExpandidos[abrindo ? 'add' : 'delete'](id);
+    renderClientes();
+    const novoRow = document.getElementById(`detalhe_${id}`);
+    if (abrindo && novoRow) {
+        const td = novoRow.firstElementChild;
         td.innerHTML = '';
         td.appendChild(content);
-        row.style.display = '';
+        novoRow.style.display = '';
+    } else if (!abrindo && novoRow) {
+        novoRow.style.display = 'none';
     }
-    renderClientes();
 }
 
 function abrirNovoClienteModal() {
@@ -2727,6 +2795,7 @@ async function confirmarPagoComprovante(msgIdx) {
                 categoria: 'servico',
                 pagamento: metodoPag,
                 data: new Date().toISOString().split('T')[0],
+                hora: agoraHora(),
                 pedidoId: pedido.id
             };
             DB.movimentacoes.push(nova);
@@ -2750,6 +2819,7 @@ async function confirmarPagoComprovante(msgIdx) {
                     categoria: 'servico',
                     pagamento: metodoPag,
                     data: new Date().toISOString().split('T')[0],
+                    hora: agoraHora(),
                     pedidoId: pedido.id
                 };
                 DB.movimentacoes.push(nova);
@@ -3153,10 +3223,21 @@ function formatDate(dateStr) {
 }
 
 function formatPedidoDataHora(p) {
-    if (!p.dataInicial) return formatDate(p.data);
-    let txt = formatDate(p.dataInicial);
-    if (p.horaInicial) txt += ` <span class="hora-pedido">${p.horaInicial}</span>`;
+    const d = p.dataPref || p.data;
+    let txt = formatDate(d);
+    if (p.horarioPref) txt += ` <span class="hora-pedido">${p.horarioPref}</span>`;
     return txt;
+}
+
+function agoraHora() {
+    const d = new Date();
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+function formatDataHoraMov(m) {
+    const d = formatDate(m.data);
+    const h = m.hora || '';
+    return d + (h ? ' <span class="hora-pedido">' + h + '</span>' : '');
 }
 
 function validarDiaFuncionamento() {

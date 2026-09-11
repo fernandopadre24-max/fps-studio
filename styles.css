@@ -1637,6 +1637,85 @@ body {
     gap: 14px;
 }
 
+.cliente-perfil-topo {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    background: linear-gradient(135deg, rgba(108, 92, 231, 0.08), rgba(139, 92, 246, 0.05));
+    border: 1px solid rgba(108, 92, 231, 0.2);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    flex-wrap: wrap;
+}
+
+.cliente-perfil-avatar {
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
+    background: var(--primary);
+    color: var(--white);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.cliente-perfil-info {
+    flex: 1;
+    min-width: 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.cliente-perfil-nome {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--dark);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.cliente-perfil-linha {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    font-size: 12.5px;
+    color: var(--dark-light);
+}
+
+.cliente-perfil-linha i {
+    color: var(--primary);
+    width: 14px;
+    text-align: center;
+}
+
+.sem-dado {
+    color: var(--danger);
+    opacity: 0.8;
+}
+
+.cliente-pedido-bloco {
+    border: 1px solid var(--gray-light);
+    border-radius: var(--radius);
+    padding: 12px;
+    background: var(--white);
+}
+
+.cliente-pedido-header {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.hora-pedido {
+    font-size: 12px;
+    opacity: 0.75;
+}
+
 .sub-secao-titulo {
     font-size: 12px;
     font-weight: 700;
