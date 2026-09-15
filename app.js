@@ -714,7 +714,7 @@ function editarServico(id) {
     document.getElementById('servicoId').value = s.id;
     document.getElementById('servicoNome').value = s.nome;
     document.getElementById('servicoDescricao').value = s.descricao;
-    document.getElementById('servicoPreco').value = s.preco;
+    document.getElementById('servicoPreco').value = formatValorBR(s.preco);
     document.getElementById('servicoDuracao').value = s.duracao;
     document.getElementById('servicoIcone').value = s.icone;
 
@@ -746,7 +746,7 @@ async function salvarServico() {
     const data = {
         nome: document.getElementById('servicoNome').value,
         descricao: document.getElementById('servicoDescricao').value,
-        preco: parseFloat(document.getElementById('servicoPreco').value) || 0,
+        preco: parseValorBR(document.getElementById('servicoPreco').value),
         duracao: document.getElementById('servicoDuracao').value,
         icone: document.getElementById('servicoIcone').value || 'fa-cog',
         imagem: imagemBase64
@@ -813,7 +813,7 @@ function editarMaterial(id) {
     document.getElementById('materialId').value = m.id;
     document.getElementById('materialNome').value = m.nome;
     document.getElementById('materialDescricao').value = m.descricao;
-    document.getElementById('materialPreco').value = m.preco;
+    document.getElementById('materialPreco').value = formatValorBR(m.preco);
     document.getElementById('materialEstoque').value = m.estoque;
     document.getElementById('materialCategoria').value = m.categoria;
 
@@ -845,7 +845,7 @@ async function salvarMaterial() {
     const data = {
         nome: document.getElementById('materialNome').value,
         descricao: document.getElementById('materialDescricao').value,
-        preco: parseFloat(document.getElementById('materialPreco').value) || 0,
+        preco: parseValorBR(document.getElementById('materialPreco').value),
         estoque: parseInt(document.getElementById('materialEstoque').value) || 0,
         categoria: document.getElementById('materialCategoria').value,
         imagem: imagemBase64
@@ -1068,7 +1068,7 @@ function updatePedidoTotal() {
         const m = DB.materiais.find(x => x.id === parseInt(cb.value));
         if (m) total += m.preco;
     });
-    const desconto = parseFloat(document.getElementById('pedidoDesconto').value) || 0;
+    const desconto = parseValorBR(document.getElementById('pedidoDesconto').value);
     total -= desconto;
     document.getElementById('pedidoTotalPreview').textContent = formatCurrency(Math.max(0, total));
 }
@@ -1078,7 +1078,7 @@ async function salvarPedido() {
     const clienteId = parseInt(document.getElementById('pedidoCliente').value);
     const servicos = [...document.querySelectorAll('#pedidoServicos input:checked')].map(cb => parseInt(cb.value));
     const materiais = [...document.querySelectorAll('#pedidoMateriais input:checked')].map(cb => parseInt(cb.value));
-    const desconto = parseFloat(document.getElementById('pedidoDesconto').value) || 0;
+    const desconto = parseValorBR(document.getElementById('pedidoDesconto').value);
     const status = document.getElementById('pedidoStatus').value;
     const dataInicial = document.getElementById('pedidoDataInicial').value || '';
     const horaInicial = document.getElementById('pedidoHoraInicial').value || '';
@@ -1150,7 +1150,7 @@ function editarPedido(id) {
     if (!p) return;
     document.getElementById('pedidoId').value = p.id;
     document.getElementById('pedidoCliente').value = p.clienteId;
-    document.getElementById('pedidoDesconto').value = p.desconto;
+    document.getElementById('pedidoDesconto').value = formatValorBR(p.desconto);
     document.getElementById('pedidoStatus').value = p.status;
     document.getElementById('pedidoDataInicial').value = p.dataInicial || '';
     document.getElementById('pedidoHoraInicial').value = p.horaInicial || '';
@@ -1322,7 +1322,7 @@ async function salvarMovimentacao() {
     const data = {
         tipo: document.getElementById('movTipo').value,
         descricao: document.getElementById('movDescricao').value,
-        valor: parseFloat(document.getElementById('movValor').value) || 0,
+        valor: parseValorBR(document.getElementById('movValor').value),
         categoria: document.getElementById('movCategoria').value,
         pagamento: document.getElementById('movPagamento').value,
         data: document.getElementById('movData').value || new Date().toISOString().split('T')[0],
@@ -2644,7 +2644,7 @@ function renderChatMessagesAdmin(chatKey) {
                 if (m.status !== 'pago') {
                     descontoArea = `<div class="comprovante-desconto">
                         <label>Desconto (R$)</label>
-                        <input type="number" id="descontoComp_${msgIdx}" step="0.01" min="0" value="${desconto}" oninput="atualizarTotalComprovante(${msgIdx})">
+                        <input type="text" id="descontoComp_${msgIdx}" inputmode="decimal" min="0" value="${desconto ? formatValorBR(desconto) : '0,00'}" oninput="mascaraMoedaBR(this); atualizarTotalComprovante(${msgIdx})">
                     </div>`;
                     acoes = `<div class="comprovante-acoes">
                         ${m.status !== 'recebido' ? `<button class="btn-secondary btn-sm" onclick="confirmarRecebidoComprovante(${msgIdx})"><i class="fas fa-check"></i> Confirmar Recebido</button>` : ''}
@@ -2739,7 +2739,7 @@ function abrirOrcamentoParaPedido(msgIdx) {
 
     document.getElementById('orcamentoPedidoInfo').value = pedido ? `#${pedido.id} - ${formatCurrency(pedido.total)}` : '';
     document.getElementById('orcamentoDescricao').value = [...nomesServicos, ...nomesMateriais].join(', ');
-    document.getElementById('orcamentoValor').value = pedido ? pedido.total.toFixed(2) : '';
+    document.getElementById('orcamentoValor').value = pedido ? formatValorBR(pedido.total) : '';
     document.getElementById('orcamentoDesconto').value = '0';
     document.getElementById('orcamentoValidade').value = '15 dias';
 
@@ -2750,8 +2750,8 @@ function abrirOrcamentoParaPedido(msgIdx) {
 function atualizarCondicaoOrcamento() {
     const el = document.getElementById('orcamentoCondicaoInfo');
     if (!el) return;
-    const valor = parseFloat(document.getElementById('orcamentoValor').value) || 0;
-    const desconto = parseFloat(document.getElementById('orcamentoDesconto').value) || 0;
+    const valor = parseValorBR(document.getElementById('orcamentoValor').value);
+    const desconto = parseValorBR(document.getElementById('orcamentoDesconto').value);
     const base = Math.max(0, valor - desconto);
     const c = orcamentoCondicao;
     let html = '';
@@ -2770,8 +2770,8 @@ function atualizarCondicaoOrcamento() {
 }
 
 function atualizarTotalOrcamento() {
-    const valor = parseFloat(document.getElementById('orcamentoValor').value) || 0;
-    const desconto = parseFloat(document.getElementById('orcamentoDesconto').value) || 0;
+    const valor = parseValorBR(document.getElementById('orcamentoValor').value);
+    const desconto = parseValorBR(document.getElementById('orcamentoDesconto').value);
     document.getElementById('orcamentoTotal').textContent = formatCurrency(Math.max(0, valor - desconto));
     atualizarCondicaoOrcamento();
 }
@@ -2786,8 +2786,8 @@ async function enviarOrcamento() {
         remetente: 'admin',
         clienteId: currentChatClient,
         descricao: document.getElementById('orcamentoDescricao').value,
-        valor: parseFloat(document.getElementById('orcamentoValor').value) || 0,
-        desconto: parseFloat(document.getElementById('orcamentoDesconto').value) || 0,
+        valor: parseValorBR(document.getElementById('orcamentoValor').value),
+        desconto: parseValorBR(document.getElementById('orcamentoDesconto').value),
         pedidoId: orcamentoPedidoId,
         validade: document.getElementById('orcamentoValidade').value || '15 dias',
         parcial: orcamentoCondicao ? (orcamentoCondicao.parcial ? 1 : 0) : 0,
@@ -2834,7 +2834,7 @@ async function enviarComprovante() {
     if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
 
     const pedidoId = document.getElementById('comprovantePedido').value;
-    const valor = parseFloat(document.getElementById('comprovanteValor').value) || 0;
+    const valor = parseValorBR(document.getElementById('comprovanteValor').value);
     const forma = document.getElementById('comprovanteForma').value;
     const data = document.getElementById('comprovanteData').value;
 
@@ -2867,7 +2867,7 @@ function atualizarTotalComprovante(msgIdx) {
     const m = msgs[msgIdx];
     if (!m || m.tipo !== 'comprovante') return;
     const input = document.getElementById(`descontoComp_${msgIdx}`);
-    const desconto = input ? (parseFloat(input.value) || 0) : (m.desconto || 0);
+    const desconto = input ? parseValorBR(input.value) : (m.desconto || 0);
     const pedidoLinked = DB.pedidos.find(x => x.id === (m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0)));
     const valorPedido = pedidoLinked ? pedidoLinked.total : (m.valor || 0);
     const el = document.getElementById(`totalComp_${msgIdx}`);
@@ -2898,7 +2898,7 @@ async function confirmarPagoComprovante(msgIdx) {
     if (!m || m.tipo !== 'comprovante') return;
 
     const input = document.getElementById(`descontoComp_${msgIdx}`);
-    const descontoAdmin = input ? (parseFloat(input.value) || 0) : (m.desconto || 0);
+    const descontoAdmin = input ? parseValorBR(input.value) : (m.desconto || 0);
 
     m.status = 'pago';
     m.desconto = descontoAdmin;
@@ -3267,19 +3267,19 @@ function preencherValorPedidoClient() {
             .filter(m => m.tipo === 'orcamento' && m.pedidoId === pedidoId).pop();
         if (orc) valor = Math.max(0, (orc.valor || 0) - (orc.desconto || 0));
     }
-    document.getElementById('clientPagamentoValor').value = valor ? valor.toFixed(2) : '';
+    document.getElementById('clientPagamentoValor').value = formatValorBR(valor);
     atualizarTotalPagamentoClient();
 }
 
 function atualizarTotalPagamentoClient() {
-    const valor = parseFloat(document.getElementById('clientPagamentoValor').value) || 0;
+    const valor = parseValorBR(document.getElementById('clientPagamentoValor').value);
     document.getElementById('clientPagamentoTotal').textContent = formatCurrency(valor);
 }
 
 async function enviarPagamentoClient() {
     if (!currentUser || currentUser.role !== 'client') return;
     const pedidoId = parseInt(document.getElementById('clientPagamentoPedido').value);
-    const valor = parseFloat(document.getElementById('clientPagamentoValor').value) || 0;
+    const valor = parseValorBR(document.getElementById('clientPagamentoValor').value);
 
     if (!pedidoId) { showToast('Selecione um pedido!', 'error'); return; }
     if (valor <= 0) { showToast('Informe um valor válido!', 'error'); return; }
@@ -3398,6 +3398,51 @@ async function processarImagem(file) {
 
 function formatCurrency(value) {
     return 'R$ ' + value.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+function parseValorBR(str) {
+    if (str === null || str === undefined) return 0;
+    if (typeof str === 'number') return isFinite(str) ? str : 0;
+    const s = String(str).trim().replace(/R\$\s?/gi, '').replace(/\s/g, '');
+    if (!s) return 0;
+    const lastComma = s.lastIndexOf(',');
+    const lastDot = s.lastIndexOf('.');
+    let normalized;
+    if (lastComma > lastDot) {
+        normalized = s.replace(/\./g, '').replace(',', '.');
+    } else if (lastDot > lastComma) {
+        normalized = s.replace(/,/g, '');
+    } else {
+        normalized = s;
+    }
+    const n = parseFloat(normalized);
+    return isNaN(n) ? 0 : n;
+}
+
+function formatValorBR(num) {
+    return (isFinite(num) ? num : parseValorBR(num)).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+function mascaraMoedaBR(input) {
+    if (!input) return;
+    const pos = input.selectionStart;
+    const before = input.value;
+    let cleaned = '';
+    let seenSep = false;
+    for (const ch of before) {
+        if (/\d/.test(ch)) cleaned += ch;
+        else if ((ch === ',' || ch === '.') && !seenSep) { cleaned += ','; seenSep = true; }
+    }
+    const parts = cleaned.split(',');
+    const intRaw = (parts[0] || '').replace(/\D/g, '');
+    const decRaw = parts.length > 1 ? (parts[1] || '').replace(/\D/g, '').slice(0, 2) : '';
+    const intFormatted = intRaw.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    const out = seenSep ? intFormatted + ',' + decRaw : intFormatted;
+    if (out !== before) {
+        input.value = out;
+        const diff = out.length - before.length;
+        try { input.setSelectionRange(pos + diff, pos + diff); } catch(e) {}
+    }
 }
 
 function formatDate(dateStr) {
