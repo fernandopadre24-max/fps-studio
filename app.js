@@ -2529,10 +2529,38 @@ function chatAudioHtml(m, msgIdx, isSent) {
     </div>`;
 }
 
+let _chatAudioObjectUrls = [];
+
+function dataUrlToObjectUrl(dataUrl) {
+    try {
+        const comma = dataUrl.indexOf(',');
+        if (comma === -1) return null;
+        const mime = (dataUrl.slice(0, comma).match(/data:([^;]+)/) || [])[1] || 'audio/mpeg';
+        const bin = atob(dataUrl.slice(comma + 1));
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return URL.createObjectURL(new Blob([bytes], { type: mime }));
+    } catch (e) {
+        console.error('Falha ao converter data URL de áudio:', e);
+        return null;
+    }
+}
+
 function bindChatAudio(container, messages) {
+    _chatAudioObjectUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch(e) {} });
+    _chatAudioObjectUrls = [];
     container.querySelectorAll('audio[data-idx]').forEach(a => {
         const m = messages[parseInt(a.dataset.idx)];
-        if (m && m.audio) a.src = m.audio;
+        if (m && m.audio) {
+            const objUrl = dataUrlToObjectUrl(m.audio);
+            if (objUrl) {
+                _chatAudioObjectUrls.push(objUrl);
+                a.src = objUrl;
+            } else {
+                a.src = m.audio;
+            }
+            a.load();
+        }
     });
     container.querySelectorAll('a.chat-audio-download[data-idx]').forEach(a => {
         const m = messages[parseInt(a.dataset.idx)];
@@ -2543,6 +2571,18 @@ function bindChatAudio(container, messages) {
             a.style.display = 'none';
         }
     });
+}
+
+function msgSig(m) {
+    return m.id + '|' + (m.tipo || '') + '|' + (m.mensagem || '').slice(0, 80) + '|' + (m.status || '') + '|' + (m.lida ? 1 : 0) + '|' + (m.audio ? 1 : 0) + '|' + (m.arquivoNome || '');
+}
+
+function chatsDiferentes(fresh, old) {
+    if (fresh.length !== old.length) return true;
+    for (let i = 0; i < fresh.length; i++) {
+        if (msgSig(fresh[i]) !== msgSig(old[i])) return true;
+    }
+    return false;
 }
 
 function comprovanteStatusBadge(status) {
@@ -3058,7 +3098,7 @@ async function refreshChatsLive() {
             const key = `admin_${currentChatClient}`;
             const fresh = await DB_SERVICE.getChat(currentChatClient);
             const old = DB.chats[key] || [];
-            if (fresh.length !== old.length || JSON.stringify(fresh) !== JSON.stringify(old)) {
+            if (chatsDiferentes(fresh, old)) {
                 DB.chats[key] = fresh;
                 renderChatMessagesAdmin(key);
             }
@@ -3068,7 +3108,7 @@ async function refreshChatsLive() {
             const key = `admin_${currentUser.id}`;
             const fresh = await DB_SERVICE.getChat(currentUser.id);
             const old = DB.chats[key] || [];
-            if (fresh.length !== old.length || JSON.stringify(fresh) !== JSON.stringify(old)) {
+            if (chatsDiferentes(fresh, old)) {
                 DB.chats[key] = fresh;
                 renderClientChat();
             }
