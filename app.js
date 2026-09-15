@@ -1616,8 +1616,7 @@ function toggleClienteDetalhe(id) {
                 }).join('');
 
             const somaConfirmado = movs.filter(m => m.pagamento !== 'pendente').reduce((s, m) => s + (m.valor || 0), 0);
-            const somaPendente = movs.filter(m => m.pagamento === 'pendente').reduce((s, m) => s + (m.valor || 0), 0)
-                + compsPendentes.reduce((s, m) => s + (m.valor || 0), 0);
+            const somaPendente = Math.max(0, Math.round((esperado - somaConfirmado) * 100) / 100);
 
             const horaAgend = p.horaInicial ? `${p.horaInicial}${p.horaFinal ? ' &rarr; ' + p.horaFinal : ''}` : '';
             const dataAgend = p.dataInicial ? `<span style="font-size:11px;color:var(--text-muted);"><i class="fas fa-calendar-alt"></i> ${formatDate(p.dataInicial)} ${horaAgend}</span>` : '';
@@ -2289,10 +2288,8 @@ async function salvarPedidoClient() {
     };
     DB.chats[chatKey].push(msgData);
     try {
-        if (DBReady) {
-            const res = await DB_SERVICE.sendMessage(msgData);
-            if (res && res.id) msgData.id = res.id;
-        }
+        const res = await DB_SERVICE.sendMessage(msgData);
+        if (res && res.id) msgData.id = res.id;
     } catch (e) {
         console.error(e);
         const idx = DB.chats[chatKey].indexOf(msgData);
@@ -2452,11 +2449,15 @@ async function confirmarPagamento() {
     };
 
     DB.chats[chatKey].push(msgData);
-    if (DBReady) {
-        DB_SERVICE.sendMessage(msgData).then(res => {
-            if (res && res.id) msgData.id = res.id;
-        });
-    }
+    DB_SERVICE.sendMessage(msgData).then(res => {
+        if (res && res.id) msgData.id = res.id;
+    }).catch(e => {
+        console.error(e);
+        const idx = DB.chats[chatKey].indexOf(msgData);
+        if (idx > -1) DB.chats[chatKey].splice(idx, 1);
+        renderPedidosClient();
+        showToast('Erro ao enviar o comprovante. Tente novamente.', 'error');
+    });
 
     closeAllModals();
     renderPedidosClient();
@@ -2753,10 +2754,8 @@ async function sendMessageAdmin() {
     renderChatMessagesAdmin(chatKey);
 
     try {
-        if (DBReady) {
-            const res = await DB_SERVICE.sendMessage(msgData);
-            if (res && res.id) msgData.id = res.id;
-        }
+        const res = await DB_SERVICE.sendMessage(msgData);
+        if (res && res.id) msgData.id = res.id;
     } catch (e) {
         console.error(e);
         const idx = DB.chats[chatKey].indexOf(msgData);
@@ -2863,10 +2862,8 @@ async function enviarOrcamento() {
 
     DB.chats[chatKey].push(msgData);
     try {
-        if (DBReady) {
-            const res = await DB_SERVICE.sendMessage(msgData);
-            if (res && res.id) msgData.id = res.id;
-        }
+        const res = await DB_SERVICE.sendMessage(msgData);
+        if (res && res.id) msgData.id = res.id;
     } catch (e) {
         console.error(e);
         const idx = DB.chats[chatKey].indexOf(msgData);
@@ -2927,10 +2924,8 @@ async function enviarComprovante() {
 
     DB.chats[chatKey].push(msgData);
     try {
-        if (DBReady) {
-            const res = await DB_SERVICE.sendMessage(msgData);
-            if (res && res.id) msgData.id = res.id;
-        }
+        const res = await DB_SERVICE.sendMessage(msgData);
+        if (res && res.id) msgData.id = res.id;
     } catch (e) {
         console.error(e);
         const idx = DB.chats[chatKey].indexOf(msgData);
@@ -2987,44 +2982,22 @@ async function confirmarPagoComprovante(msgIdx) {
     m.status = 'pago';
     m.desconto = descontoAdmin;
     m.lida = true;
-    if (DBReady && m.id) await DB_SERVICE.updateMessage(m.id, { status: 'pago', desconto: descontoAdmin });
 
     const pedidoId = m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0);
     const pedido = DB.pedidos.find(x => x.id === pedidoId);
-    const totalPago = Math.max(0, (m.valor || (pedido ? pedido.total : 0)) - descontoAdmin);
+    const totalPago = Math.max(0, Math.round(((m.valor || (pedido ? pedido.total : 0)) - descontoAdmin) * 100) / 100);
     const metodoPag = (m.mensagem || '').includes('Cartão') ? 'cartao_credito' : 'pix';
 
-    if (pedido && totalPago > 0) {
-        const jaConfirmado = DB.movimentacoes.find(mm => mm.pedidoId === pedido.id && mm.pagamento !== 'pendente');
-        if (pedido.parcial && jaConfirmado) {
-            const nova = {
-                id: DB.nextId.movimentacao++,
-                tipo: 'entrada',
-                descricao: `Pagamento Pedido #${pedido.id} (2ª parcela)`,
-                valor: totalPago,
-                categoria: 'servico',
-                pagamento: metodoPag,
-                data: new Date().toISOString().split('T')[0],
-                hora: agoraHora(),
-                pedidoId: pedido.id
-            };
-            DB.movimentacoes.push(nova);
-            if (DBReady) DB_SERVICE.addMovimentacao(nova).then(d => { if (d && d.id) nova.docId = d.id; });
-        } else {
-            const mov = DB.movimentacoes.find(mm => mm.pagamento === 'pendente' && (mm.pedidoId === pedido.id || (mm.descricao || '').includes(`Pedido #${pedido.id}`)));
-            if (mov) {
-                mov.tipo = 'entrada';
-                mov.descricao = `Pagamento Pedido #${pedido.id}`;
-                mov.valor = totalPago;
-                mov.categoria = mov.categoria || 'servico';
-                mov.pagamento = metodoPag;
-                mov.pedidoId = pedido.id;
-                if (DBReady && mov.docId) await DB_SERVICE.updateMovimentacao(mov.docId, { tipo: mov.tipo, descricao: mov.descricao, valor: mov.valor, categoria: mov.categoria, pagamento: mov.pagamento, data: mov.data });
-            } else {
+    try {
+        if (m.id) await DB_SERVICE.updateMessage(m.id, { status: 'pago', desconto: descontoAdmin });
+
+        if (pedido && totalPago > 0) {
+            const jaConfirmado = DB.movimentacoes.find(mm => mm.pedidoId === pedido.id && mm.pagamento !== 'pendente');
+            if (pedido.parcial && jaConfirmado) {
                 const nova = {
                     id: DB.nextId.movimentacao++,
                     tipo: 'entrada',
-                    descricao: `Pagamento Pedido #${pedido.id}`,
+                    descricao: `Pagamento Pedido #${pedido.id} (2ª parcela)`,
                     valor: totalPago,
                     categoria: 'servico',
                     pagamento: metodoPag,
@@ -3033,19 +3006,85 @@ async function confirmarPagoComprovante(msgIdx) {
                     pedidoId: pedido.id
                 };
                 DB.movimentacoes.push(nova);
-                if (DBReady) DB_SERVICE.addMovimentacao(nova).then(d => { if (d && d.id) nova.docId = d.id; });
+                const docId = await DB_SERVICE.addMovimentacao(nova);
+                if (docId && docId.id) nova.docId = docId.id;
+            } else {
+                const mov = DB.movimentacoes.find(mm => mm.pagamento === 'pendente' && (mm.pedidoId === pedido.id || (mm.descricao || '').includes(`Pedido #${pedido.id}`)));
+                if (mov) {
+                    mov.tipo = 'entrada';
+                    mov.descricao = `Pagamento Pedido #${pedido.id}`;
+                    mov.valor = totalPago;
+                    mov.categoria = mov.categoria || 'servico';
+                    mov.pagamento = metodoPag;
+                    mov.pedidoId = pedido.id;
+                    if (mov.docId) await DB_SERVICE.updateMovimentacao(mov.docId, { tipo: mov.tipo, descricao: mov.descricao, valor: mov.valor, categoria: mov.categoria, pagamento: mov.pagamento, data: mov.data, hora: mov.hora || '', pedidoId: mov.pedidoId });
+                } else {
+                    const nova = {
+                        id: DB.nextId.movimentacao++,
+                        tipo: 'entrada',
+                        descricao: `Pagamento Pedido #${pedido.id}`,
+                        valor: totalPago,
+                        categoria: 'servico',
+                        pagamento: metodoPag,
+                        data: new Date().toISOString().split('T')[0],
+                        hora: agoraHora(),
+                        pedidoId: pedido.id
+                    };
+                    DB.movimentacoes.push(nova);
+                    const docId = await DB_SERVICE.addMovimentacao(nova);
+                    if (docId && docId.id) nova.docId = docId.id;
+                }
+            }
+
+            pedido.materiais.forEach(mId => {
+                const mat = DB.materiais.find(x => x.id === mId);
+                if (mat && mat.estoque > 0) mat.estoque--;
+            });
+
+            // Normaliza o "a receber": mantém apenas o saldo realmente pendente
+            const esperado = valorEsperadoPedido(pedido);
+            const pagoAte = valorPagoPedido(pedido);
+            const restante = Math.max(0, Math.round((esperado - pagoAte) * 100) / 100);
+            const pendentes = DB.movimentacoes.filter(mm => mm.pagamento === 'pendente' && (mm.pedidoId === pedido.id || (mm.descricao || '').includes(`Pedido #${pedido.id}`)));
+            if (restante > 0) {
+                const pend = pendentes[pendentes.length - 1];
+                if (pend) {
+                    pend.valor = restante;
+                    if (pend.docId) await DB_SERVICE.updateMovimentacao(pend.docId, { tipo: pend.tipo, descricao: pend.descricao, valor: pend.valor, categoria: pend.categoria, pagamento: pend.pagamento, data: pend.data, hora: pend.hora || '', pedidoId: pend.pedidoId });
+                } else {
+                    const nova = {
+                        id: DB.nextId.movimentacao++,
+                        tipo: 'entrada',
+                        descricao: `Pedido #${pedido.id}`,
+                        valor: restante,
+                        categoria: 'servico',
+                        pagamento: 'pendente',
+                        data: new Date().toISOString().split('T')[0],
+                        hora: agoraHora(),
+                        pedidoId: pedido.id
+                    };
+                    DB.movimentacoes.push(nova);
+                    const docId = await DB_SERVICE.addMovimentacao(nova);
+                    if (docId && docId.id) nova.docId = docId.id;
+                }
+            } else {
+                for (const pend of pendentes) {
+                    DB.movimentacoes = DB.movimentacoes.filter(mm => mm.id !== pend.id);
+                    if (pend.docId) await DB_SERVICE.deleteMovimentacao(pend.docId);
+                }
+            }
+
+            if (pedido.status === 'pendente') {
+                pedido.status = 'em_andamento';
+                if (pedido.docId) await DB_SERVICE.updatePedido(pedido.docId, { clienteId: pedido.clienteId, servicos: pedido.servicos, materiais: pedido.materiais, desconto: pedido.desconto, status: pedido.status, total: pedido.total, parcial: pedido.parcial || 0, descontoPct: pedido.descontoPct || 0 });
             }
         }
-
-        pedido.materiais.forEach(mId => {
-            const mat = DB.materiais.find(x => x.id === mId);
-            if (mat && mat.estoque > 0) mat.estoque--;
-        });
-
-        if (pedido.status === 'pendente') {
-            pedido.status = 'em_andamento';
-            if (DBReady && pedido.docId) await DB_SERVICE.updatePedido(pedido.docId, { clienteId: pedido.clienteId, servicos: pedido.servicos, materiais: pedido.materiais, desconto: pedido.desconto, status: pedido.status, total: pedido.total, parcial: pedido.parcial || 0, descontoPct: pedido.descontoPct || 0 });
-        }
+    } catch (e) {
+        console.error(e);
+        m.status = 'aguardando';
+        renderChatMessagesAdmin(chatKey);
+        showToast('Erro ao confirmar pagamento. Verifique sua conexão e tente novamente.', 'error');
+        return;
     }
 
     // Enviar mensagem de confirmação pro cliente com os detalhes do serviço
@@ -3053,20 +3092,18 @@ async function confirmarPagoComprovante(msgIdx) {
         const nomesServicos = (pedido.servicos || []).map(id2 => { const s = DB.servicos.find(x => x.id === id2); return s ? s.nome : ''; }).filter(Boolean);
         const nomesMateriais = (pedido.materiais || []).map(id2 => { const mm = DB.materiais.find(x => x.id === id2); return mm ? mm.nome : ''; }).filter(Boolean);
         const detalhes = [...nomesServicos, ...nomesMateriais].join(', ') || 'Serviço solicitado';
-        const faltante = pedido.parcial ? Math.max(0, (pedido.total || 0) - valorPagoPedido(pedido)) : 0;
+        const faltante = pedido ? Math.max(0, Math.round((valorEsperadoPedido(pedido) - valorPagoPedido(pedido)) * 100) / 100) : 0;
         const confMsg = {
             tipo: 'sistema',
             remetente: 'admin',
             clienteId: currentChatClient,
-            mensagem: `Pagamento do Pedido #${pedido.id} confirmado! Detalhes do serviço: ${detalhes}. Valor recebido: ${formatCurrency(Math.max(0, totalPago))}.${faltante > 0 ? ` Falta pagar ${formatCurrency(Math.round(faltante * 100) / 100)} (50% restante).` : ' Status: em andamento.'}`,
+            mensagem: `Pagamento do Pedido #${pedido.id} confirmado! Detalhes do serviço: ${detalhes}. Valor recebido: ${formatCurrency(Math.max(0, totalPago))}.${faltante > 0 ? ` Falta pagar ${formatCurrency(faltante)} (50% restante).` : ' Status: em andamento.'}`,
             data: new Date().toISOString()
         };
         DB.chats[chatKey].push(confMsg);
         try {
-            if (DBReady) {
-                const res = await DB_SERVICE.sendMessage(confMsg);
-                if (res && res.id) confMsg.id = res.id;
-            }
+            const res = await DB_SERVICE.sendMessage(confMsg);
+            if (res && res.id) confMsg.id = res.id;
         } catch (e) {
             console.error(e);
             const idx = DB.chats[chatKey].indexOf(confMsg);
@@ -3184,14 +3221,19 @@ async function refreshChatsLive() {
     if (!DBReady || !currentUser) return;
     try {
         if (currentUser.role === 'admin') {
-            if (!currentChatClient) return;
-            const key = `admin_${currentChatClient}`;
-            const fresh = await DB_SERVICE.getChat(currentChatClient);
-            const old = DB.chats[key] || [];
-            const merged = mergeChats(fresh, old);
-            if (chatsDiferentes(merged, old)) {
-                DB.chats[key] = merged;
-                renderChatMessagesAdmin(key);
+            const keys = Object.keys(DB.chats).filter(k => k.startsWith('admin_'));
+            for (const key of keys) {
+                const clienteId = parseInt(key.replace('admin_', ''), 10);
+                if (!clienteId) continue;
+                try {
+                    const fresh = await DB_SERVICE.getChat(clienteId);
+                    const old = DB.chats[key] || [];
+                    const merged = mergeChats(fresh, old);
+                    if (chatsDiferentes(merged, old)) {
+                        DB.chats[key] = merged;
+                        if (currentChatClient && key === `admin_${currentChatClient}`) renderChatMessagesAdmin(key);
+                    }
+                } catch (e) {}
             }
             renderChatList();
             updateChatBadge();
@@ -3267,12 +3309,8 @@ async function sendAudioChat(remetente, inputElement) {
             };
             DB.chats[chatKey].push(msgAudio);
             try {
-                if (DBReady) {
-                    const res = await DB_SERVICE.sendMessage(msgAudio);
-                    if (res && res.id) { msgAudio.id = res.id; enviados++; }
-                } else {
-                    enviados++;
-                }
+                const res = await DB_SERVICE.sendMessage(msgAudio);
+                if (res && res.id) { msgAudio.id = res.id; enviados++; }
             } catch (e) {
                 console.error(e);
                 const idx = DB.chats[chatKey].indexOf(msgAudio);
@@ -3317,10 +3355,8 @@ async function sendMessageClient() {
     renderClientChat();
 
     try {
-        if (DBReady) {
-            const res = await DB_SERVICE.sendMessage(msgData);
-            if (res && res.id) msgData.id = res.id;
-        }
+        const res = await DB_SERVICE.sendMessage(msgData);
+        if (res && res.id) msgData.id = res.id;
     } catch (e) {
         console.error(e);
         const idx = DB.chats[chatKey].indexOf(msgData);
@@ -3417,10 +3453,8 @@ async function enviarPagamentoClient() {
 
     DB.chats[chatKey].push(msgData);
     try {
-        if (DBReady) {
-            const res = await DB_SERVICE.sendMessage(msgData);
-            if (res && res.id) msgData.id = res.id;
-        }
+        const res = await DB_SERVICE.sendMessage(msgData);
+        if (res && res.id) msgData.id = res.id;
     } catch (e) {
         console.error(e);
         const idx = DB.chats[chatKey].indexOf(msgData);

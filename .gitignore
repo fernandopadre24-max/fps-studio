@@ -7,3 +7,4 @@ node_modules/
 
 # Orkestra AI — estado local (nunca versionar)
 .sta/
+fps-studio.db

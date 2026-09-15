@@ -5,21 +5,87 @@ const path = require('path');
 const DB_DIR = process.env.VERCEL ? '/tmp' : process.cwd();
 const DB_PATH = path.join(DB_DIR, 'fps-studio.db');
 const WASM_PATH = path.join(__dirname, 'sql-wasm.wasm');
+const DB_BLOB_NAME = 'fps-studio.db';
+const BLOB_REFRESH_MS = 3000;
 
 let dbInstance = null;
+let lastSavedAt = 0;
+let lastBlobCheck = 0;
+let pendingUpload = Promise.resolve();
+
+async function blobHead() {
+    const { head } = require('@vercel/blob');
+    return head(DB_BLOB_NAME);
+}
+
+async function blobDownload(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('blob GET ' + res.status);
+    return Buffer.from(await res.arrayBuffer());
+}
+
+async function blobUpload(buffer) {
+    const { put } = require('@vercel/blob');
+    const b = await put(DB_BLOB_NAME, buffer, { access: 'public', allowOverwrite: true, addRandomSuffix: false });
+    if (b && b.uploadedAt) lastSavedAt = new Date(b.uploadedAt).getTime();
+}
+
+async function loadSqlInstance(buffer) {
+    const SQL = await initSqlJs({ locateFile: () => WASM_PATH });
+    return buffer ? new SQL.Database(buffer) : new SQL.Database();
+}
 
 async function getDb() {
-    if (dbInstance) return dbInstance;
+    await pendingUpload.catch(() => {});
 
-    const SQL = await initSqlJs({
-        locateFile: () => WASM_PATH
-    });
+    if (dbInstance) {
+        if (process.env.VERCEL) {
+            const agora = Date.now();
+            if (agora - lastBlobCheck > BLOB_REFRESH_MS) {
+                lastBlobCheck = agora;
+                try {
+                    const meta = await blobHead();
+                    const uploaded = meta && meta.uploadedAt ? new Date(meta.uploadedAt).getTime() : 0;
+                    if (uploaded > lastSavedAt) {
+                        const buffer = await blobDownload(meta.url);
+                        const novo = await loadSqlInstance(buffer);
+                        if (novo) {
+                            dbInstance = novo;
+                            lastSavedAt = uploaded;
+                        }
+                    }
+                } catch (e) {}
+            }
+        }
+        return dbInstance;
+    }
 
-    if (fs.existsSync(DB_PATH)) {
-        const buffer = fs.readFileSync(DB_PATH);
-        dbInstance = new SQL.Database(buffer);
+    let buffer = null;
+    let fromBlob = false;
+    if (process.env.VERCEL) {
+        try {
+            const meta = await blobHead();
+            if (meta && meta.url) {
+                buffer = await blobDownload(meta.url);
+                fromBlob = true;
+            }
+        } catch (e) {
+            if (fs.existsSync(DB_PATH)) buffer = fs.readFileSync(DB_PATH);
+        }
     } else {
-        dbInstance = new SQL.Database();
+        if (fs.existsSync(DB_PATH)) buffer = fs.readFileSync(DB_PATH);
+    }
+
+    dbInstance = await loadSqlInstance(buffer);
+    if (fromBlob) {
+        try {
+            const meta = await blobHead();
+            if (meta && meta.uploadedAt) lastSavedAt = new Date(meta.uploadedAt).getTime();
+        } catch (e) {}
+    } else if (!buffer) {
+        lastSavedAt = 0;
+    } else {
+        lastSavedAt = Date.now();
     }
 
     return dbInstance;
@@ -29,6 +95,16 @@ function saveDb(db) {
     const data = db.export();
     const buffer = Buffer.from(data);
     fs.writeFileSync(DB_PATH, buffer);
+    lastSavedAt = Date.now();
+
+    if (process.env.VERCEL && process.env.BLOB_READ_WRITE_TOKEN) {
+        pendingUpload = pendingUpload
+            .catch(() => {})
+            .then(() => blobUpload(buffer))
+            .catch(e => console.error('Falha ao salvar no Blob:', e && e.message ? e.message : e));
+        return pendingUpload;
+    }
+    return Promise.resolve();
 }
 
 async function initDb() {
@@ -174,7 +250,7 @@ async function initDb() {
         )
     `);
 
-    saveDb(db);
+    if (!process.env.VERCEL) saveDb(db);
     return db;
 }
 
