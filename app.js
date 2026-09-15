@@ -2136,6 +2136,51 @@ function fileToBase64(file) {
     });
 }
 
+function lerArquivoComoArrayBuffer(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsArrayBuffer(file);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+    });
+}
+
+function arrayBufferToDataUrl(buffer, mime) {
+    const bytes = new Uint8Array(buffer);
+    let bin = '';
+    for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]);
+    return `data:${mime};base64,${btoa(bin)}`;
+}
+
+function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(blob);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+    });
+}
+
+async function comprimirAudio(arrayBuffer, kbps) {
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const decoded = await ac.decodeAudioData(arrayBuffer);
+    const sr = decoded.sampleRate;
+    const encoder = new lamejs.Mp3Encoder(1, sr, kbps);
+    const samples = new Int16Array(decoded.length);
+    const f32 = decoded.getChannelData(0);
+    for (let i = 0; i < decoded.length; i++) samples[i] = Math.max(-32768, Math.min(32767, f32[i] * 32768));
+    const chunks = [];
+    for (let i = 0; i < decoded.length; i += 1152) {
+        const buf = encoder.encodeBuffer(samples.subarray(i, Math.min(i + 1152, decoded.length)));
+        if (buf.length) chunks.push(new Uint8Array(buf));
+    }
+    const end = encoder.flush();
+    if (end.length) chunks.push(new Uint8Array(end));
+    return new Blob(chunks, { type: 'audio/mpeg' });
+}
+
+const AUDIO_BASE64_LIMIT = 4000000; // ~4MB — Vercel serverless body cap (~4.5MB)
+
 function limitAudiosClient(input) {
     if (input.files.length > 10) {
         showToast('Você pode anexar no máximo 10 áudios.', 'error');
@@ -3030,13 +3075,32 @@ async function sendAudioChat(remetente, inputElement) {
         }
 
         try {
-            const b64 = await fileToBase64(file);
+            const arrayBuffer = await lerArquivoComoArrayBuffer(file);
+            let dataUrl = '';
+            const estimado = Math.ceil(arrayBuffer.byteLength * 4 / 3) + 30;
+            if (estimado <= AUDIO_BASE64_LIMIT) {
+                dataUrl = arrayBufferToDataUrl(arrayBuffer, file.type || 'audio/mpeg');
+            } else {
+                showToast('Áudio grande — comprimindo para envio...', 'info');
+                let kbps = 96;
+                while (kbps >= 32) {
+                    const blob = await comprimirAudio(arrayBuffer, kbps);
+                    const du = await blobToDataUrl(blob);
+                    if (du.length <= AUDIO_BASE64_LIMIT) { dataUrl = du; break; }
+                    kbps = Math.floor(kbps / 2);
+                }
+                if (!dataUrl) {
+                    showToast('Áudio muito grande para o envio (máx ~4MB).', 'error');
+                    continue;
+                }
+            }
+
             const msgAudio = {
                 tipo: 'audio',
                 remetente: remetente,
                 clienteId: clienteId,
                 mensagem: remetente === 'client' ? 'Áudio de referência enviado' : 'Áudio enviado',
-                audio: b64,
+                audio: dataUrl,
                 arquivoNome: file.name,
                 data: new Date().toISOString(),
                 lida: false
