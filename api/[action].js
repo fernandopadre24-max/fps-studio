@@ -146,11 +146,11 @@ module.exports = async (req, res) => {
             case 'chat':
                 if (method === 'GET') {
                     const clienteId = parseInt(query.clienteId);
-                    result = queryAll(db, 'SELECT * FROM chats WHERE clienteId=? ORDER BY data', [clienteId]);
+                    result = queryAll(db, 'SELECT * FROM chats WHERE clienteId=? ORDER BY datetime(data), id', [clienteId]);
                 } else if (method === 'POST') {
-                    const { tipo, remetente, clienteId: cid, mensagem, descricao, valor, validade, desconto, status, pedidoId, imagem, audio, arquivoNome } = req.body;
-                    db.run('INSERT INTO chats (tipo, remetente, clienteId, mensagem, descricao, valor, validade, desconto, status, pedidoId, imagem, audio, arquivoNome) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                        [tipo || 'mensagem', remetente || 'client', cid, mensagem || '', descricao || '', valor || 0, validade || '', desconto || 0, status || '', pedidoId || null, imagem || '', audio || '', arquivoNome || '']);
+                    const { tipo, remetente, clienteId: cid, mensagem, descricao, valor, validade, desconto, status, pedidoId, imagem, audio, arquivoNome, data } = req.body;
+                    db.run('INSERT INTO chats (tipo, remetente, clienteId, mensagem, descricao, valor, validade, desconto, status, pedidoId, imagem, audio, arquivoNome, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                        [tipo || 'mensagem', remetente || 'client', cid, mensagem || '', descricao || '', valor || 0, validade || '', desconto || 0, status || '', pedidoId || null, imagem || '', audio || '', arquivoNome || '', data || new Date().toISOString()]);
                     const r = queryOne(db, 'SELECT last_insert_rowid() as id');
                     saveDb(db);
                     result = { id: r.id };

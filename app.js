@@ -2577,6 +2577,35 @@ function msgSig(m) {
     return m.id + '|' + (m.tipo || '') + '|' + (m.mensagem || '').slice(0, 80) + '|' + (m.status || '') + '|' + (m.lida ? 1 : 0) + '|' + (m.audio ? 1 : 0) + '|' + (m.arquivoNome || '');
 }
 
+function normChatData(d) {
+    if (!d) return 0;
+    const t = Date.parse(d);
+    if (!isNaN(t)) return t;
+    const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+    if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+    return 0;
+}
+
+function mergeChats(fresh, old) {
+    const byId = new Map();
+    (fresh || []).forEach(m => { if (m.id != null) byId.set(m.id, m); });
+    const merged = (old || []).map(lm => {
+        if (lm.id != null && byId.has(lm.id)) {
+            const fm = byId.get(lm.id);
+            byId.delete(lm.id);
+            return fm;
+        }
+        return lm;
+    });
+    byId.forEach(fm => merged.push(fm));
+    merged.sort((a, b) => {
+        const ta = normChatData(a.data), tb = normChatData(b.data);
+        if (ta !== tb) return ta - tb;
+        return (a.id || 0) - (b.id || 0);
+    });
+    return merged;
+}
+
 function chatsDiferentes(fresh, old) {
     if (fresh.length !== old.length) return true;
     for (let i = 0; i < fresh.length; i++) {
@@ -3098,8 +3127,9 @@ async function refreshChatsLive() {
             const key = `admin_${currentChatClient}`;
             const fresh = await DB_SERVICE.getChat(currentChatClient);
             const old = DB.chats[key] || [];
-            if (chatsDiferentes(fresh, old)) {
-                DB.chats[key] = fresh;
+            const merged = mergeChats(fresh, old);
+            if (chatsDiferentes(merged, old)) {
+                DB.chats[key] = merged;
                 renderChatMessagesAdmin(key);
             }
             renderChatList();
@@ -3108,8 +3138,9 @@ async function refreshChatsLive() {
             const key = `admin_${currentUser.id}`;
             const fresh = await DB_SERVICE.getChat(currentUser.id);
             const old = DB.chats[key] || [];
-            if (chatsDiferentes(fresh, old)) {
-                DB.chats[key] = fresh;
+            const merged = mergeChats(fresh, old);
+            if (chatsDiferentes(merged, old)) {
+                DB.chats[key] = merged;
                 renderClientChat();
             }
         }
@@ -3480,15 +3511,25 @@ function validarDiaFuncionamento(campoId) {
     if (!funciona) showToast(`Atenção: o estúdio não funciona em ${nomes[dia]}s — atendemos de terça a sexta.`, 'error');
 }
 
+function parseDataChat(isoStr) {
+    if (!isoStr) return null;
+    let s = String(isoStr).trim();
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(s)) s = s.replace(' ', 'T') + 'Z';
+    const t = Date.parse(s);
+    return isNaN(t) ? null : new Date(t);
+}
+
 function formatDateTime(isoStr) {
     if (!isoStr) return '';
-    const date = new Date(isoStr);
+    const date = parseDataChat(isoStr);
+    if (!date) return isoStr;
     return date.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
 function timeAgo(isoStr) {
     if (!isoStr) return '';
-    const date = new Date(isoStr);
+    const date = parseDataChat(isoStr);
+    if (!date) return '';
     const now = new Date();
     const diff = Math.floor((now - date) / 1000);
     if (diff < 60) return 'agora';
