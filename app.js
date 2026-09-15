@@ -700,6 +700,7 @@ function renderServicosAdmin() {
         </div>
         <div class="item-card-body">
             <h4>${s.nome}</h4>
+            <small class="item-card-categoria"><i class="fas fa-tag"></i> ${s.categoria || 'outro'}</small>
             <p>${s.descricao}</p>
             <div class="item-card-meta">
                 <span class="item-card-price">${formatCurrency(s.preco)}</span>
@@ -722,6 +723,7 @@ function editarServico(id) {
     document.getElementById('servicoPreco').value = formatValorBR(s.preco);
     document.getElementById('servicoDuracao').value = s.duracao;
     document.getElementById('servicoIcone').value = s.icone;
+    document.getElementById('servicoCategoria').value = s.categoria || 'outro';
 
     const preview = document.getElementById('servicoImgPreview');
     if (s.imagem) {
@@ -754,6 +756,7 @@ async function salvarServico() {
         preco: parseValorBR(document.getElementById('servicoPreco').value),
         duracao: document.getElementById('servicoDuracao').value,
         icone: document.getElementById('servicoIcone').value || 'fa-cog',
+        categoria: document.getElementById('servicoCategoria').value || 'outro',
         imagem: imagemBase64
     };
 
@@ -802,7 +805,7 @@ function renderMateriaisAdmin() {
             <p>${m.descricao}</p>
             <div class="item-card-meta">
                 ${formatMaterialPrice(m)}
-                <span class="item-card-badge ${m.estoque > 0 ? 'badge-estoque' : 'badge-sem-estoque'}">${m.estoque} em estoque</span>
+                <span class="item-card-badge badge-estoque"><i class="fas fa-tag"></i> ${m.categoria || 'outro'}</span>
             </div>
         </div>
         <div class="item-card-actions">
@@ -819,7 +822,6 @@ function editarMaterial(id) {
     document.getElementById('materialNome').value = m.nome;
     document.getElementById('materialDescricao').value = m.descricao;
     document.getElementById('materialPreco').value = formatValorBR(m.preco);
-    document.getElementById('materialEstoque').value = m.estoque;
     document.getElementById('materialCategoria').value = m.categoria;
 
     const preview = document.getElementById('materialImgPreview');
@@ -851,7 +853,6 @@ async function salvarMaterial() {
         nome: document.getElementById('materialNome').value,
         descricao: document.getElementById('materialDescricao').value,
         preco: parseValorBR(document.getElementById('materialPreco').value),
-        estoque: parseInt(document.getElementById('materialEstoque').value) || 0,
         categoria: document.getElementById('materialCategoria').value,
         imagem: imagemBase64
     };
@@ -1991,7 +1992,7 @@ function renderMateriaisClient() {
             <p>${m.descricao}</p>
             <div class="item-card-meta">
                 ${formatMaterialPrice(m)}
-                <span class="item-card-badge ${m.estoque > 0 ? 'badge-estoque' : 'badge-sem-estoque'}">${m.estoque > 0 ? `${m.estoque} disponível` : 'Esgotado'}</span>
+                <span class="item-card-badge badge-estoque"><i class="fas fa-tag"></i> ${m.categoria || 'outro'}</span>
             </div>
         </div>
     </div>`).join('');
@@ -3193,7 +3194,6 @@ async function executarConfirmacaoPagamentoAdmin(m, chatKey, descontoAdmin) {
 
             pedido.materiais.forEach(mId => {
                 const mat = DB.materiais.find(x => x.id === mId);
-                if (mat && mat.estoque > 0) mat.estoque--;
             });
 
             // Normaliza o "a receber": mantém apenas o saldo realmente pendente
@@ -3952,7 +3952,7 @@ function setupDragDrop() {
 function clearForm(prefix) {
     const form = {
         servico: ['servicoId', 'servicoNome', 'servicoDescricao', 'servicoPreco', 'servicoDuracao', 'servicoIcone', 'servicoImagem'],
-        material: ['materialId', 'materialNome', 'materialDescricao', 'materialPreco', 'materialEstoque', 'materialImagem'],
+        material: ['materialId', 'materialNome', 'materialDescricao', 'materialPreco', 'materialImagem'],
         pedido: ['pedidoId', 'pedidoDesconto', 'pedidoDataInicial', 'pedidoHoraInicial', 'pedidoDataFinal', 'pedidoHoraFinal'],
         cliente: ['clienteId', 'clienteNome', 'clienteEmail', 'clienteTelefone', 'clienteSenha', 'clientePin', 'clienteCnpj', 'clienteInstagram'],
         mov: ['movDescricao', 'movValor'],
@@ -4414,9 +4414,6 @@ function gerarNotificacoes() {
                     lista.push({ icone: 'fa-receipt', classe: 'notif-warning', titulo: 'Comprovante aguardando', texto: m.mensagem, pagina: 'adminChat' });
                 }
             });
-        });
-        DB.materiais.filter(m => m.estoque <= 3).slice(0, 5).forEach(m => {
-            lista.push({ icone: 'fa-boxes', classe: 'notif-danger', titulo: `Estoque baixo: ${m.nome}`, texto: `Restam ${m.estoque} unidade(s)`, pagina: 'adminMateriais' });
         });
         const temNaoLida = Object.keys(DB.chats).some(key => (DB.chats[key] || []).some(m => m.remetente === 'client' && !m.lida));
         if (temNaoLida) lista.push({ icone: 'fa-envelope', classe: 'notif-primary', titulo: 'Mensagens não lidas', texto: 'Há mensagens de clientes no chat', pagina: 'adminChat' });

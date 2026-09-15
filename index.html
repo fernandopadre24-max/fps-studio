@@ -1010,6 +1010,19 @@
                     <input type="text" id="servicoIcone" placeholder="Ex: fa-microphone">
                 </div>
                 <div class="form-group">
+                    <label>Categoria</label>
+                    <select id="servicoCategoria">
+                        <option value="gravacao">Gravação</option>
+                        <option value="mixagem">Mixagem</option>
+                        <option value="masterizacao">Masterização</option>
+                        <option value="edicao">Edição</option>
+                        <option value="instrumental">Instrumental</option>
+                        <option value="vocal">Vocal</option>
+                        <option value="producao">Produção</option>
+                        <option value="outro">Outro</option>
+                    </select>
+                </div>
+                <div class="form-group">
                     <label>Imagem do Serviço</label>
                     <div class="upload-area" onclick="document.getElementById('servicoImagem').click()">
                         <input type="file" id="servicoImagem" accept="image/*" style="display:none" onchange="previewImagem(this, 'servicoImgPreview')">
@@ -1048,8 +1061,6 @@
                         <input type="text" id="materialPreco" inputmode="decimal" placeholder="0,00" oninput="mascaraMoedaBR(this)">
                     </div>
                     <div class="form-group">
-                        <label>Quantidade em Estoque</label>
-                        <input type="number" id="materialEstoque" placeholder="0">
                     </div>
                 </div>
                 <div class="form-group">

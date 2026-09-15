@@ -118,9 +118,12 @@ async function initDb() {
             preco REAL DEFAULT 0,
             duracao TEXT DEFAULT '',
             icone TEXT DEFAULT 'fa-cog',
-            imagem TEXT DEFAULT ''
+            imagem TEXT DEFAULT '',
+            categoria TEXT DEFAULT 'outro'
         )
     `);
+
+    try { db.run('ALTER TABLE servicos ADD COLUMN categoria TEXT DEFAULT "outro"'); } catch(e) {}
 
     db.run(`
         CREATE TABLE IF NOT EXISTS materiais (
@@ -128,7 +131,6 @@ async function initDb() {
             nome TEXT NOT NULL,
             descricao TEXT DEFAULT '',
             preco REAL DEFAULT 0,
-            estoque INTEGER DEFAULT 0,
             categoria TEXT DEFAULT 'outro',
             imagem TEXT DEFAULT ''
         )
@@ -185,7 +187,8 @@ async function initDb() {
             horaFinal TEXT DEFAULT '',
             total REAL DEFAULT 0,
             parcial INTEGER DEFAULT 0,
-            descontoPct REAL DEFAULT 0
+            descontoPct REAL DEFAULT 0,
+            faixas INTEGER DEFAULT 1
         )
     `);
 
@@ -198,6 +201,7 @@ async function initDb() {
     try { db.run('ALTER TABLE pedidos ADD COLUMN dataFinal TEXT DEFAULT ""'); } catch(e) {}
     try { db.run('ALTER TABLE pedidos ADD COLUMN horaFinal TEXT DEFAULT ""'); } catch(e) {}
     try { db.run('ALTER TABLE pedidos ADD COLUMN audios TEXT DEFAULT "[]"'); } catch(e) {}
+    try { db.run('ALTER TABLE pedidos ADD COLUMN faixas INTEGER DEFAULT 1'); } catch(e) {}
 
     db.run(`
         CREATE TABLE IF NOT EXISTS movimentacoes (

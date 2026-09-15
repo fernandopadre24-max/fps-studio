@@ -22,16 +22,16 @@ module.exports = async (req, res) => {
                 if (method === 'GET') {
                     result = queryAll(db, 'SELECT * FROM servicos ORDER BY id');
                 } else if (method === 'POST') {
-                    const { nome, descricao, preco, duracao, icone, imagem } = req.body;
-                    db.run('INSERT INTO servicos (nome, descricao, preco, duracao, icone, imagem) VALUES (?, ?, ?, ?, ?, ?)',
-                        [nome, descricao || '', preco || 0, duracao || '', icone || 'fa-cog', imagem || '']);
+                    const { nome, descricao, preco, duracao, icone, imagem, categoria } = req.body;
+                    db.run('INSERT INTO servicos (nome, descricao, preco, duracao, icone, imagem, categoria) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                        [nome, descricao || '', preco || 0, duracao || '', icone || 'fa-cog', imagem || '', categoria || 'outro']);
                     const r = queryOne(db, 'SELECT last_insert_rowid() as id');
                     saveDb(db);
                     result = { id: r.id };
                 } else if (method === 'PUT') {
-                    const { nome, descricao, preco, duracao, icone, imagem } = req.body;
-                    db.run('UPDATE servicos SET nome=?, descricao=?, preco=?, duracao=?, icone=?, imagem=? WHERE id=?',
-                        [nome, descricao, preco, duracao, icone, imagem, id]);
+                    const { nome, descricao, preco, duracao, icone, imagem, categoria } = req.body;
+                    db.run('UPDATE servicos SET nome=?, descricao=?, preco=?, duracao=?, icone=?, imagem=?, categoria=? WHERE id=?',
+                        [nome, descricao, preco, duracao, icone, imagem, categoria || 'outro', id]);
                     saveDb(db);
                     result = { ok: true };
                 } else if (method === 'DELETE') {
@@ -46,16 +46,16 @@ module.exports = async (req, res) => {
                 if (method === 'GET') {
                     result = queryAll(db, 'SELECT * FROM materiais ORDER BY id');
                 } else if (method === 'POST') {
-                    const { nome, descricao, preco, estoque, categoria, imagem } = req.body;
-                    db.run('INSERT INTO materiais (nome, descricao, preco, estoque, categoria, imagem) VALUES (?, ?, ?, ?, ?, ?)',
-                        [nome, descricao || '', preco || 0, estoque || 0, categoria || 'outro', imagem || '']);
+                    const { nome, descricao, preco, categoria, imagem } = req.body;
+                    db.run('INSERT INTO materiais (nome, descricao, preco, categoria, imagem) VALUES (?, ?, ?, ?, ?)',
+                        [nome, descricao || '', preco || 0, categoria || 'outro', imagem || '']);
                     const r = queryOne(db, 'SELECT last_insert_rowid() as id');
                     saveDb(db);
                     result = { id: r.id };
                 } else if (method === 'PUT') {
-                    const { nome, descricao, preco, estoque, categoria, imagem } = req.body;
-                    db.run('UPDATE materiais SET nome=?, descricao=?, preco=?, estoque=?, categoria=?, imagem=? WHERE id=?',
-                        [nome, descricao, preco, estoque, categoria, imagem, id]);
+                    const { nome, descricao, preco, categoria, imagem } = req.body;
+                    db.run('UPDATE materiais SET nome=?, descricao=?, preco=?, categoria=?, imagem=? WHERE id=?',
+                        [nome, descricao, preco, categoria, imagem, id]);
                     saveDb(db);
                     result = { ok: true };
                 } else if (method === 'DELETE') {
@@ -99,16 +99,16 @@ module.exports = async (req, res) => {
                         materiais: JSON.parse(p.materiais || '[]')
                     }));
                 } else if (method === 'POST') {
-                    const { clienteId, servicos, materiais, desconto, status, total, parcial, descontoPct, dataPref, horarioPref, dataInicial, horaInicial, dataFinal, horaFinal } = req.body;
-                    db.run('INSERT INTO pedidos (clienteId, servicos, materiais, desconto, status, total, parcial, descontoPct, dataPref, horarioPref, dataInicial, horaInicial, dataFinal, horaFinal) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                        [clienteId, JSON.stringify(servicos || []), JSON.stringify(materiais || []), desconto || 0, status || 'pendente', total || 0, parcial ? 1 : 0, descontoPct || 0, dataPref || '', horarioPref || '', dataInicial || '', horaInicial || '', dataFinal || '', horaFinal || '']);
+                    const { clienteId, servicos, materiais, desconto, status, total, parcial, descontoPct, dataPref, horarioPref, dataInicial, horaInicial, dataFinal, horaFinal, faixas, audios } = req.body;
+                    db.run('INSERT INTO pedidos (clienteId, servicos, materiais, desconto, status, total, parcial, descontoPct, dataPref, horarioPref, dataInicial, horaInicial, dataFinal, horaFinal, faixas, audios) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                        [clienteId, JSON.stringify(servicos || []), JSON.stringify(materiais || []), desconto || 0, status || 'pendente', total || 0, parcial ? 1 : 0, descontoPct || 0, dataPref || '', horarioPref || '', dataInicial || '', horaInicial || '', dataFinal || '', horaFinal || '', faixas || 1, JSON.stringify(audios || [])]);
                     const r = queryOne(db, 'SELECT last_insert_rowid() as id');
                     saveDb(db);
                     result = { id: r.id };
                 } else if (method === 'PUT') {
-                    const { clienteId, servicos, materiais, desconto, status, total, parcial, descontoPct, dataPref, horarioPref, dataInicial, horaInicial, dataFinal, horaFinal } = req.body;
-                    db.run('UPDATE pedidos SET clienteId=?, servicos=?, materiais=?, desconto=?, status=?, total=?, parcial=?, descontoPct=?, dataPref=?, horarioPref=?, dataInicial=?, horaInicial=?, dataFinal=?, horaFinal=? WHERE id=?',
-                        [clienteId, JSON.stringify(servicos || []), JSON.stringify(materiais || []), desconto, status, total, parcial ? 1 : 0, descontoPct || 0, dataPref || '', horarioPref || '', dataInicial || '', horaInicial || '', dataFinal || '', horaFinal || '', id]);
+                    const { clienteId, servicos, materiais, desconto, status, total, parcial, descontoPct, dataPref, horarioPref, dataInicial, horaInicial, dataFinal, horaFinal, faixas, audios } = req.body;
+                    db.run('UPDATE pedidos SET clienteId=?, servicos=?, materiais=?, desconto=?, status=?, total=?, parcial=?, descontoPct=?, dataPref=?, horarioPref=?, dataInicial=?, horaInicial=?, dataFinal=?, horaFinal=?, faixas=?, audios=? WHERE id=?',
+                        [clienteId, JSON.stringify(servicos || []), JSON.stringify(materiais || []), desconto, status, total, parcial ? 1 : 0, descontoPct || 0, dataPref || '', horarioPref || '', dataInicial || '', horaInicial || '', dataFinal || '', horaFinal || '', faixas || 1, JSON.stringify(audios || []), id]);
                     saveDb(db);
                     result = { ok: true };
                 } else if (method === 'DELETE') {
@@ -281,7 +281,7 @@ module.exports = async (req, res) => {
 
                         const insServico = ins('servicos', ['id', 'nome', 'descricao', 'preco', 'duracao', 'icone', 'imagem']);
                         (data.servicos || []).forEach(insServico);
-                        const insMaterial = ins('materiais', ['id', 'nome', 'descricao', 'preco', 'estoque', 'categoria', 'imagem']);
+                        const insMaterial = ins('materiais', ['id', 'nome', 'descricao', 'preco', 'categoria', 'imagem']);
                         (data.materiais || []).forEach(insMaterial);
                         const insCliente = ins('clientes', ['id', 'nome', 'email', 'telefone', 'senha', 'pin', 'cpf', 'endereco', 'numero', 'complemento', 'bairro', 'cep', 'cidade', 'estado', 'tipoPessoa', 'cnpj', 'instagram']);
                         (data.clientes || []).forEach(insCliente);
