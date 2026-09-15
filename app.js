@@ -3489,7 +3489,7 @@ function getCategoriaIcon(cat) {
 // ============================================
 // UPLOAD DE IMAGENS
 // ============================================
-function previewImagem(input, previewId) {
+async function previewImagem(input, previewId) {
     const preview = document.getElementById(previewId);
     const file = input.files[0];
     if (!file) return;
@@ -3504,14 +3504,13 @@ function previewImagem(input, previewId) {
         return;
     }
 
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        input.dataset.base64 = e.target.result;
-        const isServico = previewId === 'servicoImgPreview';
-        const removeFn = isServico ? 'removerImagemServico' : 'removerImagemMaterial';
-        preview.innerHTML = `<img src="${e.target.result}" class="upload-preview"><div class="upload-actions"><span>${file.name} (${(file.size / 1024).toFixed(0)}KB)</span><button onclick="${removeFn}(event)"><i class="fas fa-trash"></i> Remover</button></div>`;
-    };
-    reader.readAsDataURL(file);
+    const isServico = previewId === 'servicoImgPreview';
+    const removeFn = isServico ? 'removerImagemServico' : 'removerImagemMaterial';
+    preview.innerHTML = `<img src="" class="upload-preview"><div class="upload-actions"><span>${file.name} — processando...</span><button onclick="${removeFn}(event)"><i class="fas fa-trash"></i> Remover</button></div>`;
+
+    const compressed = await processarImagem(file);
+    input.dataset.base64 = compressed;
+    preview.innerHTML = `<img src="${compressed}" class="upload-preview"><div class="upload-actions"><span>${file.name}</span><button onclick="${removeFn}(event)"><i class="fas fa-trash"></i> Remover</button></div>`;
 }
 
 function setupDragDrop() {
