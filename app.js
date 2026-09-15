@@ -2491,7 +2491,7 @@ function renderChatList() {
     }).join('');
 }
 
-function openChatAdmin(clienteId) {
+async function openChatAdmin(clienteId) {
     currentChatClient = clienteId;
     const cliente = DB.clientes.find(c => c.id === clienteId);
     const chatKey = `admin_${clienteId}`;
@@ -2510,6 +2510,19 @@ function openChatAdmin(clienteId) {
 
     renderChatMessagesAdmin(chatKey);
     renderChatList();
+
+    if (DBReady) {
+        try {
+            const fresh = await DB_SERVICE.getChat(clienteId);
+            const old = DB.chats[chatKey] || [];
+            const merged = mergeChats(fresh, old);
+            if (chatsDiferentes(merged, old)) {
+                DB.chats[chatKey] = merged;
+                renderChatMessagesAdmin(chatKey);
+                renderChatList();
+            }
+        } catch (e) {}
+    }
 }
 
 function chatImagemHtml(imagem) {
