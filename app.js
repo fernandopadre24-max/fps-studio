@@ -1262,7 +1262,7 @@ async function sincronizarFinanceiroPedido(p) {
     }
 
     if (existente) {
-        const mudancas = { tipo: 'entrada', descricao: `Pedido #${p.id}`, valor: p.total, categoria: 'servico', pagamento: existente.pagamento || 'pendente', data: existente.data, hora: existente.hora || agoraHora(), pedidoId: p.id };
+        const mudancas = { tipo: 'entrada', descricao: `Pedido #${p.id}`, valor: valorEsperadoPedido(p), categoria: 'servico', pagamento: existente.pagamento || 'pendente', data: existente.data, hora: existente.hora || agoraHora(), pedidoId: p.id };
         Object.assign(existente, mudancas);
         if (DBReady && existente.docId) await DB_SERVICE.updateMovimentacao(existente.docId, mudancas);
         return existente;
@@ -1272,7 +1272,7 @@ async function sincronizarFinanceiroPedido(p) {
         id: DB.nextId.movimentacao++,
         tipo: 'entrada',
         descricao: `Pedido #${p.id}`,
-        valor: p.total,
+        valor: valorEsperadoPedido(p),
         categoria: 'servico',
         pagamento: 'pendente',
         data: new Date().toISOString().split('T')[0],
@@ -1914,7 +1914,7 @@ function renderClientDashboard() {
     document.getElementById('clientStatPedidos').textContent = meusPedidos.length;
     document.getElementById('clientStatPendentes').textContent = meusPedidos.filter(p => p.status === 'pendente' || p.status === 'em_andamento').length;
     document.getElementById('clientStatConcluidos').textContent = meusPedidos.filter(p => p.status === 'concluido').length;
-    document.getElementById('clientStatTotal').textContent = formatCurrency(meusPedidos.reduce((s, p) => s + p.total, 0));
+    document.getElementById('clientStatTotal').textContent = formatCurrency(meusPedidos.reduce((s, p) => s + valorEsperadoPedido(p), 0));
 
     // Serviços em destaque
     const destaque = DB.servicos.slice(0, 3);
@@ -3863,7 +3863,7 @@ function gerarNotificacoes() {
     if (!currentUser) return lista;
     if (currentUser.role === 'admin') {
         DB.pedidos.filter(p => p.status === 'pendente').slice(0, 5).forEach(p => {
-            lista.push({ icone: 'fa-clipboard-list', classe: 'notif-primary', titulo: `Pedido #${p.id} pendente`, texto: `Aguardando orçamento/pagamento - ${formatCurrency(p.total)}`, pagina: 'adminPedidos' });
+            lista.push({ icone: 'fa-clipboard-list', classe: 'notif-primary', titulo: `Pedido #${p.id} pendente`, texto: `Aguardando orçamento/pagamento - ${formatCurrency(valorEsperadoPedido(p))}`, pagina: 'adminPedidos' });
         });
         Object.keys(DB.chats).forEach(key => {
             (DB.chats[key] || []).forEach(m => {
