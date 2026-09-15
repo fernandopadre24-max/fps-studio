@@ -2288,9 +2288,20 @@ async function salvarPedidoClient() {
         lida: false
     };
     DB.chats[chatKey].push(msgData);
-    if (DBReady) {
-        const res = await DB_SERVICE.sendMessage(msgData);
-        if (res && res.id) msgData.id = res.id;
+    try {
+        if (DBReady) {
+            const res = await DB_SERVICE.sendMessage(msgData);
+            if (res && res.id) msgData.id = res.id;
+        }
+    } catch (e) {
+        console.error(e);
+        const idx = DB.chats[chatKey].indexOf(msgData);
+        if (idx > -1) DB.chats[chatKey].splice(idx, 1);
+        closeAllModals();
+        renderPedidosClient();
+        renderClientDashboard();
+        showToast('Erro ao enviar o pedido pelo chat. Tente novamente.', 'error');
+        return;
     }
 
     closeAllModals();
@@ -2726,10 +2737,23 @@ async function sendMessageAdmin() {
     };
 
     DB.chats[chatKey].push(msgData);
+    renderChatMessagesAdmin(chatKey);
 
-    if (DBReady) {
-        const res = await DB_SERVICE.sendMessage(msgData);
-        if (res && res.id) msgData.id = res.id;
+    try {
+        if (DBReady) {
+            const res = await DB_SERVICE.sendMessage(msgData);
+            if (res && res.id) msgData.id = res.id;
+        }
+    } catch (e) {
+        console.error(e);
+        const idx = DB.chats[chatKey].indexOf(msgData);
+        if (idx > -1) DB.chats[chatKey].splice(idx, 1);
+        renderChatMessagesAdmin(chatKey);
+        renderChatList();
+        updateChatBadge();
+        input.focus();
+        showToast('Erro ao enviar mensagem. Verifique sua conexão e tente novamente.', 'error');
+        return;
     }
 
     input.value = '';
@@ -2825,9 +2849,18 @@ async function enviarOrcamento() {
     };
 
     DB.chats[chatKey].push(msgData);
-    if (DBReady) {
-        const res = await DB_SERVICE.sendMessage(msgData);
-        if (res && res.id) msgData.id = res.id;
+    try {
+        if (DBReady) {
+            const res = await DB_SERVICE.sendMessage(msgData);
+            if (res && res.id) msgData.id = res.id;
+        }
+    } catch (e) {
+        console.error(e);
+        const idx = DB.chats[chatKey].indexOf(msgData);
+        if (idx > -1) DB.chats[chatKey].splice(idx, 1);
+        renderChatMessagesAdmin(chatKey);
+        showToast('Erro ao enviar o orçamento. Tente novamente.', 'error');
+        return;
     }
 
     orcamentoPedidoId = null;
@@ -2880,9 +2913,18 @@ async function enviarComprovante() {
     };
 
     DB.chats[chatKey].push(msgData);
-    if (DBReady) {
-        const res = await DB_SERVICE.sendMessage(msgData);
-        if (res && res.id) msgData.id = res.id;
+    try {
+        if (DBReady) {
+            const res = await DB_SERVICE.sendMessage(msgData);
+            if (res && res.id) msgData.id = res.id;
+        }
+    } catch (e) {
+        console.error(e);
+        const idx = DB.chats[chatKey].indexOf(msgData);
+        if (idx > -1) DB.chats[chatKey].splice(idx, 1);
+        renderChatMessagesAdmin(chatKey);
+        showToast('Erro ao enviar o comprovante. Tente novamente.', 'error');
+        return;
     }
 
     closeAllModals();
@@ -3007,9 +3049,15 @@ async function confirmarPagoComprovante(msgIdx) {
             data: new Date().toISOString()
         };
         DB.chats[chatKey].push(confMsg);
-        if (DBReady) {
-            const res = await DB_SERVICE.sendMessage(confMsg);
-            if (res && res.id) confMsg.id = res.id;
+        try {
+            if (DBReady) {
+                const res = await DB_SERVICE.sendMessage(confMsg);
+                if (res && res.id) confMsg.id = res.id;
+            }
+        } catch (e) {
+            console.error(e);
+            const idx = DB.chats[chatKey].indexOf(confMsg);
+            if (idx > -1) DB.chats[chatKey].splice(idx, 1);
         }
     }
 
@@ -3205,11 +3253,18 @@ async function sendAudioChat(remetente, inputElement) {
                 lida: false
             };
             DB.chats[chatKey].push(msgAudio);
-            if (DBReady) {
-                const res = await DB_SERVICE.sendMessage(msgAudio);
-                if (res && res.id) { msgAudio.id = res.id; enviados++; }
-            } else {
-                enviados++;
+            try {
+                if (DBReady) {
+                    const res = await DB_SERVICE.sendMessage(msgAudio);
+                    if (res && res.id) { msgAudio.id = res.id; enviados++; }
+                } else {
+                    enviados++;
+                }
+            } catch (e) {
+                console.error(e);
+                const idx = DB.chats[chatKey].indexOf(msgAudio);
+                if (idx > -1) DB.chats[chatKey].splice(idx, 1);
+                showToast(`Erro ao enviar o áudio "${file.name}". Verifique sua conexão e tente novamente.`, 'error');
             }
         } catch(e) {
             console.error(e);
@@ -3246,10 +3301,21 @@ async function sendMessageClient() {
     };
 
     DB.chats[chatKey].push(msgData);
+    renderClientChat();
 
-    if (DBReady) {
-        const res = await DB_SERVICE.sendMessage(msgData);
-        if (res && res.id) msgData.id = res.id;
+    try {
+        if (DBReady) {
+            const res = await DB_SERVICE.sendMessage(msgData);
+            if (res && res.id) msgData.id = res.id;
+        }
+    } catch (e) {
+        console.error(e);
+        const idx = DB.chats[chatKey].indexOf(msgData);
+        if (idx > -1) DB.chats[chatKey].splice(idx, 1);
+        renderClientChat();
+        input.focus();
+        showToast('Erro ao enviar mensagem. Verifique sua conexão e tente novamente.', 'error');
+        return;
     }
 
     input.value = '';
@@ -3337,9 +3403,19 @@ async function enviarPagamentoClient() {
     };
 
     DB.chats[chatKey].push(msgData);
-    if (DBReady) {
-        const res = await DB_SERVICE.sendMessage(msgData);
-        if (res && res.id) msgData.id = res.id;
+    try {
+        if (DBReady) {
+            const res = await DB_SERVICE.sendMessage(msgData);
+            if (res && res.id) msgData.id = res.id;
+        }
+    } catch (e) {
+        console.error(e);
+        const idx = DB.chats[chatKey].indexOf(msgData);
+        if (idx > -1) DB.chats[chatKey].splice(idx, 1);
+        closeAllModals();
+        renderClientChat();
+        showToast('Erro ao enviar comprovante. Verifique sua conexão e tente novamente.', 'error');
+        return;
     }
 
     closeAllModals();
