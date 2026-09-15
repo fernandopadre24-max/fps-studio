@@ -96,6 +96,7 @@ async function initApp() {
             DBReady = true;
             console.log('SQLite conectado!');
             setInterval(() => { if (document.visibilityState === 'visible') salvarAutoBackupLocal(); }, 60000);
+            setInterval(refreshChatsLive, 5000);
             await restaurarAutoBackupLocal();
         }
     } catch (err) {
@@ -3049,6 +3050,32 @@ function renderClientChat() {
     updateChatBadge();
 }
 
+async function refreshChatsLive() {
+    if (!DBReady || !currentUser) return;
+    try {
+        if (currentUser.role === 'admin') {
+            if (!currentChatClient) return;
+            const key = `admin_${currentChatClient}`;
+            const fresh = await DB_SERVICE.getChat(currentChatClient);
+            const old = DB.chats[key] || [];
+            if (fresh.length !== old.length || JSON.stringify(fresh) !== JSON.stringify(old)) {
+                DB.chats[key] = fresh;
+                renderChatMessagesAdmin(key);
+            }
+            renderChatList();
+            updateChatBadge();
+        } else {
+            const key = `admin_${currentUser.id}`;
+            const fresh = await DB_SERVICE.getChat(currentUser.id);
+            const old = DB.chats[key] || [];
+            if (fresh.length !== old.length || JSON.stringify(fresh) !== JSON.stringify(old)) {
+                DB.chats[key] = fresh;
+                renderClientChat();
+            }
+        }
+    } catch (e) {}
+}
+
 async function sendAudioChat(remetente, inputElement) {
     if (!inputElement.files || inputElement.files.length === 0) return;
 
@@ -3066,6 +3093,7 @@ async function sendAudioChat(remetente, inputElement) {
 
     const chatKey = `admin_${clienteId}`;
     if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
+    let enviados = 0;
 
     for (let i = 0; i < inputElement.files.length; i++) {
         const file = inputElement.files[i];
@@ -3108,7 +3136,9 @@ async function sendAudioChat(remetente, inputElement) {
             DB.chats[chatKey].push(msgAudio);
             if (DBReady) {
                 const res = await DB_SERVICE.sendMessage(msgAudio);
-                if (res && res.id) msgAudio.id = res.id;
+                if (res && res.id) { msgAudio.id = res.id; enviados++; }
+            } else {
+                enviados++;
             }
         } catch(e) {
             console.error(e);
@@ -3123,7 +3153,7 @@ async function sendAudioChat(remetente, inputElement) {
         renderChatMessagesAdmin(chatKey);
         renderChatList();
     }
-    showToast('Áudio enviado!', 'success');
+    if (enviados > 0) showToast('Áudio enviado!', 'success');
 }
 
 async function sendMessageClient() {
