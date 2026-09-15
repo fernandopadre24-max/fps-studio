@@ -243,6 +243,19 @@ async function initDb() {
     try { db.run('ALTER TABLE chats ADD COLUMN arquivoNome TEXT DEFAULT ""'); } catch(e) {}
 
     db.run(`
+        CREATE TABLE IF NOT EXISTS bibliotecas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            clienteId INTEGER,
+            arquivoNome TEXT DEFAULT '',
+            audio TEXT DEFAULT '',
+            descricao TEXT DEFAULT '',
+            data TEXT DEFAULT (date('now')),
+            hora TEXT DEFAULT '',
+            duracao INTEGER DEFAULT 0
+        )
+    `);
+
+    db.run(`
         CREATE TABLE IF NOT EXISTS config (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             chave TEXT UNIQUE NOT NULL,

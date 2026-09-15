@@ -17,7 +17,8 @@ const DB = {
     pedidos: [],
     movimentacoes: [],
     chats: {},
-    nextId: { servico: 7, material: 7, cliente: 4, pedido: 4, movimentacao: 6 }
+    biblioteca: [],
+    nextId: { servico: 7, material: 7, cliente: 4, pedido: 4, movimentacao: 6, biblioteca: 1 }
 };
 
 let DBReady = false; // Indica se a API SQLite está conectada
@@ -73,9 +74,10 @@ async function initApp() {
             DB.clientes = await DB_SERVICE.getClientes();
             DB.pedidos = await DB_SERVICE.getPedidos();
             DB.movimentacoes = await DB_SERVICE.getMovimentacoes();
+            DB.biblioteca = await DB_SERVICE.getBiblioteca();
 
             // Normaliza docId = id (o id do servidor é o mesmo do cliente)
-            ['servicos', 'materiais', 'clientes', 'pedidos', 'movimentacoes'].forEach(tabela => {
+            ['servicos', 'materiais', 'clientes', 'pedidos', 'movimentacoes', 'biblioteca'].forEach(tabela => {
                 DB[tabela].forEach(r => { r.docId = r.id; });
             });
 
@@ -85,6 +87,7 @@ async function initApp() {
             if (DB.clientes.length) DB.nextId.cliente = Math.max(...DB.clientes.map(c => c.id)) + 1;
             if (DB.pedidos.length) DB.nextId.pedido = Math.max(...DB.pedidos.map(p => p.id)) + 1;
             if (DB.movimentacoes.length) DB.nextId.movimentacao = Math.max(...DB.movimentacoes.map(m => m.id)) + 1;
+            if (DB.biblioteca.length) DB.nextId.biblioteca = Math.max(...DB.biblioteca.map(b => b.id)) + 1;
 
             // Carregar chats
             for (const c of DB.clientes) {
@@ -402,6 +405,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
             adminPedidos: 'Gerenciar Pedidos',
             adminFinanceiro: 'Controle Financeiro',
             adminChat: 'Chat com Clientes',
+            adminBibliotecas: 'Biblioteca de Áudios',
             adminClientes: 'Gerenciar Clientes',
             adminConfig: 'Configurações',
             clientHome: 'Painel do Cliente',
@@ -426,6 +430,7 @@ function renderCurrentPage(page) {
         case 'adminPedidos': renderPedidosAdmin(); break;
         case 'adminFinanceiro': renderFinanceiro(); break;
         case 'adminChat': renderChatList(); break;
+        case 'adminBibliotecas': renderBibliotecas(); break;
         case 'adminClientes': renderClientes(); break;
         case 'adminConfig': preencherFormConfig(); break;
         case 'clientHome': renderClientDashboard(); break;
@@ -911,6 +916,7 @@ function renderPedidosAdmin() {
         const cliente = DB.clientes.find(c => c.id === p.clienteId);
         const servicoNomes = p.servicos.map(id => DB.servicos.find(s => s.id === id)?.nome || '').filter(Boolean).join(', ');
         const condRotulo = p.parcial ? '50% + 50%' : (p.descontoPct ? `-${p.descontoPct}% à vista` : '');
+        const restoPed = Math.max(0, Math.round((valorEsperadoPedido(p) - valorPagoPedido(p)) * 100) / 100);
         return `<tr>
             <td><strong>#${p.id}</strong></td>
             <td>${cliente ? cliente.nome : 'N/A'}</td>
@@ -920,6 +926,7 @@ function renderPedidosAdmin() {
             <td>${formatPedidoDataHora(p)}</td>
             <td>
                 <div class="table-actions">
+                    ${restoPed > 0 ? `<button class="btn-primary btn-sm" onclick="confirmarPagamentoPedidoAdmin(${p.id})" title="Confirmar Pagamento"><i class="fas fa-check-circle"></i></button>` : ''}
                     <button onclick="verDetalhesPedido(${p.id})" title="Ver Detalhes"><i class="fas fa-eye"></i></button>
                     <button onclick="editarPedido(${p.id})" title="Editar"><i class="fas fa-edit"></i></button>
                     <button class="btn-del" onclick="excluirPedido(${p.id})" title="Excluir"><i class="fas fa-trash"></i></button>
@@ -936,6 +943,7 @@ function pedidoKanbanCard(p) {
     const extra = servicoNomes.length - mostrar.length;
     const pagos = valorPagoPedido(p) > 0;
     const pagoTotal = pedidoPagamentoCompleto(p);
+    const restoPed = Math.max(0, Math.round((valorEsperadoPedido(p) - valorPagoPedido(p)) * 100) / 100);
     const condRotulo = p.parcial ? 'Dividido 50%+50%' : (p.descontoPct ? `À vista -${p.descontoPct}%` : '');
     return `<div class="kanban-card" draggable="true" ondragstart="dragPedido(event, ${p.id})" ondragend="this.classList.remove('dragging')">
         <div class="kanban-card-top">
@@ -957,6 +965,7 @@ function pedidoKanbanCard(p) {
             <span class="kanban-data">${formatPedidoDataHora(p)}</span>
         </div>
         <div class="kanban-card-acoes">
+            ${restoPed > 0 && p.status !== 'cancelado' ? `<button title="Confirmar pagamento" onclick="confirmarPagamentoPedidoAdmin(${p.id})"><i class="fas fa-check-circle"></i></button>` : ''}
             <button title="Ver detalhes" onclick="verDetalhesPedido(${p.id})"><i class="fas fa-eye"></i></button>
             <button title="Avançar etapa" onclick="avancarStagePedido(${p.id})"><i class="fas fa-forward"></i></button>
             <button title="Editar" onclick="editarPedido(${p.id})"><i class="fas fa-edit"></i></button>
@@ -1301,7 +1310,9 @@ function renderMovimentacoes() {
     movs.sort((a, b) => new Date(b.data) - new Date(a.data));
 
     const tbody = document.getElementById('movimentacoesBody');
-    tbody.innerHTML = movs.map(m => `<tr class="${m.pagamento === 'pendente' ? 'mov-pendente' : ''}">
+    tbody.innerHTML = movs.map(m => {
+        const pidMov = m.pedidoId || ((m.descricao || '').match(/Pedido #(\d+)/) ? parseInt((m.descricao || '').match(/Pedido #(\d+)/)[1]) : null);
+        return `<tr class="${m.pagamento === 'pendente' ? 'mov-pendente' : ''}">
         <td>${formatDataHoraMov(m)}</td>
         <td>${m.descricao}</td>
         <td><span class="status-badge status-${m.tipo === 'entrada' ? 'concluido' : 'cancelado'}">${capitalize(m.tipo)}</span></td>
@@ -1312,10 +1323,12 @@ function renderMovimentacoes() {
             : metodoPagamentoRotulo(m.pagamento)}</td>
         <td>
             <div class="table-actions">
+                ${m.pagamento === 'pendente' && pidMov ? `<button class="btn-primary btn-sm" onclick="confirmarPagamentoPedidoAdmin(${pidMov})" title="Confirmar Pagamento"><i class="fas fa-check-circle"></i> Confirmar</button>` : ''}
                 <button class="btn-del" onclick="excluirMovimentacao(${m.id})" title="Excluir"><i class="fas fa-trash"></i></button>
             </div>
         </td>
-    </tr>`).join('');
+    </tr>`;
+    }).join('');
 }
 
 async function salvarMovimentacao() {
@@ -1632,6 +1645,7 @@ function toggleClienteDetalhe(id) {
                         <span>Total: <strong>${formatCurrency(esperado)}</strong></span>
                         <span class="valor-pago">Pago: <strong>${formatCurrency(pago)}</strong></span>
                         ${restante > 0 ? `<span class="valor-aberto">Falta: <strong>${formatCurrency(restante)}</strong></span>` : `<span style="color:#26cc00;"><i class="fas fa-check-circle"></i> Quitado</span>`}
+                        ${restante > 0 && p.status !== 'cancelado' ? `<button class="btn-primary btn-sm" onclick="confirmarPagamentoPedidoAdmin(${p.id})"><i class="fas fa-check-circle"></i> Confirmar Pagamento</button>` : ''}
                     </div>
                 </div>
                 <table class="data-table sub-table" style="margin:0;">
@@ -2598,6 +2612,140 @@ function bindChatAudio(container, messages) {
     });
 }
 
+async function arquivoAudioParaDataUrl(file) {
+    const arrayBuffer = await lerArquivoComoArrayBuffer(file);
+    let dataUrl = '';
+    const estimado = Math.ceil(arrayBuffer.byteLength * 4 / 3) + 30;
+    if (estimado <= AUDIO_BASE64_LIMIT) {
+        dataUrl = arrayBufferToDataUrl(arrayBuffer, file.type || 'audio/mpeg');
+    } else {
+        let kbps = 96;
+        while (kbps >= 32) {
+            const blob = await comprimirAudio(arrayBuffer, kbps);
+            const du = await blobToDataUrl(blob);
+            if (du.length <= AUDIO_BASE64_LIMIT) { dataUrl = du; break; }
+            kbps = Math.floor(kbps / 2);
+        }
+        if (!dataUrl) throw new Error('Audio maior que o limite de envio (~4MB).');
+    }
+    return dataUrl;
+}
+
+async function enviarAudioBiblioteca(inputElement) {
+    if (!inputElement || !inputElement.files || inputElement.files.length === 0) return;
+    if (!currentUser) return;
+    if (currentUser.role !== 'client') {
+        showToast('O envio de áudio é feito pelo cliente.', 'info');
+        inputElement.value = '';
+        return;
+    }
+
+    const arquivos = Array.from(inputElement.files);
+    let enviados = 0;
+    for (const file of arquivos) {
+        if (!file.type.includes('audio') && !file.name.toLowerCase().endsWith('.mp3') && !file.name.toLowerCase().endsWith('.wav')) {
+            showToast('Apenas arquivos de áudio são permitidos!', 'error');
+            continue;
+        }
+        try {
+            const dataUrl = await arquivoAudioParaDataUrl(file);
+            const item = {
+                id: DB.nextId.biblioteca++,
+                clienteId: currentUser.id,
+                arquivoNome: file.name,
+                audio: dataUrl,
+                descricao: '',
+                data: new Date().toISOString().split('T')[0],
+                hora: agoraHora(),
+                duracao: 0
+            };
+            DB.biblioteca.push(item);
+            const res = await DB_SERVICE.addBiblioteca(item);
+            if (res && res.id) { item.id = res.id; item.docId = res.id; enviados++; }
+        } catch (e) {
+            console.error(e);
+            showToast(`Erro ao enviar o áudio "${file.name}". ${e.message || ''}`, 'error');
+        }
+    }
+    inputElement.value = '';
+    if (enviados > 0) showToast(`${enviados} áudio(s) enviado(s) para a Biblioteca do estúdio!`, 'success');
+}
+
+async function renderBibliotecas() {
+    if (DBReady) {
+        try {
+            const fresh = await DB_SERVICE.getBiblioteca();
+            const semId = (DB.biblioteca || []).filter(b => !b.id);
+            DB.biblioteca = [...fresh.map(b => ({ ...b, docId: b.id })), ...semId];
+        } catch (e) {}
+    }
+
+    const selCliente = document.getElementById('biblioFiltroCliente');
+    if (selCliente) {
+        const valor = selCliente.value;
+        selCliente.innerHTML = '<option value="">Todos os clientes</option>' +
+            DB.clientes.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+        selCliente.value = valor;
+    }
+
+    const clienteId = selCliente ? selCliente.value : '';
+    const dataInicio = (document.getElementById('biblioDataInicio') || {}).value || '';
+    const dataFim = (document.getElementById('biblioDataFim') || {}).value || '';
+    const busca = ((document.getElementById('biblioBusca') || {}).value || '').trim().toLowerCase();
+
+    let itens = [...(DB.biblioteca || [])];
+    if (clienteId) itens = itens.filter(b => b.clienteId === parseInt(clienteId));
+    if (dataInicio) itens = itens.filter(b => (b.data || '') >= dataInicio);
+    if (dataFim) itens = itens.filter(b => (b.data || '') <= dataFim);
+    if (busca) itens = itens.filter(b => (b.arquivoNome || '').toLowerCase().includes(busca));
+
+    itens.sort((a, b) => (b.data || '').localeCompare(a.data || '') || (b.hora || '').localeCompare(a.hora || '') || (b.id || 0) - (a.id || 0));
+
+    const tbody = document.getElementById('bibliotecasBody');
+    tbody.innerHTML = itens.length === 0
+        ? '<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--text-muted);">Nenhum áudio encontrado.</td></tr>'
+        : itens.map(b => {
+            const cliente = DB.clientes.find(c => c.id === b.clienteId);
+            return `<tr>
+                <td><strong>${cliente ? cliente.nome : 'N/A'}</strong></td>
+                <td style="max-width:240px;white-space:normal;"><i class="fas fa-file-audio"></i> ${b.arquivoNome || 'Áudio'}</td>
+                <td>${formatDate(b.data)} ${b.hora || ''}</td>
+                <td><audio controls preload="none" data-biblio="${b.id}" style="max-width:260px;height:40px;vertical-align:middle;"></audio></td>
+                <td>
+                    <div class="table-actions">
+                        <a class="btn-download" data-biblio-dl="${b.id}" title="Baixar"><i class="fas fa-download"></i></a>
+                        <button class="btn-del" onclick="excluirAudioBiblioteca(${b.id})" title="Excluir"><i class="fas fa-trash"></i></button>
+                    </div>
+                </td>
+            </tr>`;
+        }).join('');
+
+    tbody.querySelectorAll('audio[data-biblio]').forEach(a => {
+        const b = DB.biblioteca.find(x => x.id === parseInt(a.dataset.biblio));
+        if (b && b.audio) { a.src = b.audio; a.load(); }
+    });
+    tbody.querySelectorAll('a.btn-download[data-biblio-dl]').forEach(a => {
+        const b = DB.biblioteca.find(x => x.id === parseInt(a.dataset.biblioDl));
+        if (b && b.audio) { a.href = b.audio; a.download = b.arquivoNome || 'audio.mp3'; }
+        else a.style.display = 'none';
+    });
+}
+
+async function excluirAudioBiblioteca(id) {
+    if (!confirm('Excluir este áudio da biblioteca?')) return;
+    const item = DB.biblioteca.find(x => x.id === id);
+    if (!item) return;
+    DB.biblioteca = DB.biblioteca.filter(x => x.id !== id);
+    try {
+        if (item.docId || item.id) await DB_SERVICE.deleteBiblioteca(item.docId || item.id);
+        showToast('Áudio excluído!', 'success');
+    } catch (e) {
+        console.error(e);
+        showToast('Erro ao excluir o áudio.', 'error');
+    }
+    renderBibliotecas();
+}
+
 function msgSig(m) {
     return m.id + '|' + (m.tipo || '') + '|' + (m.mensagem || '').slice(0, 80) + '|' + (m.status || '') + '|' + (m.lida ? 1 : 0) + '|' + (m.audio ? 1 : 0) + '|' + (m.arquivoNome || '');
 }
@@ -2979,6 +3127,13 @@ async function confirmarPagoComprovante(msgIdx) {
     const input = document.getElementById(`descontoComp_${msgIdx}`);
     const descontoAdmin = input ? parseValorBR(input.value) : (m.desconto || 0);
 
+    await executarConfirmacaoPagamentoAdmin(m, chatKey, descontoAdmin);
+}
+
+async function executarConfirmacaoPagamentoAdmin(m, chatKey, descontoAdmin) {
+    if (!m || m.tipo !== 'comprovante') return;
+    descontoAdmin = Math.max(0, descontoAdmin || 0);
+
     m.status = 'pago';
     m.desconto = descontoAdmin;
     m.lida = true;
@@ -3096,10 +3251,11 @@ async function confirmarPagoComprovante(msgIdx) {
         const confMsg = {
             tipo: 'sistema',
             remetente: 'admin',
-            clienteId: currentChatClient,
+            clienteId: m.clienteId,
             mensagem: `Pagamento do Pedido #${pedido.id} confirmado! Detalhes do serviço: ${detalhes}. Valor recebido: ${formatCurrency(Math.max(0, totalPago))}.${faltante > 0 ? ` Falta pagar ${formatCurrency(faltante)} (50% restante).` : ' Status: em andamento.'}`,
             data: new Date().toISOString()
         };
+        if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
         DB.chats[chatKey].push(confMsg);
         try {
             const res = await DB_SERVICE.sendMessage(confMsg);
@@ -3111,11 +3267,56 @@ async function confirmarPagoComprovante(msgIdx) {
         }
     }
 
-    renderChatMessagesAdmin(chatKey);
+    if (currentChatClient == m.clienteId) renderChatMessagesAdmin(chatKey);
     renderFinanceiro();
+    renderAdminDashboard();
     updateChatBadge();
     celebratePayment();
     showToast('Pagamento confirmado como PAGO!', 'success');
+}
+
+async function confirmarPagamentoPedidoAdmin(pedidoId) {
+    const p = DB.pedidos.find(x => x.id === pedidoId);
+    if (!p) return;
+    const clienteId = p.clienteId;
+    const chatKey = `admin_${clienteId}`;
+    const msgs = DB.chats[chatKey] || [];
+
+    const comp = msgs
+        .filter(m => m.tipo === 'comprovante' && m.status !== 'pago' &&
+            (m.pedidoId === pedidoId || (m.mensagem || '').includes(`Pedido #${pedidoId}`) || (m.descricao || '').includes(`Pedido #${pedidoId}`)))
+        .sort((a, b) => (b.id || 0) - (a.id || 0))[0];
+
+    if (comp) {
+        await executarConfirmacaoPagamentoAdmin(comp, chatKey, comp.desconto || 0);
+        return;
+    }
+
+    const pendentes = DB.movimentacoes.filter(m => m.pagamento === 'pendente' && (m.pedidoId === pedidoId || (m.descricao || '').includes(`Pedido #${pedidoId}`)));
+    const restanteAtual = Math.max(0, Math.round((valorEsperadoPedido(p) - valorPagoPedido(p)) * 100) / 100);
+    if (restanteAtual <= 0) {
+        showToast('Este pedido não possui pendência para confirmar.', 'info');
+        return;
+    }
+    if (pendentes.length === 0) {
+        showToast('Nenhum valor pendente registrado para este pedido.', 'info');
+        return;
+    }
+    if (!confirm(`Confirmar recebimento de ${formatCurrency(restanteAtual)} do Pedido #${pedidoId}?`)) return;
+
+    const fake = {
+        id: null,
+        tipo: 'comprovante',
+        remetente: 'client',
+        clienteId,
+        mensagem: `Pagamento de ${formatCurrency(restanteAtual)} via PIX para o Pedido #${pedidoId}`,
+        valor: restanteAtual,
+        desconto: 0,
+        pedidoId,
+        status: 'aguardando',
+        data: new Date().toISOString()
+    };
+    await executarConfirmacaoPagamentoAdmin(fake, chatKey, 0);
 }
 
 function updateChatBadge() {

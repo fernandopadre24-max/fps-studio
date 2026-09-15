@@ -179,6 +179,41 @@ module.exports = async (req, res) => {
                 }
                 break;
 
+            // BIBLIOTECA DE ÁUDIOS
+            case 'biblioteca':
+                if (method === 'GET') {
+                    const qCliente = query.clienteId ? parseInt(query.clienteId) : null;
+                    result = qCliente
+                        ? queryAll(db, 'SELECT * FROM bibliotecas WHERE clienteId=? ORDER BY data DESC, hora DESC, id DESC', [qCliente])
+                        : queryAll(db, 'SELECT * FROM bibliotecas ORDER BY data DESC, hora DESC, id DESC');
+                } else if (method === 'POST') {
+                    const { clienteId, arquivoNome, audio, descricao, data, hora, duracao } = req.body;
+                    if (!clienteId) throw new Error('clienteId obrigatório');
+                    db.run('INSERT INTO bibliotecas (clienteId, arquivoNome, audio, descricao, data, hora, duracao) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                        [parseInt(clienteId), arquivoNome || '', audio || '', descricao || '', data || new Date().toISOString().split('T')[0], hora || '', duracao || 0]);
+                    const r = queryOne(db, 'SELECT last_insert_rowid() as id');
+                    saveDb(db);
+                    result = { id: r.id };
+                } else if (method === 'DELETE') {
+                    if (id !== null) {
+                        db.run('DELETE FROM bibliotecas WHERE id=?', [id]);
+                        saveDb(db);
+                        result = { ok: true };
+                    } else {
+                        throw new Error('id obrigatório');
+                    }
+                } else if (method === 'PUT') {
+                    if (id !== null) {
+                        const { arquivoNome, descricao } = req.body;
+                        db.run('UPDATE bibliotecas SET arquivoNome=?, descricao=? WHERE id=?', [arquivoNome || '', descricao || '', id]);
+                        saveDb(db);
+                        result = { ok: true };
+                    } else {
+                        throw new Error('id obrigatório');
+                    }
+                }
+                break;
+
             // CONFIGURAÇÕES
             case 'config':
                 if (method === 'GET') {
@@ -214,7 +249,8 @@ module.exports = async (req, res) => {
                         clientes: queryAll(db, 'SELECT * FROM clientes ORDER BY id'),
                         pedidos: pedidos.map(p => ({ ...p, servicos: JSON.parse(p.servicos || '[]'), materiais: JSON.parse(p.materiais || '[]') })),
                         movimentacoes: queryAll(db, 'SELECT * FROM movimentacoes ORDER BY id'),
-                        chats: queryAll(db, 'SELECT * FROM chats ORDER BY id')
+                        chats: queryAll(db, 'SELECT * FROM chats ORDER BY id'),
+                        bibliotecas: queryAll(db, 'SELECT * FROM bibliotecas ORDER BY id')
                     };
                 } else {
                     throw new Error('Use GET para exportar backup');
@@ -235,7 +271,7 @@ module.exports = async (req, res) => {
                     try {
                         db.run('DELETE FROM config'); db.run('DELETE FROM chats'); db.run('DELETE FROM movimentacoes');
                         db.run('DELETE FROM pedidos'); db.run('DELETE FROM clientes'); db.run('DELETE FROM materiais');
-                        db.run('DELETE FROM servicos');
+                        db.run('DELETE FROM servicos'); db.run('DELETE FROM bibliotecas');
 
                         if (data.config && typeof data.config === 'object' && Object.keys(data.config).length) {
                             Object.keys(data.config).forEach(chave => {
@@ -255,6 +291,8 @@ module.exports = async (req, res) => {
                         (data.movimentacoes || []).forEach(insMov);
                         const insChat = ins('chats', ['id', 'tipo', 'remetente', 'clienteId', 'mensagem', 'descricao', 'valor', 'validade', 'data', 'lida', 'desconto', 'status', 'pedidoId', 'imagem', 'audio', 'arquivoNome']);
                         (data.chats || []).forEach(insChat);
+                        const insBiblio = ins('bibliotecas', ['id', 'clienteId', 'arquivoNome', 'audio', 'descricao', 'data', 'hora', 'duracao']);
+                        (data.bibliotecas || []).forEach(insBiblio);
 
                         db.run('COMMIT');
                         saveDb(db);
@@ -271,7 +309,8 @@ module.exports = async (req, res) => {
                             clientes: (data.clientes || []).length,
                             pedidos: (data.pedidos || []).length,
                             movimentacoes: (data.movimentacoes || []).length,
-                            chats: (data.chats || []).length
+                            chats: (data.chats || []).length,
+                            bibliotecas: (data.bibliotecas || []).length
                         }
                     };
                 } else {

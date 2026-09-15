@@ -56,6 +56,12 @@ const DB_SERVICE = {
     async sendMessage(d) { return apiCall('chat', 'POST', d); },
     async updateMessage(id, d) { return apiCall('chat', 'PUT', d, { id }); },
 
+    // BIBLIOTECA DE ÁUDIOS
+    async getBiblioteca(clienteId) { return apiCall('biblioteca', 'GET', null, clienteId ? { clienteId } : {}); },
+    async addBiblioteca(d) { return apiCall('biblioteca', 'POST', d); },
+    async updateBiblioteca(id, d) { return apiCall('biblioteca', 'PUT', d, { id }); },
+    async deleteBiblioteca(id) { return apiCall('biblioteca', 'DELETE', null, { id }); },
+
     // CONFIGURAÇÕES
     async getConfig() { return apiCall('config'); },
     async saveConfig(d) { return apiCall('config', 'POST', d); },
