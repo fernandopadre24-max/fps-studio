@@ -22,16 +22,16 @@ module.exports = async (req, res) => {
                 if (method === 'GET') {
                     result = queryAll(db, 'SELECT * FROM servicos ORDER BY id');
                 } else if (method === 'POST') {
-                    const { nome, descricao, preco, duracao, icone, imagem, categoria } = req.body;
-                    db.run('INSERT INTO servicos (nome, descricao, preco, duracao, icone, imagem, categoria) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                        [nome, descricao || '', preco || 0, duracao || '', icone || 'fa-cog', imagem || '', categoria || 'outro']);
+                    const { nome, descricao, preco, duracao, icone, imagem } = req.body;
+                    db.run('INSERT INTO servicos (nome, descricao, preco, duracao, icone, imagem) VALUES (?, ?, ?, ?, ?, ?)',
+                        [nome, descricao || '', preco || 0, duracao || '', icone || 'fa-cog', imagem || '']);
                     const r = queryOne(db, 'SELECT last_insert_rowid() as id');
                     saveDb(db);
                     result = { id: r.id };
                 } else if (method === 'PUT') {
-                    const { nome, descricao, preco, duracao, icone, imagem, categoria } = req.body;
-                    db.run('UPDATE servicos SET nome=?, descricao=?, preco=?, duracao=?, icone=?, imagem=?, categoria=? WHERE id=?',
-                        [nome, descricao, preco, duracao, icone, imagem, categoria || 'outro', id]);
+                    const { nome, descricao, preco, duracao, icone, imagem } = req.body;
+                    db.run('UPDATE servicos SET nome=?, descricao=?, preco=?, duracao=?, icone=?, imagem=? WHERE id=?',
+                        [nome, descricao, preco, duracao, icone, imagem, id]);
                     saveDb(db);
                     result = { ok: true };
                 } else if (method === 'DELETE') {
@@ -46,16 +46,16 @@ module.exports = async (req, res) => {
                 if (method === 'GET') {
                     result = queryAll(db, 'SELECT * FROM materiais ORDER BY id');
                 } else if (method === 'POST') {
-                    const { nome, descricao, preco, categoria, imagem } = req.body;
-                    db.run('INSERT INTO materiais (nome, descricao, preco, categoria, imagem) VALUES (?, ?, ?, ?, ?)',
-                        [nome, descricao || '', preco || 0, categoria || 'outro', imagem || '']);
+                    const { nome, descricao, preco, estoque, categoria, imagem } = req.body;
+                    db.run('INSERT INTO materiais (nome, descricao, preco, estoque, categoria, imagem) VALUES (?, ?, ?, ?, ?, ?)',
+                        [nome, descricao || '', preco || 0, estoque || 0, categoria || 'outro', imagem || '']);
                     const r = queryOne(db, 'SELECT last_insert_rowid() as id');
                     saveDb(db);
                     result = { id: r.id };
                 } else if (method === 'PUT') {
-                    const { nome, descricao, preco, categoria, imagem } = req.body;
-                    db.run('UPDATE materiais SET nome=?, descricao=?, preco=?, categoria=?, imagem=? WHERE id=?',
-                        [nome, descricao, preco, categoria, imagem, id]);
+                    const { nome, descricao, preco, estoque, categoria, imagem } = req.body;
+                    db.run('UPDATE materiais SET nome=?, descricao=?, preco=?, estoque=?, categoria=?, imagem=? WHERE id=?',
+                        [nome, descricao, preco, estoque, categoria, imagem, id]);
                     saveDb(db);
                     result = { ok: true };
                 } else if (method === 'DELETE') {
@@ -68,7 +68,7 @@ module.exports = async (req, res) => {
             // CLIENTES
             case 'clientes':
                 if (method === 'GET') {
-                    result = queryAll(db, 'SELECT * FROM clientes ORDER BY id');
+                    result = queryAll(db, 'SELECT * FROM clientes ORDER BY id DESC');
                 } else if (method === 'POST') {
                     const { nome, email, telefone, senha, pin, cpf, endereco, numero, complemento, bairro, cep, cidade, estado, tipoPessoa, cnpj, instagram } = req.body;
                     db.run('INSERT INTO clientes (nome, email, telefone, senha, pin, cpf, endereco, numero, complemento, bairro, cep, cidade, estado, tipoPessoa, cnpj, instagram) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -79,7 +79,7 @@ module.exports = async (req, res) => {
                 } else if (method === 'PUT') {
                     const { nome, email, telefone, senha, pin, cpf, endereco, numero, complemento, bairro, cep, cidade, estado, tipoPessoa, cnpj, instagram } = req.body;
                     db.run('UPDATE clientes SET nome=?, email=?, telefone=?, senha=?, pin=?, cpf=?, endereco=?, numero=?, complemento=?, bairro=?, cep=?, cidade=?, estado=?, tipoPessoa=?, cnpj=?, instagram=? WHERE id=?',
-                        [nome, email, telefone, senha, pin, cpf || '', endereco || '', numero || '', complemento || '', bairro || '', cep || '', cidade || '', estado || '', tipoPessoa || 'fisica', cnpj || '', instagram || '', id]);
+                        [nome, email, telefone, senha, pin, cpf, endereco, numero, complemento, bairro, cep, cidade, estado, tipoPessoa, cnpj, instagram, id]);
                     saveDb(db);
                     result = { ok: true };
                 } else if (method === 'DELETE') {
@@ -96,19 +96,20 @@ module.exports = async (req, res) => {
                     result = rows.map(p => ({
                         ...p,
                         servicos: JSON.parse(p.servicos || '[]'),
-                        materiais: JSON.parse(p.materiais || '[]')
+                        materiais: JSON.parse(p.materiais || '[]'),
+                        audios: JSON.parse(p.audios || '[]')
                     }));
                 } else if (method === 'POST') {
-                    const { clienteId, servicos, materiais, desconto, status, total, parcial, descontoPct, dataPref, horarioPref, dataInicial, horaInicial, dataFinal, horaFinal, faixas, audios } = req.body;
-                    db.run('INSERT INTO pedidos (clienteId, servicos, materiais, desconto, status, total, parcial, descontoPct, dataPref, horarioPref, dataInicial, horaInicial, dataFinal, horaFinal, faixas, audios) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                        [clienteId, JSON.stringify(servicos || []), JSON.stringify(materiais || []), desconto || 0, status || 'pendente', total || 0, parcial ? 1 : 0, descontoPct || 0, dataPref || '', horarioPref || '', dataInicial || '', horaInicial || '', dataFinal || '', horaFinal || '', faixas || 1, JSON.stringify(audios || [])]);
+                    const { clienteId, servicos, materiais, desconto, status, total, parcial, descontoPct, dataPref, horarioPref, dataInicial, horaInicial, dataFinal, horaFinal, qtdFaixas, audios } = req.body;
+                    db.run('INSERT INTO pedidos (clienteId, servicos, materiais, desconto, status, total, parcial, descontoPct, dataPref, horarioPref, dataInicial, horaInicial, dataFinal, horaFinal, qtdFaixas, audios) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                        [clienteId, JSON.stringify(servicos || []), JSON.stringify(materiais || []), desconto || 0, status || 'pendente', total || 0, parcial ? 1 : 0, descontoPct || 0, dataPref || '', horarioPref || '', dataInicial || '', horaInicial || '', dataFinal || '', horaFinal || '', qtdFaixas || 1, JSON.stringify(audios || [])]);
                     const r = queryOne(db, 'SELECT last_insert_rowid() as id');
                     saveDb(db);
                     result = { id: r.id };
                 } else if (method === 'PUT') {
-                    const { clienteId, servicos, materiais, desconto, status, total, parcial, descontoPct, dataPref, horarioPref, dataInicial, horaInicial, dataFinal, horaFinal, faixas, audios } = req.body;
-                    db.run('UPDATE pedidos SET clienteId=?, servicos=?, materiais=?, desconto=?, status=?, total=?, parcial=?, descontoPct=?, dataPref=?, horarioPref=?, dataInicial=?, horaInicial=?, dataFinal=?, horaFinal=?, faixas=?, audios=? WHERE id=?',
-                        [clienteId, JSON.stringify(servicos || []), JSON.stringify(materiais || []), desconto, status, total, parcial ? 1 : 0, descontoPct || 0, dataPref || '', horarioPref || '', dataInicial || '', horaInicial || '', dataFinal || '', horaFinal || '', faixas || 1, JSON.stringify(audios || []), id]);
+                    const { clienteId, servicos, materiais, desconto, status, total, parcial, descontoPct, dataPref, horarioPref, dataInicial, horaInicial, dataFinal, horaFinal, qtdFaixas, audios } = req.body;
+                    db.run('UPDATE pedidos SET clienteId=?, servicos=?, materiais=?, desconto=?, status=?, total=?, parcial=?, descontoPct=?, dataPref=?, horarioPref=?, dataInicial=?, horaInicial=?, dataFinal=?, horaFinal=?, qtdFaixas=?, audios=? WHERE id=?',
+                        [clienteId, JSON.stringify(servicos || []), JSON.stringify(materiais || []), desconto, status, total, parcial ? 1 : 0, descontoPct || 0, dataPref || '', horarioPref || '', dataInicial || '', horaInicial || '', dataFinal || '', horaFinal || '', qtdFaixas || 1, JSON.stringify(audios || []), id]);
                     saveDb(db);
                     result = { ok: true };
                 } else if (method === 'DELETE') {
@@ -179,41 +180,6 @@ module.exports = async (req, res) => {
                 }
                 break;
 
-            // BIBLIOTECA DE ÁUDIOS
-            case 'biblioteca':
-                if (method === 'GET') {
-                    const qCliente = query.clienteId ? parseInt(query.clienteId) : null;
-                    result = qCliente
-                        ? queryAll(db, 'SELECT * FROM bibliotecas WHERE clienteId=? ORDER BY data DESC, hora DESC, id DESC', [qCliente])
-                        : queryAll(db, 'SELECT * FROM bibliotecas ORDER BY data DESC, hora DESC, id DESC');
-                } else if (method === 'POST') {
-                    const { clienteId, arquivoNome, audio, descricao, data, hora, duracao } = req.body;
-                    if (!clienteId) throw new Error('clienteId obrigatório');
-                    db.run('INSERT INTO bibliotecas (clienteId, arquivoNome, audio, descricao, data, hora, duracao) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                        [parseInt(clienteId), arquivoNome || '', audio || '', descricao || '', data || new Date().toISOString().split('T')[0], hora || '', duracao || 0]);
-                    const r = queryOne(db, 'SELECT last_insert_rowid() as id');
-                    saveDb(db);
-                    result = { id: r.id };
-                } else if (method === 'DELETE') {
-                    if (id !== null) {
-                        db.run('DELETE FROM bibliotecas WHERE id=?', [id]);
-                        saveDb(db);
-                        result = { ok: true };
-                    } else {
-                        throw new Error('id obrigatório');
-                    }
-                } else if (method === 'PUT') {
-                    if (id !== null) {
-                        const { arquivoNome, descricao } = req.body;
-                        db.run('UPDATE bibliotecas SET arquivoNome=?, descricao=? WHERE id=?', [arquivoNome || '', descricao || '', id]);
-                        saveDb(db);
-                        result = { ok: true };
-                    } else {
-                        throw new Error('id obrigatório');
-                    }
-                }
-                break;
-
             // CONFIGURAÇÕES
             case 'config':
                 if (method === 'GET') {
@@ -247,10 +213,9 @@ module.exports = async (req, res) => {
                         servicos: queryAll(db, 'SELECT * FROM servicos ORDER BY id'),
                         materiais: queryAll(db, 'SELECT * FROM materiais ORDER BY id'),
                         clientes: queryAll(db, 'SELECT * FROM clientes ORDER BY id'),
-                        pedidos: pedidos.map(p => ({ ...p, servicos: JSON.parse(p.servicos || '[]'), materiais: JSON.parse(p.materiais || '[]') })),
+                        pedidos: pedidos.map(p => ({ ...p, servicos: JSON.parse(p.servicos || '[]'), materiais: JSON.parse(p.materiais || '[]'), audios: JSON.parse(p.audios || '[]') })),
                         movimentacoes: queryAll(db, 'SELECT * FROM movimentacoes ORDER BY id'),
-                        chats: queryAll(db, 'SELECT * FROM chats ORDER BY id'),
-                        bibliotecas: queryAll(db, 'SELECT * FROM bibliotecas ORDER BY id')
+                        chats: queryAll(db, 'SELECT * FROM chats ORDER BY id')
                     };
                 } else {
                     throw new Error('Use GET para exportar backup');
@@ -271,7 +236,7 @@ module.exports = async (req, res) => {
                     try {
                         db.run('DELETE FROM config'); db.run('DELETE FROM chats'); db.run('DELETE FROM movimentacoes');
                         db.run('DELETE FROM pedidos'); db.run('DELETE FROM clientes'); db.run('DELETE FROM materiais');
-                        db.run('DELETE FROM servicos'); db.run('DELETE FROM bibliotecas');
+                        db.run('DELETE FROM servicos');
 
                         if (data.config && typeof data.config === 'object' && Object.keys(data.config).length) {
                             Object.keys(data.config).forEach(chave => {
@@ -281,18 +246,16 @@ module.exports = async (req, res) => {
 
                         const insServico = ins('servicos', ['id', 'nome', 'descricao', 'preco', 'duracao', 'icone', 'imagem']);
                         (data.servicos || []).forEach(insServico);
-                        const insMaterial = ins('materiais', ['id', 'nome', 'descricao', 'preco', 'categoria', 'imagem']);
+                        const insMaterial = ins('materiais', ['id', 'nome', 'descricao', 'preco', 'estoque', 'categoria', 'imagem']);
                         (data.materiais || []).forEach(insMaterial);
                         const insCliente = ins('clientes', ['id', 'nome', 'email', 'telefone', 'senha', 'pin', 'cpf', 'endereco', 'numero', 'complemento', 'bairro', 'cep', 'cidade', 'estado', 'tipoPessoa', 'cnpj', 'instagram']);
                         (data.clientes || []).forEach(insCliente);
-                        const insPedido = ins('pedidos', ['id', 'clienteId', 'servicos', 'materiais', 'desconto', 'status', 'data', 'total', 'parcial', 'descontoPct', 'dataPref', 'horarioPref', 'dataInicial', 'horaInicial', 'dataFinal', 'horaFinal']);
-                        ((data.pedidos || []).map(p => ({ ...p, servicos: JSON.stringify(p.servicos || []), materiais: JSON.stringify(p.materiais || []) }))).forEach(insPedido);
+                        const insPedido = ins('pedidos', ['id', 'clienteId', 'servicos', 'materiais', 'desconto', 'status', 'data', 'total', 'parcial', 'descontoPct', 'dataPref', 'horarioPref', 'dataInicial', 'horaInicial', 'dataFinal', 'horaFinal', 'qtdFaixas', 'audios']);
+                        ((data.pedidos || []).map(p => ({ ...p, servicos: JSON.stringify(p.servicos || []), materiais: JSON.stringify(p.materiais || []), audios: JSON.stringify(p.audios || []) }))).forEach(insPedido);
                         const insMov = ins('movimentacoes', ['id', 'tipo', 'descricao', 'valor', 'categoria', 'pagamento', 'data', 'hora', 'pedidoId']);
                         (data.movimentacoes || []).forEach(insMov);
                         const insChat = ins('chats', ['id', 'tipo', 'remetente', 'clienteId', 'mensagem', 'descricao', 'valor', 'validade', 'data', 'lida', 'desconto', 'status', 'pedidoId', 'imagem', 'audio', 'arquivoNome']);
                         (data.chats || []).forEach(insChat);
-                        const insBiblio = ins('bibliotecas', ['id', 'clienteId', 'arquivoNome', 'audio', 'descricao', 'data', 'hora', 'duracao']);
-                        (data.bibliotecas || []).forEach(insBiblio);
 
                         db.run('COMMIT');
                         saveDb(db);
@@ -309,8 +272,7 @@ module.exports = async (req, res) => {
                             clientes: (data.clientes || []).length,
                             pedidos: (data.pedidos || []).length,
                             movimentacoes: (data.movimentacoes || []).length,
-                            chats: (data.chats || []).length,
-                            bibliotecas: (data.bibliotecas || []).length
+                            chats: (data.chats || []).length
                         }
                     };
                 } else {

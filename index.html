@@ -140,6 +140,9 @@
                 <a href="#" class="nav-item" data-page="adminFinanceiro">
                     <i class="fas fa-chart-line"></i><span>Financeiro</span>
                 </a>
+                <a href="#" class="nav-item" data-page="adminBiblioteca">
+                    <i class="fas fa-music"></i><span>Biblioteca</span>
+                </a>
                 <a href="#" class="nav-item" data-page="adminChat">
                     <i class="fas fa-comments"></i><span>Chat</span>
                     <span class="badge" id="chatBadge">0</span>
@@ -346,7 +349,7 @@
                 <div class="page" id="adminPedidos">
                     <div class="page-header">
                         <h2>Gerenciar Pedidos</h2>
-                        <button class="btn-primary" onclick="openModal('pedidoModal')">
+                        <button class="btn-primary" onclick="abrirNovoPedidoModalAdmin()">
                             <i class="fas fa-plus"></i> Novo Pedido
                         </button>
                     </div>
@@ -388,7 +391,29 @@
                     </div>
                 </div>
 
-                <!-- FINANCEIRO -->
+                
+                <!-- BIBLIOTECA -->
+                <div class="page" id="adminBiblioteca">
+                    <div class="page-header">
+                        <h2>Biblioteca de Áudios</h2>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Pedido ID</th>
+                                    <th>Cliente</th>
+                                    <th>Faixas Previstas</th>
+                                    <th>Áudios Anexados</th>
+                                    <th>Arquivos</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bibliotecaBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+\n                <!-- FINANCEIRO -->
                 <div class="page" id="adminFinanceiro">
                     <div class="page-header">
                         <h2>Controle Financeiro</h2>
@@ -1118,6 +1143,14 @@
                         <input type="text" id="pedidoDesconto" inputmode="decimal" value="0" placeholder="0,00" oninput="mascaraMoedaBR(this); updatePedidoTotal()">
                     </div>
                     <div class="form-group">
+                        <label>Qtd de Faixas</label>
+                        <input type="number" id="pedidoQtdFaixas" min="1" value="1">
+                    </div>
+                    <div class="form-group">
+                        <label>Qtd de Faixas</label>
+                        <input type="number" id="pedidoQtdFaixas" min="1" value="1">
+                    </div>
+                    <div class="form-group">
                         <label>Status</label>
                         <select id="pedidoStatus">
                             <option value="pendente">Pendente</option>
@@ -1143,8 +1176,11 @@
                         <label>Hora Final</label>
                         <input type="time" id="pedidoHoraFinal">
                     </div>
+                
+                    
                 </div>
                 <div class="pedido-total">
+
                     <span>Total:</span>
                     <strong id="pedidoTotalPreview">R$ 0,00</strong>
                 </div>
@@ -1195,6 +1231,10 @@
                         <label>Hora Final</label>
                         <input type="time" id="clientPedidoHoraFinal">
                     </div>
+                </div>
+                <div class="form-group">
+                    <label>Quantidade de Faixas</label>
+                    <input type="number" id="clientPedidoQtdFaixas" min="1" value="1">
                 </div>
                 <div class="form-group">
                     <label>Anexar Áudios (MP3, até 10 arquivos)</label>
@@ -1458,7 +1498,9 @@
                 <div class="form-group">
                     <label>Desconto (opcional) (R$)</label>
                     <input type="text" id="orcamentoDesconto" inputmode="decimal" value="0" placeholder="0,00" oninput="mascaraMoedaBR(this); atualizarTotalOrcamento()">
-                </div>
+                
+</div>
+
                 <div class="pedido-total">
                     <span>Total a pagar:</span>
                     <strong id="orcamentoTotal">R$ 0,00</strong>
