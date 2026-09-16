@@ -330,7 +330,7 @@ async function excluirServico(id) {
 async function salvarServico() {
     const id = document.getElementById('servicoId').value;
     const imgEl = document.getElementById('servicoImagemPreview');
-    const img = imgEl.style.display !== 'none' ? imgEl.src : null;
+    const img = (imgEl && imgEl.style.display !== 'none') ? imgEl.src : null;
     
     let strPreco = document.getElementById('servicoPreco').value || '0';
     const precoFloat = parseFloat(strPreco.replace(/\./g, '').replace(',', '.')) || 0;
@@ -418,7 +418,7 @@ async function excluirMaterial(id) {
 async function salvarMaterial() {
     const id = document.getElementById('materialId').value;
     const imgEl = document.getElementById('materialImagemPreview');
-    const img = imgEl.style.display !== 'none' ? imgEl.src : null;
+    const img = (imgEl && imgEl.style.display !== 'none') ? imgEl.src : null;
     
     let strPreco = document.getElementById('materialPreco').value || '0';
     const precoFloat = parseFloat(strPreco.replace(/\./g, '').replace(',', '.')) || 0;
