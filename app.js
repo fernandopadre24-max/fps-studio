@@ -87,10 +87,26 @@ function setupNavigation() {
 document.addEventListener("DOMContentLoaded", () => { init(); setupNavigation(); });
 
 async function init() {
-    const ok = await DB_SERVICE.init();
+    let ok = false;
+    try { ok = await DB_SERVICE.init(); } catch (e) { ok = false; }
+
+    // Backend /api fora do ar → usa o fallback LOCAL (IndexedDB)
+    // para que Serviço, Material, Pedido e MP3 (biblioteca) continuem
+    // sendo ARMAZENADOS de verdade (persistem entre recargas).
+    if (!ok && window.IDB_SERVICE) {
+        await IDB_SERVICE.init();
+        for (const k of Object.keys(IDB_SERVICE)) {
+            if (typeof IDB_SERVICE[k] === 'function') DB_SERVICE[k] = IDB_SERVICE[k].bind(IDB_SERVICE);
+        }
+        ok = await DB_SERVICE.init();
+        if (ok) console.warn('[PERSIST] Backend off-line — usando IndexedDB local.');
+    }
+
     if (ok) {
         DBReady = true;
         await loadDB();
+    } else {
+        console.warn('[PERSIST] Nenhuma camada de dados disponível (backend e IDB falharam).');
     }
     showView('loginScreen');
 }
