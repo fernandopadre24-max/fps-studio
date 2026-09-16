@@ -71,7 +71,7 @@ function setupNavigation() {
             if(pageId === 'adminMateriais') renderMateriais();
             if(pageId === 'adminPedidos') renderPedidos();
             if(pageId === 'adminFinanceiro') renderMovimentacoes();
-            if(pageId === 'adminBiblioteca') renderBiblioteca();
+            if(pageId === 'adminBiblioteca') renderBiblioteca();            if(pageId === 'adminBibliotecas') renderBibliotecas();
             if(pageId === 'adminChat') renderChatList();
             if(pageId === 'adminClientes') renderClientes();
             if(pageId === 'adminConfig') preencherFormConfig();
@@ -101,7 +101,7 @@ async function loadDB() {
     DB.clientes = await DB_SERVICE.getClientes();
     DB.pedidos = await DB_SERVICE.getPedidos();
     DB.movimentacoes = await DB_SERVICE.getMovimentacoes();
-    DB.config = await DB_SERVICE.getConfig();
+    DB.config = await DB_SERVICE.getConfig();    DB.bibliotecas = await DB_SERVICE.getBiblioteca();
     
     DB.chats = {};
     for (const c of DB.clientes) {
@@ -296,15 +296,21 @@ function renderServicos() {
 }
 
 function editarServico(id) {
-    const s = DB.servicos.find(x => x.id === id);
+    const s = DB.servicos.find(x => x.id === parseInt(id) || x.id === id);
     if (!s) return;
     clearForm('servico');
     document.getElementById('servicoId').value = s.id;
     document.getElementById('servicoNome').value = s.nome;
     document.getElementById('servicoDescricao').value = s.descricao;
-    document.getElementById('servicoPreco').value = s.preco;
-    document.getElementById('servicoIsPorHora').checked = s.isPorHora;
-    document.getElementById('servicoIsDestaque').checked = s.isDestaque;
+    
+    // Convert to string formatted for the mask if needed, but let's just set the string.
+    let precoFmt = Number(s.preco).toFixed(2).replace('.', ',');
+    document.getElementById('servicoPreco').value = precoFmt;
+    
+    if (document.getElementById('servicoDuracao')) document.getElementById('servicoDuracao').value = s.duracao || '';
+    if (document.getElementById('servicoIcone')) document.getElementById('servicoIcone').value = s.icone || 'fa-cog';
+    if (document.getElementById('servicoCategoria')) document.getElementById('servicoCategoria').value = s.categoria || 'outro';
+    
     if (s.imagem) {
         document.getElementById('servicoImagemPreview').src = s.imagem;
         document.getElementById('servicoImagemPreview').style.display = 'block';
@@ -326,27 +332,35 @@ async function salvarServico() {
     const imgEl = document.getElementById('servicoImagemPreview');
     const img = imgEl.style.display !== 'none' ? imgEl.src : null;
     
+    let strPreco = document.getElementById('servicoPreco').value || '0';
+    const precoFloat = parseFloat(strPreco.replace(/\./g, '').replace(',', '.')) || 0;
+
     const data = {
         nome: document.getElementById('servicoNome').value,
         descricao: document.getElementById('servicoDescricao').value,
-        preco: Number(document.getElementById('servicoPreco').value),
-        isPorHora: document.getElementById('servicoIsPorHora').checked,
-        isDestaque: document.getElementById('servicoIsDestaque').checked,
+        preco: precoFloat,
+        duracao: document.getElementById('servicoDuracao') ? document.getElementById('servicoDuracao').value : '',
+        icone: document.getElementById('servicoIcone') ? document.getElementById('servicoIcone').value : 'fa-cog',
+        categoria: document.getElementById('servicoCategoria') ? document.getElementById('servicoCategoria').value : 'outro',
         imagem: img
     };
     
     if (id) {
-        const item = DB.servicos.find(x => x.id === id);
-        Object.assign(item, data);
-        if (DBReady && item.docId) await DB_SERVICE.updateServico(item.docId, data);
+        const item = DB.servicos.find(x => x.id === parseInt(id) || x.id === id);
+        if (item) {
+            Object.assign(item, data);
+            if (DBReady) await DB_SERVICE.updateServico(item.id, data);
+        }
     } else {
-        data.id = 'serv_' + Date.now();
         if (DBReady) {
             const res = await DB_SERVICE.addServico(data);
-            data.docId = res.id;
+            data.id = res.id;
+        } else {
+            data.id = 'serv_' + Date.now();
         }
         DB.servicos.push(data);
     }
+    
     closeAllModals();
     renderServicos();
     showToast('Serviço salvo', 'success');
@@ -373,13 +387,18 @@ function renderMateriais() {
 }
 
 function editarMaterial(id) {
-    const m = DB.materiais.find(x => x.id === id);
+    const m = DB.materiais.find(x => x.id === parseInt(id) || x.id === id);
     if (!m) return;
     clearForm('material');
     document.getElementById('materialId').value = m.id;
     document.getElementById('materialNome').value = m.nome;
     document.getElementById('materialDescricao').value = m.descricao;
-    document.getElementById('materialPreco').value = m.preco;
+    
+    let precoFmt = Number(m.preco).toFixed(2).replace('.', ',');
+    document.getElementById('materialPreco').value = precoFmt;
+
+    if (document.getElementById('materialCategoria')) document.getElementById('materialCategoria').value = m.categoria || 'outro';
+    
     if (m.imagem) {
         document.getElementById('materialImagemPreview').src = m.imagem;
         document.getElementById('materialImagemPreview').style.display = 'block';
@@ -401,25 +420,33 @@ async function salvarMaterial() {
     const imgEl = document.getElementById('materialImagemPreview');
     const img = imgEl.style.display !== 'none' ? imgEl.src : null;
     
+    let strPreco = document.getElementById('materialPreco').value || '0';
+    const precoFloat = parseFloat(strPreco.replace(/\./g, '').replace(',', '.')) || 0;
+
     const data = {
         nome: document.getElementById('materialNome').value,
         descricao: document.getElementById('materialDescricao').value,
-        preco: Number(document.getElementById('materialPreco').value),
+        preco: precoFloat,
+        categoria: document.getElementById('materialCategoria') ? document.getElementById('materialCategoria').value : 'outro',
         imagem: img
     };
     
     if (id) {
-        const item = DB.materiais.find(x => x.id === id);
-        Object.assign(item, data);
-        if (DBReady && item.docId) await DB_SERVICE.updateMaterial(item.docId, data);
+        const item = DB.materiais.find(x => x.id === parseInt(id) || x.id === id);
+        if (item) {
+            Object.assign(item, data);
+            if (DBReady) await DB_SERVICE.updateMaterial(item.id, data);
+        }
     } else {
-        data.id = 'mat_' + Date.now();
         if (DBReady) {
             const res = await DB_SERVICE.addMaterial(data);
-            data.docId = res.id;
+            data.id = res.id;
+        } else {
+            data.id = 'mat_' + Date.now();
         }
         DB.materiais.push(data);
     }
+    
     closeAllModals();
     renderMateriais();
     showToast('Material salvo', 'success');
@@ -1169,6 +1196,14 @@ function limitAudiosClient(input) {
         for (let i = 0; i < 10; i++) dt.items.add(input.files[i]);
         input.files = dt.files;
     }
+    
+    const validFiles = new DataTransfer();
+    for(let i=0; i<input.files.length; i++) {
+        if(validateAudioFile(input.files[i])) {
+            validFiles.items.add(input.files[i]);
+        }
+    }
+    input.files = validFiles.files;
 }
 
 function atualizarCondicaoClient() {
@@ -2048,6 +2083,7 @@ async function sendAudioChat(remetente, inputElement) {
         }
         
         try {
+            if(!validateAudioFile(file)) continue;
             const b64 = await fileToBase64(file);
             const msgAudio = {
                 tipo: 'audio',
@@ -3140,3 +3176,119 @@ window.abrirUploadAudioAdmin = function(pedidoId) {
     
     input.click();
 };
+
+
+window.validateAudioFile = function(file) {
+    // Apenas MP3
+    if (file.type !== 'audio/mpeg' && !file.name.toLowerCase().endsWith('.mp3')) {
+        showToast('Apenas arquivos .mp3 são permitidos.', 'error');
+        return false;
+    }
+    // Tamanho máximo (15MB)
+    const maxSize = 15 * 1024 * 1024;
+    if (file.size > maxSize) {
+        showToast('O arquivo excede o limite de 15MB.', 'error');
+        return false;
+    }
+    return true;
+};
+
+window.enviarAudioBiblioteca = async function(input) {
+    if (!currentUser || currentUser.role !== 'client') return;
+    if (!input.files || input.files.length === 0) return;
+    
+    const file = input.files[0];
+    if (!validateAudioFile(file)) {
+        input.value = '';
+        return;
+    }
+    
+    const b64 = await fileToBase64(file);
+    const audioObj = {
+        clienteId: currentUser.id,
+        arquivoNome: file.name,
+        audio: b64,
+        descricao: 'Enviado pelo Chat do Cliente',
+        duracao: 0
+    };
+    
+    DB.bibliotecas = DB.bibliotecas || [];
+    DB.bibliotecas.push(audioObj);
+    
+    if (DBReady) {
+        const docId = await DB_SERVICE.addBiblioteca(audioObj);
+        audioObj.id = docId.id;
+    }
+    
+    showToast('Áudio enviado para a Biblioteca do estúdio!', 'success');
+    input.value = '';
+};
+
+window.renderBibliotecas = function() {
+    const selectCli = document.getElementById('biblioFiltroCliente');
+    if (selectCli && selectCli.options.length <= 1) {
+        selectCli.innerHTML = '<option value="">Todos os clientes</option>' + DB.clientes.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+    }
+    const list = document.getElementById('bibliotecasBody');
+    if (!list) return;
+    
+    let dados = DB.bibliotecas || [];
+    
+    const filtroCli = document.getElementById('biblioFiltroCliente')?.value;
+    if (filtroCli) {
+        dados = dados.filter(b => b.clienteId == filtroCli);
+    }
+    
+    const dtInicio = document.getElementById('biblioDataInicio')?.value;
+    const dtFim = document.getElementById('biblioDataFim')?.value;
+    if (dtInicio) dados = dados.filter(b => b.data >= dtInicio);
+    if (dtFim) dados = dados.filter(b => b.data <= dtFim);
+    
+    const busca = document.getElementById('biblioBusca')?.value?.toLowerCase();
+    if (busca) {
+        dados = dados.filter(b => b.arquivoNome.toLowerCase().includes(busca) || b.descricao.toLowerCase().includes(busca));
+    }
+    
+    if (dados.length === 0) {
+        list.innerHTML = '<tr><td colspan="5" class="text-center">Nenhum áudio encontrado.</td></tr>';
+        return;
+    }
+    
+    list.innerHTML = dados.map(b => {
+        const cliente = DB.clientes.find(c => c.id === b.clienteId);
+        const cliNome = cliente ? cliente.nome : 'Desconhecido';
+        return `
+        <tr>
+            <td>${cliNome}</td>
+            <td>
+                <strong>${b.arquivoNome}</strong>
+                <br><small class="text-muted">${b.descricao}</small>
+            </td>
+            <td>${formatDate(b.data)} ${b.hora || ''}</td>
+            <td>
+                ${b.audio ? `<audio controls src="${b.audio}" style="height:30px;width:150px;"></audio>` : '-'}
+            </td>
+            <td>
+                ${b.audio ? `<a href="${b.audio}" download="${b.arquivoNome}" class="btn-icon" title="Baixar"><i class="fas fa-download"></i></a>` : ''}
+                <button class="btn-icon text-danger" onclick="excluirBibliotecaAudio(${b.id})" title="Excluir"><i class="fas fa-trash"></i></button>
+            </td>
+        </tr>
+        `;
+    }).join('');
+};
+
+window.excluirBibliotecaAudio = async function(id) {
+    if(!confirm('Excluir este áudio da biblioteca?')) return;
+    DB.bibliotecas = DB.bibliotecas.filter(x => x.id !== id);
+    if(DBReady) await DB_SERVICE.deleteBiblioteca(id);
+    renderBibliotecas();
+    showToast('Áudio excluído!', 'success');
+};
+
+window.mascaraMoedaBR = function(i) {
+        let v = i.value.replace(/\D/g, '');
+        v = (v / 100).toFixed(2) + '';
+        v = v.replace('.', ',');
+        v = v.replace(/(\d)(?=(\d{3})+(?!\d))/g, '$1.');
+        i.value = v;
+    };

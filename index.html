@@ -413,7 +413,7 @@
                         </table>
                     </div>
                 </div>
-\n                <!-- FINANCEIRO -->
+                <!-- FINANCEIRO -->
                 <div class="page" id="adminFinanceiro">
                     <div class="page-header">
                         <h2>Controle Financeiro</h2>
@@ -975,7 +975,7 @@
                                 <button class="btn-icon" onclick="document.getElementById('chatAudioClient').click()" title="Enviar Áudio para a Biblioteca do estúdio">
                                     <i class="fas fa-music"></i>
                                 </button>
-                                <input type="file" id="chatAudioClient" accept="audio/mpeg, audio/mp3, audio/wav, .mp3, .wav" style="display:none;" onchange="enviarAudioBiblioteca(this)">
+                                <input type="file" id="chatAudioClient" accept="audio/mpeg, .mp3" style="display:none;" onchange="enviarAudioBiblioteca(this)">
                                 <input type="text" id="chatInputClient" placeholder="Digite sua mensagem..." onkeypress="if(event.key==='Enter')sendMessageClient()">
                                 <button class="btn-send" onclick="sendMessageClient()">
                                     <i class="fas fa-paper-plane"></i>
@@ -1238,7 +1238,7 @@
                 </div>
                 <div class="form-group">
                     <label>Anexar Áudios (MP3, até 10 arquivos)</label>
-                    <input type="file" id="clientPedidoAudios" accept="audio/mpeg, audio/mp3, .mp3" multiple onchange="limitAudiosClient(this)">
+                    <input type="file" id="clientPedidoAudios" accept="audio/mpeg, .mp3" multiple onchange="limitAudiosClient(this)">
                     <small style="color:var(--text-muted);display:block;margin-top:4px;">Selecione os áudios de referência para o seu pedido (máximo 10 arquivos).</small>
                 </div>
                 <div class="form-group">
