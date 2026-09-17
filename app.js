@@ -346,7 +346,7 @@ async function excluirServico(id) {
 async function salvarServico() {
     const id = document.getElementById('servicoId').value;
     const imgEl = document.getElementById('servicoImagemPreview');
-    const img = (imgEl && imgEl.style.display !== 'none') ? imgEl.src : null;
+    const img = (imgEl && imgEl.style.display !== 'none' && imgEl.src) ? imgEl.src : null;
     
     let strPreco = document.getElementById('servicoPreco').value || '0';
     const precoFloat = parseFloat(strPreco.replace(/\./g, '').replace(',', '.')) || 0;
@@ -541,6 +541,8 @@ function editarPedido(id) {
     
     document.getElementById('pedidoDesconto').value = p.desconto ? fmtCalc(p.desconto) : '0,00';
     document.getElementById('pedidoQtdFaixas').value = p.qtdFaixas || 1;
+    if(document.getElementById('pedidoHoraInicial')) document.getElementById('pedidoHoraInicial').value = p.horaInicial || '';
+    if(document.getElementById('pedidoHoraFinal')) document.getElementById('pedidoHoraFinal').value = p.horaFinal || '';
     openModal('pedidoModal');
 }
 
@@ -574,6 +576,11 @@ window.updatePedidoTotal = function() {
 async function salvarPedido() {
     const id = document.getElementById('pedidoId').value;
     const {t, desc} = updatePedidoTotal();
+    const horaInicial = document.getElementById('pedidoHoraInicial') ? document.getElementById('pedidoHoraInicial').value : '';
+    const horaFinal = document.getElementById('pedidoHoraFinal') ? document.getElementById('pedidoHoraFinal').value : '';
+    if (horaInicial || horaFinal) {
+        if (!validarHorarioEstudio(horaInicial, horaFinal)) return;
+    }
     const servicos = [...document.querySelectorAll('#pedidoServicos input:checked')].map(cb => parseInt(cb.value));
     const materiais = [...document.querySelectorAll('#pedidoMateriais input:checked')].map(cb => parseInt(cb.value));
     
@@ -583,7 +590,8 @@ async function salvarPedido() {
         servicos, materiais,
         desconto: desc,
         total: t,
-        qtdFaixas: parseInt(document.getElementById('pedidoQtdFaixas').value) || 1
+        qtdFaixas: parseInt(document.getElementById('pedidoQtdFaixas').value) || 1,
+        horaInicial, horaFinal
     };
     
     if (id) {
@@ -1046,7 +1054,7 @@ function renderMateriaisClient() {
             <p>${m.descricao}</p>
             <div class="item-card-meta">
                 ${formatMaterialPrice(m)}
-                <span class="item-card-badge ${m.estoque > 0 ? 'badge-estoque' : 'badge-sem-estoque'}">${m.estoque > 0 ? `${m.estoque} disponível` : 'Esgotado'}</span>
+                
             </div>
         </div>
     </div>`).join('');
@@ -1270,6 +1278,9 @@ async function salvarPedidoClient() {
     const dataInicial = document.getElementById('clientPedidoDataInicial').value || '';
     const horaInicial = document.getElementById('clientPedidoHoraInicial').value || '';
     const horaFinal = document.getElementById('clientPedidoHoraFinal').value || '';
+    if (horaInicial || horaFinal) {
+        if (!validarHorarioEstudio(horaInicial, horaFinal)) return;
+    }
 
     const novoPedido = {
         id: DB.nextId.pedido++,
@@ -1933,7 +1944,7 @@ async function confirmarPagoComprovante(msgIdx) {
 
         pedido.materiais.forEach(mId => {
             const mat = DB.materiais.find(x => x.id === mId);
-            if (mat && mat.estoque > 0) mat.estoque--;
+            
         });
 
         if (pedido.status === 'pendente') {
@@ -2937,9 +2948,7 @@ function gerarNotificacoes() {
                 }
             });
         });
-        DB.materiais.filter(m => m.estoque <= 3).slice(0, 5).forEach(m => {
-            lista.push({ icone: 'fa-boxes', classe: 'notif-danger', titulo: `Estoque baixo: ${m.nome}`, texto: `Restam ${m.estoque} unidade(s)`, pagina: 'adminMateriais' });
-        });
+        
         const temNaoLida = Object.keys(DB.chats).some(key => (DB.chats[key] || []).some(m => m.remetente === 'client' && !m.lida));
         if (temNaoLida) lista.push({ icone: 'fa-envelope', classe: 'notif-primary', titulo: 'Mensagens não lidas', texto: 'Há mensagens de clientes no chat', pagina: 'adminChat' });
     } else if (currentUser.role === 'client') {
@@ -3225,18 +3234,38 @@ window.enviarAudioBiblioteca = async function(input) {
         arquivoNome: file.name,
         audio: b64,
         descricao: 'Enviado pelo Chat do Cliente',
-        duracao: 0
+        duracao: 0,
+        data: new Date().toISOString().split('T')[0],
+        hora: new Date().toISOString().split('T')[1].slice(0,5)
     };
     
     DB.bibliotecas = DB.bibliotecas || [];
     DB.bibliotecas.push(audioObj);
+    
     
     if (DBReady) {
         const docId = await DB_SERVICE.addBiblioteca(audioObj);
         audioObj.id = docId.id;
     }
     
+    // Send a message in the chat to notify the admin!
+    const chatKey = 'admin_' + currentUser.id;
+    if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
+    
+    const msgData = {
+        tipo: 'mensagem',
+        remetente: 'client',
+        clienteId: currentUser.id,
+        mensagem: '🎵 Enviei um novo arquivo de áudio (' + file.name + ') para a Biblioteca Avulsa.',
+        data: new Date().toISOString(),
+        lida: false
+    };
+    DB.chats[chatKey].push(msgData);
+    if (DBReady) await DB_SERVICE.sendMessage(msgData);
+    if (document.getElementById('chatMessagesClient')) renderChatMessagesClient();
+    
     showToast('Áudio enviado para a Biblioteca do estúdio!', 'success');
+
     input.value = '';
 };
 
@@ -3308,3 +3337,29 @@ window.mascaraMoedaBR = function(i) {
         v = v.replace(/(\d)(?=(\d{3})+(?!\d))/g, '$1.');
         i.value = v;
     };
+
+
+window.validarHorarioEstudio = function(horaInicio, horaFim) {
+    if (!horaInicio || !horaFim) return true;
+    
+    const parseTime = (timeStr) => {
+        const [h, m] = timeStr.split(':').map(Number);
+        return (h * 60) + (m || 0);
+    };
+    
+    const inicioTotal = parseTime(horaInicio);
+    const fimTotal = parseTime(horaFim);
+    
+    const expedienteInicio = 8 * 60; // 08:00
+    const expedienteFim = 22 * 60;   // 22:00
+    
+    if (inicioTotal < expedienteInicio || fimTotal > expedienteFim) {
+        showToast('O horário solicitado está fora do expediente (08:00 às 22:00).', 'warning');
+        return false;
+    }
+    if (inicioTotal >= fimTotal) {
+        showToast('A hora final deve ser maior que a hora inicial.', 'warning');
+        return false;
+    }
+    return true;
+};

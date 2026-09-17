@@ -46,16 +46,16 @@ module.exports = async (req, res) => {
                 if (method === 'GET') {
                     result = queryAll(db, 'SELECT * FROM materiais ORDER BY id');
                 } else if (method === 'POST') {
-                    const { nome, descricao, preco, estoque, categoria, imagem } = req.body;
-                    db.run('INSERT INTO materiais (nome, descricao, preco, estoque, categoria, imagem) VALUES (?, ?, ?, ?, ?, ?)',
-                        [nome, descricao || '', preco || 0, estoque || 0, categoria || 'outro', imagem || '']);
+                    const { nome, descricao, preco, categoria, imagem } = req.body;
+                    db.run('INSERT INTO materiais (nome, descricao, preco, categoria, imagem) VALUES (?, ?, ?, ?, ?)',
+                        [nome, descricao || '', preco || 0, categoria || 'outro', imagem || '']);
                     const r = queryOne(db, 'SELECT last_insert_rowid() as id');
                     saveDb(db);
                     result = { id: r.id };
                 } else if (method === 'PUT') {
-                    const { nome, descricao, preco, estoque, categoria, imagem } = req.body;
-                    db.run('UPDATE materiais SET nome=?, descricao=?, preco=?, estoque=?, categoria=?, imagem=? WHERE id=?',
-                        [nome, descricao, preco, estoque, categoria, imagem, id]);
+                    const { nome, descricao, preco, categoria, imagem } = req.body;
+                    db.run('UPDATE materiais SET nome=?, descricao=?, preco=?, categoria=?, imagem=? WHERE id=?',
+                        [nome, descricao, preco, categoria, imagem, id]);
                     saveDb(db);
                     result = { ok: true };
                 } else if (method === 'DELETE') {
