@@ -295,7 +295,7 @@ function abrirNovaMovimentacaoModal() {
 }
 
 function renderServicos() {
-    const list = document.getElementById('adminServicosList');
+    const list = document.getElementById('listaServicosAdmin');
     if (!list) return;
     list.innerHTML = DB.servicos.map(s => `
         <div class="card">
@@ -386,7 +386,7 @@ async function salvarServico() {
 // MATERIAIS
 // ==========================================
 function renderMateriais() {
-    const list = document.getElementById('adminMateriaisList');
+    const list = document.getElementById('listaMateriaisAdmin');
     if (!list) return;
     list.innerHTML = DB.materiais.map(m => `
         <div class="card">
