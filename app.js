@@ -88,25 +88,36 @@ document.addEventListener("DOMContentLoaded", () => { init(); setupNavigation();
 
 async function init() {
     let ok = false;
-    try { ok = await DB_SERVICE.init(); } catch (e) { ok = false; }
 
-    // Backend /api fora do ar → usa o fallback LOCAL (IndexedDB)
-    // para que Serviço, Material, Pedido e MP3 (biblioteca) continuem
-    // sendo ARMAZENADOS de verdade (persistem entre recargas).
-    if (!ok && window.IDB_SERVICE) {
-        await IDB_SERVICE.init();
-        for (const k of Object.keys(IDB_SERVICE)) {
-            if (typeof IDB_SERVICE[k] === 'function') DB_SERVICE[k] = IDB_SERVICE[k].bind(IDB_SERVICE);
+    // IndexedDB é a camada LOCAL (sempre disponível, persistente entre
+    // F5 e offline). Usamos ELA como camada primária de dados. O backend
+    // /api (Vercel serverless → SQLite em /tmp ÉFEMERO) é só espelho
+    // opcional: se o IndexedDB falhar, tentamos a API.
+    if (window.IDB_SERVICE) {
+        try {
+            await IDB_SERVICE.init();
+            for (const k of Object.keys(IDB_SERVICE)) {
+                if (typeof IDB_SERVICE[k] === 'function') DB_SERVICE[k] = IDB_SERVICE[k].bind(IDB_SERVICE);
+            }
+            ok = await DB_SERVICE.init();
+            if (ok) console.log('[PERSIST] Usando IndexedDB local como camada primária.');
+        } catch (e) {
+            ok = false;
+            console.warn('[PERSIST] IndexedDB indisponível:', (e && e.message) ? e.message : e);
         }
-        ok = await DB_SERVICE.init();
-        if (ok) console.warn('[PERSIST] Backend off-line — usando IndexedDB local.');
+    }
+
+    // Fallback: backend /api (só se IndexedDB falhou)
+    if (!ok) {
+        try { ok = await DB_SERVICE.init(); } catch (e) { ok = false; }
+        if (ok) console.log('[PERSIST] Usando backend /api (SQLite).');
     }
 
     if (ok) {
         DBReady = true;
         await loadDB();
     } else {
-        console.warn('[PERSIST] Nenhuma camada de dados disponível (backend e IDB falharam).');
+        console.warn('[PERSIST] Nenhuma camada de dados disponível (IDB e backend falharam).');
     }
     showView('loginScreen');
 }
