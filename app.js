@@ -429,7 +429,7 @@ function renderServicos() {
 }
 
 function editarServico(id) {
-    const s = DB.servicos.find(x => x.id === parseInt(id) || x.id === id);
+    const s = DB.servicos.find(x => String(x.id) === String(id));
     if (!s) return;
     clearForm('servico');
     document.getElementById('servicoId').value = s.id;
@@ -708,16 +708,17 @@ function editarPedido(id) {
     document.getElementById('pedidoStatus').value = p.status;
     
     // Checkboxes for servicos and materiais
-    const servicosHtml = DB.servicos.map(s => `<label><input type="checkbox" value="${s.id}" ${p.servicos.includes(s.id) ? 'checked' : ''} onchange="updatePedidoTotal()"> ${s.nome} (${formatCurrency(s.preco)})</label>`).join('');
+    const servicosHtml = DB.servicos.map(s => `<label><input type="checkbox" value="${String(s.id).replace(/"/g, '&quot;')}" ${((p.servicos)||[]).some(id => String(id) === String(s.id)) ? 'checked' : ''} onchange="updatePedidoTotal()"> ${s.nome} (${formatCurrency(s.preco)})</label>`).join('');
     document.getElementById('pedidoServicos').innerHTML = servicosHtml;
     
-    const materiaisHtml = DB.materiais.map(m => `<label><input type="checkbox" value="${m.id}" ${p.materiais.includes(m.id) ? 'checked' : ''} onchange="updatePedidoTotal()"> ${m.nome} (${formatCurrency(m.preco)})</label>`).join('');
+    const materiaisHtml = DB.materiais.map(m => `<label><input type="checkbox" value="${String(m.id).replace(/"/g, '&quot;')}" ${((p.materiais)||[]).some(id => String(id) === String(m.id)) ? 'checked' : ''} onchange="updatePedidoTotal()"> ${m.nome} (${formatCurrency(m.preco)})</label>`).join('');
     document.getElementById('pedidoMateriais').innerHTML = materiaisHtml;
     
     document.getElementById('pedidoDesconto').value = p.desconto ? fmtValorBR(p.desconto) : '0,00';
     document.getElementById('pedidoQtdFaixas').value = p.qtdFaixas || 1;
     if(document.getElementById('pedidoHoraInicial')) document.getElementById('pedidoHoraInicial').value = p.horaInicial || '';
     if(document.getElementById('pedidoHoraFinal')) document.getElementById('pedidoHoraFinal').value = p.horaFinal || '';
+    updatePedidoTotal();
     openModal('pedidoModal');
 }
 
@@ -732,16 +733,20 @@ async function excluirPedido(id) {
 
 window.updatePedidoTotal = function() {
     let t = 0;
-    [...document.querySelectorAll('#pedidoServicos input:checked')].forEach(cb => {
-        const s = DB.servicos.find(x => x.id === parseInt(cb.value));
-        if(s) t += s.preco;
-    });
-    [...document.querySelectorAll('#pedidoMateriais input:checked')].forEach(cb => {
-        const m = DB.materiais.find(x => x.id === parseInt(cb.value));
-        if(m) t += m.preco;
-    });
-    const descStr = document.getElementById('pedidoDesconto').value;
-    const desc = parseFloat((descStr || '0').replace(/\./g, '').replace(',', '.')) || 0;
+    try {
+        [...document.querySelectorAll('#pedidoServicos input:checked')].forEach(cb => {
+            const s = DB.servicos.find(x => String(x.id) === String(cb.value));
+            if(s) t += Number(s.preco) || 0;
+        });
+        [...document.querySelectorAll('#pedidoMateriais input:checked')].forEach(cb => {
+            const m = DB.materiais.find(x => String(x.id) === String(cb.value));
+            if(m) t += Number(m.preco) || 0;
+        });
+    } catch (e) { console.error('updatePedidoTotal', e); }
+    t = Math.round(t * 100) / 100;
+    const descEl = document.getElementById('pedidoDesconto');
+    const descStr = descEl ? descEl.value : '';
+    const desc = parseFloat(String(descStr || '0').replace(/\./g, '').replace(',', '.')) || 0;
     t = Math.max(0, Math.round((t - desc) * 100) / 100);
     const prev = document.getElementById('pedidoTotalPreview');
     if(prev) prev.textContent = formatCurrency(t);
@@ -756,8 +761,8 @@ async function salvarPedido() {
     if (horaInicial || horaFinal) {
         if (!validarHorarioEstudio(horaInicial, horaFinal)) return;
     }
-    const servicos = [...document.querySelectorAll('#pedidoServicos input:checked')].map(cb => parseInt(cb.value));
-    const materiais = [...document.querySelectorAll('#pedidoMateriais input:checked')].map(cb => parseInt(cb.value));
+    const servicos = [...document.querySelectorAll('#pedidoServicos input:checked')].map(cb => cb.value);
+    const materiais = [...document.querySelectorAll('#pedidoMateriais input:checked')].map(cb => cb.value);
     
     const data = {
         clienteId: parseInt(document.getElementById('pedidoCliente').value),
@@ -1373,18 +1378,36 @@ function verDetalhesPedidoClient(id) {
 
 function prepareClientPedidoModal() {
     const servicosDiv = document.getElementById('clientPedidoServicos');
-    servicosDiv.innerHTML = DB.servicos.map(s => `<div class="checkbox-item">
-        <input type="checkbox" id="cps_${s.id}" value="${s.id}" onchange="updateClientPedidoTotal()">
+    if (servicosDiv) {
+        servicosDiv.innerHTML = DB.servicos.map(s => `<div class="checkbox-item">
+        <input type="checkbox" id="cps_${s.id}" value="${String(s.id).replace(/"/g, '&quot;')}" onchange="updateClientPedidoTotal()">
         <label for="cps_${s.id}">${s.nome}</label>
         <span class="item-price">${formatCurrency(s.preco)}</span>
     </div>`).join('');
+        servicosDiv.onclick = (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'LABEL') return;
+            const item = e.target.closest('.checkbox-item');
+            if (!item) return;
+            const cb = item.querySelector('input');
+            if (cb) { cb.checked = !cb.checked; updateClientPedidoTotal(); }
+        };
+    }
 
     const materiaisDiv = document.getElementById('clientPedidoMateriais');
-    materiaisDiv.innerHTML = DB.materiais.map(m => `<div class="checkbox-item">
-        <input type="checkbox" id="cpm_${m.id}" value="${m.id}" onchange="updateClientPedidoTotal()">
+    if (materiaisDiv) {
+        materiaisDiv.innerHTML = DB.materiais.map(m => `<div class="checkbox-item">
+        <input type="checkbox" id="cpm_${m.id}" value="${String(m.id).replace(/"/g, '&quot;')}" onchange="updateClientPedidoTotal()">
         <label for="cpm_${m.id}">${m.nome}</label>
         ${formatMaterialPrice(m, 'item-price')}
     </div>`).join('');
+        materiaisDiv.onclick = (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'LABEL') return;
+            const item = e.target.closest('.checkbox-item');
+            if (!item) return;
+            const cb = item.querySelector('input');
+            if (cb) { cb.checked = !cb.checked; updateClientPedidoTotal(); }
+        };
+    }
 
     const dp = document.getElementById('clientPedidoDataPref');
     const hp = document.getElementById('clientPedidoHoraPref');
@@ -1418,11 +1441,11 @@ function prepareClientPedidoModal() {
 function valoresPedidoClient() {
     let total = 0;
     document.querySelectorAll('#clientPedidoServicos input:checked').forEach(cb => {
-        const s = DB.servicos.find(x => x.id === parseInt(cb.value));
+        const s = DB.servicos.find(x => String(x.id) === String(cb.value));
         if (s) total += Number(s.preco) || 0;
     });
     document.querySelectorAll('#clientPedidoMateriais input:checked').forEach(cb => {
-        const m = DB.materiais.find(x => x.id === parseInt(cb.value));
+        const m = DB.materiais.find(x => String(x.id) === String(cb.value));
         if (m) total += Number(m.preco) || 0;
     });
     const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
@@ -1461,34 +1484,37 @@ function atualizarCondicaoClient() {
 }
 
 function updateClientPedidoTotal() {
-    const { subTotal } = valoresPedidoClient();
-    const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
+    try {
+        const { subTotal } = valoresPedidoClient();
+        const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
 
-    const desconto = condicao === 'vista' ? Math.round(subTotal * 0.10 * 100) / 100 : 0;
-    const totalFinal = Math.round((subTotal - desconto) * 100) / 100;
-    const meia = Math.round((subTotal / 2) * 100) / 100;
-    const entrada = condicao === 'metade' ? meia : totalFinal;
-    const saldo = condicao === 'metade' ? meia : 0;
+        const desconto = condicao === 'vista' ? Math.round(subTotal * 0.10 * 100) / 100 : 0;
+        const totalFinal = Math.round((subTotal - desconto) * 100) / 100;
+        const meia = Math.round((subTotal / 2) * 100) / 100;
+        const entrada = condicao === 'metade' ? meia : totalFinal;
+        const saldo = condicao === 'metade' ? meia : 0;
 
-    document.getElementById('clientCondVistaValor').textContent = formatCurrency(subTotal * 0.90);
-    document.getElementById('clientCondMetaValor').textContent = formatCurrency(subTotal / 2);
+        const setTxt = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+        const setDisp = (id, disp) => { const el = document.getElementById(id); if (el) el.style.display = disp; };
 
-    document.getElementById('clientResSubtotal').textContent = formatCurrency(subTotal);
-    const vistaLinha = document.getElementById('clientResVista');
-    vistaLinha.style.display = condicao === 'vista' ? 'flex' : 'none';
-    document.getElementById('clientResDesconto').textContent = '-' + formatCurrency(desconto);
-    document.getElementById('clientResTotal').textContent = formatCurrency(totalFinal);
-    document.getElementById('clientResPagarRotulo').textContent = condicao === 'metade' ? 'Entrada (50%) agora' : 'Pagar agora (à vista)';
-    document.getElementById('clientResPagar').textContent = formatCurrency(entrada);
-    const saldoLinha = document.getElementById('clientResSaldoLinha');
-    saldoLinha.style.display = condicao === 'metade' ? 'flex' : 'none';
-    document.getElementById('clientResSaldo').textContent = formatCurrency(saldo);
+        setTxt('clientCondVistaValor', formatCurrency(subTotal * 0.90));
+        setTxt('clientCondMetaValor', formatCurrency(meia));
+
+        setTxt('clientResSubtotal', formatCurrency(subTotal));
+        setDisp('clientResVista', condicao === 'vista' ? 'flex' : 'none');
+        setTxt('clientResDesconto', '-' + formatCurrency(desconto));
+        setTxt('clientResTotal', formatCurrency(totalFinal));
+        setTxt('clientResPagarRotulo', condicao === 'metade' ? 'Entrada (50%) agora' : 'Pagar agora (à vista)');
+        setTxt('clientResPagar', formatCurrency(entrada));
+        setDisp('clientResSaldoLinha', condicao === 'metade' ? 'flex' : 'none');
+        setTxt('clientResSaldo', formatCurrency(saldo));
+    } catch (e) { console.error('updateClientPedidoTotal', e); }
 }
 
 async function salvarPedidoClient() {
     if (!currentUser || currentUser.role !== 'client') return;
-    const servicos = [...document.querySelectorAll('#clientPedidoServicos input:checked')].map(cb => parseInt(cb.value));
-    const materiais = [...document.querySelectorAll('#clientPedidoMateriais input:checked')].map(cb => parseInt(cb.value));
+    const servicos = [...document.querySelectorAll('#clientPedidoServicos input:checked')].map(cb => cb.value);
+    const materiais = [...document.querySelectorAll('#clientPedidoMateriais input:checked')].map(cb => cb.value);
 
     if (servicos.length === 0 && materiais.length === 0) {
         showToast('Selecione pelo menos um serviço ou material!', 'error');
@@ -1496,8 +1522,8 @@ async function salvarPedidoClient() {
     }
 
     let total = 0;
-    servicos.forEach(id => { const s = DB.servicos.find(x => x.id === id); if (s) total += Number(s.preco) || 0; });
-    materiais.forEach(id => { const m = DB.materiais.find(x => x.id === id); if (m) total += Number(m.preco) || 0; });
+    servicos.forEach(id => { const s = DB.servicos.find(x => String(x.id) === String(id)); if (s) total += Number(s.preco) || 0; });
+    materiais.forEach(id => { const m = DB.materiais.find(x => String(x.id) === String(id)); if (m) total += Number(m.preco) || 0; });
     total = Math.round(total * 100) / 100;
 
     const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
@@ -1568,8 +1594,8 @@ async function salvarPedidoClient() {
     const chatKey = `admin_${currentUser.id}`;
     if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
 
-    const nomesServicos = servicos.map(id => { const s = DB.servicos.find(x => x.id === id); return s ? s.nome : ''; }).filter(Boolean);
-    const nomesMateriais = materiais.map(id => { const m = DB.materiais.find(x => x.id === id); return m ? m.nome : ''; }).filter(Boolean);
+    const nomesServicos = servicos.map(id => { const s = DB.servicos.find(x => String(x.id) === String(id)); return s ? s.nome : ''; }).filter(Boolean);
+    const nomesMateriais = materiais.map(id => { const m = DB.materiais.find(x => String(x.id) === String(id)); return m ? m.nome : ''; }).filter(Boolean);
     const detalhes = [...nomesServicos, ...nomesMateriais].join(', ');
     const rotuloCondicao = condicao === 'vista'
         ? `Pagamento à vista (10% de desconto): R$ ${formatCurrency(total * 0.90)}`
@@ -2017,8 +2043,8 @@ function abrirOrcamentoParaPedido(msgIdx) {
     orcamentoPedidoId = m.pedidoId || null;
     orcamentoCondicao = pedido ? { parcial: !!pedido.parcial, descontoPct: pedido.descontoPct || 0 } : null;
 
-    const nomesServicos = (pedido ? pedido.servicos : []).map(id => { const s = DB.servicos.find(x => x.id === id); return s ? s.nome : ''; }).filter(Boolean);
-    const nomesMateriais = (pedido ? pedido.materiais : []).map(id => { const mm = DB.materiais.find(x => x.id === id); return mm ? mm.nome : ''; }).filter(Boolean);
+    const nomesServicos = (pedido ? pedido.servicos : []).map(id => { const s = DB.servicos.find(x => String(x.id) === String(id)); return s ? s.nome : ''; }).filter(Boolean);
+    const nomesMateriais = (pedido ? pedido.materiais : []).map(id => { const mm = DB.materiais.find(x => String(x.id) === String(id)); return mm ? mm.nome : ''; }).filter(Boolean);
 
     const orcBase = pedido ? valorEsperadoPedido(pedido) : 0;
     document.getElementById('orcamentoPedidoInfo').value = pedido ? `#${pedido.id} - ${formatCurrency(orcBase)}` : '';
@@ -2248,10 +2274,10 @@ async function confirmarPagoComprovante(msgIdx) {
 
     // Enviar mensagem de confirmação pro cliente com os detalhes do serviço
     if (pedido) {
-        const nomesServicos = (pedido.servicos || []).map(id2 => { const s = DB.servicos.find(x => x.id === id2); return s ? s.nome : ''; }).filter(Boolean);
-        const nomesMateriais = (pedido.materiais || []).map(id2 => { const mm = DB.materiais.find(x => x.id === id2); return mm ? mm.nome : ''; }).filter(Boolean);
+        const nomesServicos = (pedido.servicos || []).map(id2 => { const s = DB.servicos.find(x => String(x.id) === String(id2)); return s ? s.nome : ''; }).filter(Boolean);
+        const nomesMateriais = (pedido.materiais || []).map(id2 => { const mm = DB.materiais.find(x => String(x.id) === String(id2)); return mm ? mm.nome : ''; }).filter(Boolean);
         const detalhes = [...nomesServicos, ...nomesMateriais].join(', ') || 'Serviço solicitado';
-        const faltante = pedido.parcial ? Math.max(0, (pedido.total || 0) - valorPagoPedido(pedido)) : 0;
+        const faltante = pedido.parcial ? Math.max(0, (Number(pedido.total) || 0) - valorPagoPedido(pedido)) : 0;
         const confMsg = {
             tipo: 'sistema',
             remetente: 'admin',
@@ -2775,7 +2801,7 @@ function formatDateTime(isoStr) {
 
 // === formatMaterialPrice ===
 function formatMaterialPrice(m, cls = 'item-card-price') {
-    return m && m.preco <= 0
+    return m && (Number(m.preco) || 0) <= 0
         ? '<span class="badge-incluso"><i class="fas fa-gift"></i> INCLUSO</span>'
         : `<span class="${cls}">${formatCurrency(m.preco)}</span>`;
 }
@@ -2806,24 +2832,42 @@ function getCategoriaIcon(cat) {
                         const parcela = (m.descricao || '').includes('(2\u00aa parcela)') ? ' <span class="pag-cond">2\u00aa parcela</span>' : '';
                         metodoHtml = `<i class="fas ${icon}"></i> ${isPendente ? '<em>Aguardando</em>' : metodoPagamentoRotulo(m.pagamento)}${parcela}`;
 
-// === preparePedidoModal ===
 function preparePedidoModal() {
     const clienteSelect = document.getElementById('pedidoCliente');
-    clienteSelect.innerHTML = DB.clientes.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+    if (clienteSelect) clienteSelect.innerHTML = DB.clientes.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
 
     const servicosDiv = document.getElementById('pedidoServicos');
-    servicosDiv.innerHTML = DB.servicos.map(s => `<div class="checkbox-item">
-        <input type="checkbox" id="ps_${s.id}" value="${s.id}" onchange="updatePedidoTotal()">
+    if (servicosDiv) {
+        servicosDiv.innerHTML = DB.servicos.map(s => `<div class="checkbox-item">
+        <input type="checkbox" id="ps_${s.id}" value="${String(s.id).replace(/"/g, '&quot;')}" onchange="updatePedidoTotal()">
         <label for="ps_${s.id}">${s.nome}</label>
         <span class="item-price">${formatCurrency(s.preco)}</span>
     </div>`).join('');
+        servicosDiv.onclick = (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'LABEL') return;
+            const item = e.target.closest('.checkbox-item');
+            if (!item) return;
+            const cb = item.querySelector('input');
+            if (cb) { cb.checked = !cb.checked; updatePedidoTotal(); }
+        };
+    }
 
     const materiaisDiv = document.getElementById('pedidoMateriais');
-    materiaisDiv.innerHTML = DB.materiais.map(m => `<div class="checkbox-item">
-        <input type="checkbox" id="pm_${m.id}" value="${m.id}" onchange="updatePedidoTotal()">
+    if (materiaisDiv) {
+        materiaisDiv.innerHTML = DB.materiais.map(m => `<div class="checkbox-item">
+        <input type="checkbox" id="pm_${m.id}" value="${String(m.id).replace(/"/g, '&quot;')}" onchange="updatePedidoTotal()">
         <label for="pm_${m.id}">${m.nome}</label>
         ${formatMaterialPrice(m, 'item-price')}
     </div>`).join('');
+        materiaisDiv.onclick = (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'LABEL') return;
+            const item = e.target.closest('.checkbox-item');
+            if (!item) return;
+            const cb = item.querySelector('input');
+            if (cb) { cb.checked = !cb.checked; updatePedidoTotal(); }
+        };
+    }
+    updatePedidoTotal();
 }
 
 // === processarImagem ===
@@ -3407,8 +3451,8 @@ async function executarConfirmacaoPagamentoAdmin(m, chatKey, descontoAdmin) {
 
     // Enviar mensagem de confirmação pro cliente com os detalhes do serviço
     if (pedido) {
-        const nomesServicos = (pedido.servicos || []).map(id2 => { const s = DB.servicos.find(x => x.id === id2); return s ? s.nome : ''; }).filter(Boolean);
-        const nomesMateriais = (pedido.materiais || []).map(id2 => { const mm = DB.materiais.find(x => x.id === id2); return mm ? mm.nome : ''; }).filter(Boolean);
+        const nomesServicos = (pedido.servicos || []).map(id2 => { const s = DB.servicos.find(x => String(x.id) === String(id2)); return s ? s.nome : ''; }).filter(Boolean);
+        const nomesMateriais = (pedido.materiais || []).map(id2 => { const mm = DB.materiais.find(x => String(x.id) === String(id2)); return mm ? mm.nome : ''; }).filter(Boolean);
         const detalhes = [...nomesServicos, ...nomesMateriais].join(', ') || 'Serviço solicitado';
         const faltante = pedido ? Math.max(0, Math.round((valorEsperadoPedido(pedido) - valorPagoPedido(pedido)) * 100) / 100) : 0;
         const confMsg = {
@@ -3456,21 +3500,21 @@ function htmlResumoServicosCliente(clienteId) {
     const itens = new Map();
     pedidos.forEach(p => {
         (p.servicos || []).forEach(sId => {
-            const s = DB.servicos.find(x => x.id === sId);
-            if (!s || s.preco <= 0) return;
+            const s = DB.servicos.find(x => String(x.id) === String(sId));
+            if (!s || Number(s.preco) <= 0) return;
             const chave = `s_${sId}`;
-            const item = itens.get(chave) || { tipo: 'Serviço', nome: s.nome, preco: s.preco, qtd: 0, sub: 0 };
+            const item = itens.get(chave) || { tipo: 'Serviço', nome: s.nome, preco: Number(s.preco) || 0, qtd: 0, sub: 0 };
             item.qtd++;
-            item.sub += s.preco;
+            item.sub += Number(s.preco) || 0;
             itens.set(chave, item);
         });
         (p.materiais || []).forEach(mId => {
-            const m = DB.materiais.find(x => x.id === mId);
-            if (!m || m.preco <= 0) return;
+            const m = DB.materiais.find(x => String(x.id) === String(mId));
+            if (!m || Number(m.preco) <= 0) return;
             const chave = `m_${mId}`;
-            const item = itens.get(chave) || { tipo: 'Material', nome: m.nome, preco: m.preco, qtd: 0, sub: 0 };
+            const item = itens.get(chave) || { tipo: 'Material', nome: m.nome, preco: Number(m.preco) || 0, qtd: 0, sub: 0 };
             item.qtd++;
-            item.sub += m.preco;
+            item.sub += Number(m.preco) || 0;
             itens.set(chave, item);
         });
     });
@@ -4844,10 +4888,10 @@ window.abrirNovoPedidoModalAdmin = function() {
     document.getElementById('pedidoId').value = '';
     document.getElementById('pedidoCliente').innerHTML = DB.clientes.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
     
-    const servicosHtml = DB.servicos.map(s => `<label><input type="checkbox" value="${s.id}" onchange="updatePedidoTotal()"> ${s.nome} (${formatCurrency(s.preco)})</label>`).join('');
+    const servicosHtml = DB.servicos.map(s => `<label><input type="checkbox" value="${String(s.id).replace(/"/g, '&quot;')}" onchange="updatePedidoTotal()" onclick="updatePedidoTotal()"> ${s.nome} (${formatCurrency(s.preco)})</label>`).join('');
     document.getElementById('pedidoServicos').innerHTML = servicosHtml;
     
-    const materiaisHtml = DB.materiais.map(m => `<label><input type="checkbox" value="${m.id}" onchange="updatePedidoTotal()"> ${m.nome} (${formatCurrency(m.preco)})</label>`).join('');
+    const materiaisHtml = DB.materiais.map(m => `<label><input type="checkbox" value="${String(m.id).replace(/"/g, '&quot;')}" onchange="updatePedidoTotal()" onclick="updatePedidoTotal()"> ${m.nome} (${formatCurrency(m.preco)})</label>`).join('');
     document.getElementById('pedidoMateriais').innerHTML = materiaisHtml;
     
     document.getElementById('pedidoDesconto').value = '0,00';
