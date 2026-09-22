@@ -7,15 +7,23 @@ const API_BASE = '/api';
 async function apiCall(action, method = 'GET', body = null, params = {}) {
     let url = `${API_BASE}/${action}`;
     const qp = [];
-    if (params.id) qp.push(`id=${params.id}`);
-    if (params.clienteId) qp.push(`clienteId=${params.clienteId}`);
+    if (params.id !== undefined && params.id !== null && params.id !== '') qp.push(`id=${encodeURIComponent(params.id)}`);
+    if (params.clienteId) qp.push(`clienteId=${encodeURIComponent(params.clienteId)}`);
     if (qp.length) url += '?' + qp.join('&');
 
     const opts = { method, headers: { 'Content-Type': 'application/json' } };
     if (body) opts.body = JSON.stringify(body);
 
     const res = await fetch(url, opts);
-    if (!res.ok) throw new Error(`API error: ${res.status}`);
+    if (!res.ok) {
+        let detail = '';
+        try {
+            const data = await res.json();
+            detail = data && data.error ? `: ${data.error}` : '';
+        } catch (e) {}
+        if (res.status === 413) detail = ': payload muito grande (limite ~4,5MB). Reduza os áudios.';
+        throw new Error(`API error: ${res.status}${detail}`);
+    }
     return res.json();
 }
 

@@ -261,8 +261,8 @@ async function criarConta(e) {
     DB.clientes.push(novo);
     if (DBReady) {
         try {
-            const docId = await DB_SERVICE.addCliente(novo);
-            novo.docId = docId;
+            const resDoc = await DB_SERVICE.addCliente(novo);
+            novo.docId = resDoc && resDoc.id ? resDoc.id : resDoc;
         } catch (err) {
             console.error('Falha ao persistir conta:', err);
             showToast('Conta criada, mas houve falha ao sincronizar.', 'error');
@@ -727,7 +727,19 @@ async function excluirPedido(id) {
     const p = DB.pedidos.find(x => String(x.id) === String(id));
     DB.pedidos = DB.pedidos.filter(x => String(x.id) !== String(id));
     if (DBReady && p?.docId) await DB_SERVICE.deletePedido(p.docId);
+    if (p) {
+        const movsRemover = DB.movimentacoes.filter(m => m.pedidoId != null && String(m.pedidoId) === String(id)) ||
+            DB.movimentacoes.filter(m => movRefereAoPedido(m, id));
+        for (const mov of movsRemover) {
+            DB.movimentacoes = DB.movimentacoes.filter(m => m.id !== mov.id);
+            if (DBReady && mov.docId) {
+                try { await DB_SERVICE.deleteMovimentacao(mov.docId); } catch (e) {}
+            }
+        }
+    }
     renderPedidos();
+    renderFinanceiro();
+    renderAdminDashboard();
     showToast('Pedido excluído', 'success');
 }
 
@@ -774,22 +786,34 @@ async function salvarPedido() {
         horaInicial, horaFinal
     };
     
+    let salvo = data;
     if (id) {
         const item = DB.pedidos.find(x => String(x.id) === String(id));
         if (item) {
             Object.assign(item, data);
+            salvo = item;
             if (DBReady && item.docId) await DB_SERVICE.updatePedido(item.docId, data);
         }
     } else {
         data.id = 'ped_' + Date.now();
         if (DBReady) {
-            const res = await DB_SERVICE.addPedido(data);
-            data.docId = res.id;
+            try {
+                const res = await DB_SERVICE.addPedido(data);
+                if (res && res.id) {
+                    data.docId = res.id;
+                    data.id = res.id;
+                }
+            } catch (e) {
+                console.error('Erro ao criar pedido:', e);
+                showToast(e && e.message ? e.message : 'Erro ao criar pedido no servidor', 'error');
+            }
         }
         DB.pedidos.push(data);
     }
+    await sincronizarFinanceiroPedido(salvo);
     closeAllModals();
     renderPedidos();
+    renderFinanceiro();
     renderAdminDashboard();
     showToast('Pedido salvo', 'success');
 }
@@ -872,8 +896,13 @@ async function salvarMovimentacao() {
     data.id = DB.nextId.movimentacao++;
     DB.movimentacoes.push(data);
     if (DBReady) {
-        const docId = await DB_SERVICE.addMovimentacao(data);
-        DB.movimentacoes[DB.movimentacoes.length - 1].docId = docId;
+        try {
+            const resDoc = await DB_SERVICE.addMovimentacao(data);
+            data.docId = resDoc && resDoc.id ? resDoc.id : resDoc;
+        } catch (e) {
+            console.error('Falha ao persistir movimentação:', e);
+            showToast(e && e.message ? e.message : 'Falha ao sincronizar movimentação', 'error');
+        }
     }
 
     closeAllModals();
@@ -1065,8 +1094,13 @@ async function salvarCliente() {
         data.id = DB.nextId.cliente++;
         DB.clientes.push(data);
         if (DBReady) {
-            const docId = await DB_SERVICE.addCliente(data);
-            DB.clientes[DB.clientes.length - 1].docId = docId;
+            try {
+                const resDoc = await DB_SERVICE.addCliente(data);
+                data.docId = resDoc && resDoc.id ? resDoc.id : resDoc;
+            } catch (e) {
+                console.error('Falha ao persistir cliente:', e);
+                showToast(e && e.message ? e.message : 'Falha ao sincronizar cliente', 'error');
+            }
         }
     }
 
@@ -1565,14 +1599,25 @@ async function salvarPedidoClient() {
     if (fileInput && fileInput.files && fileInput.files.length > 0) {
         for (let i = 0; i < fileInput.files.length; i++) {
             const file = fileInput.files[i];
-            const b64 = await fileToBase64(file);
-            novoPedido.audios.push({
-                nome: file.name,
-                base64: b64,
-                tamanho: file.size,
-                tipo: file.type || 'audio/mp3',
-                data: new Date().toISOString()
-            });
+            if (typeof validateAudioFile === 'function' && !validateAudioFile(file)) continue;
+            try {
+                const b64 = await arquivoAudioParaDataUrl(file);
+                novoPedido.audios.push({
+                    nome: file.name,
+                    base64: b64,
+                    tamanho: file.size,
+                    tipo: file.type || 'audio/mp3',
+                    data: new Date().toISOString()
+                });
+            } catch (err) {
+                console.error('Falha ao processar áudio', file.name, err);
+                showToast(err && err.message ? err.message : `Falha ao processar ${file.name}`, 'error');
+            }
+        }
+        const payloadApprox = novoPedido.audios.reduce((s, a) => s + (a.base64 ? a.base64.length : 0), 0);
+        if (payloadApprox > 4000000) {
+            showToast('Os áudios anexados excedem o limite de envio (~4MB no total). Remova alguns arquivos.', 'error');
+            return;
         }
     }
 
@@ -1586,6 +1631,7 @@ async function salvarPedidoClient() {
             }
         } catch (e) {
             console.error('Erro ao salvar pedido no backend:', e);
+            showToast(e && e.message ? e.message : 'Erro ao salvar pedido no servidor', 'error');
         }
     }
     await sincronizarFinanceiroPedido(novoPedido);
@@ -1650,25 +1696,43 @@ async function clienteUploadAudioPedido(pedidoId) {
         for (let i = 0; i < e.target.files.length; i++) {
             const file = e.target.files[i];
             if (typeof validateAudioFile === 'function' && !validateAudioFile(file)) continue;
-            const b64 = await fileToBase64(file);
-            novos.push({
-                nome: file.name,
-                base64: b64,
-                tamanho: file.size,
-                tipo: file.type || 'audio/mp3',
-                data: new Date().toISOString()
-            });
+            try {
+                const b64 = await arquivoAudioParaDataUrl(file);
+                novos.push({
+                    nome: file.name,
+                    base64: b64,
+                    tamanho: file.size,
+                    tipo: file.type || 'audio/mp3',
+                    data: new Date().toISOString()
+                });
+            } catch (err) {
+                console.error('Falha ao processar áudio', file.name, err);
+                showToast(err && err.message ? err.message : `Falha ao processar ${file.name}`, 'error');
+            }
         }
         if (novos.length === 0) return;
         p.audios = p.audios || [];
-        p.audios.push(...novos);
-        const updId = p.id || p.docId;
+        const candidatos = p.audios.concat(novos);
+        const bytes = candidatos.reduce((s, a) => s + (a.base64 ? a.base64.length : 0), 0);
+        if (bytes > 3800000) {
+            showToast('Total de áudios do pedido excede o limite de envio (~3,8MB). Exclua alguns arquivos antes de enviar.', 'error');
+            return;
+        }
+        p.audios = candidatos;
+        const updId = p.docId || p.id;
+        let ok = !DBReady;
         if (DBReady && updId) {
-            try { await DB_SERVICE.updatePedido(updId, p); } catch(err) { console.error(err); }
+            try {
+                await DB_SERVICE.updatePedido(updId, { audios: p.audios });
+                ok = true;
+            } catch(err) {
+                console.error(err);
+                showToast(err && err.message ? err.message : 'Falha ao enviar áudios ao servidor', 'error');
+            }
         }
         verDetalhesPedidoClient(pedidoId);
         if (typeof renderBiblioteca === 'function') renderBiblioteca();
-        showToast('Áudio(s) anexado(s) com sucesso ao pedido!', 'success');
+        if (ok) showToast('Áudio(s) anexado(s) com sucesso ao pedido!', 'success');
     };
     input.click();
 }
@@ -2430,7 +2494,7 @@ async function sendAudioChat(remetente, inputElement) {
         
         try {
             if(!validateAudioFile(file)) continue;
-            const b64 = await fileToBase64(file);
+            const b64 = await arquivoAudioParaDataUrl(file);
             const msgAudio = {
                 tipo: 'audio',
                 remetente: remetente,
@@ -3017,8 +3081,12 @@ async function sincronizarFinanceiroPedido(p) {
     };
     DB.movimentacoes.push(nova);
     if (DBReady) {
-        const docId = await DB_SERVICE.addMovimentacao(nova);
-        nova.docId = docId;
+        try {
+            const resDoc = await DB_SERVICE.addMovimentacao(nova);
+            nova.docId = resDoc && resDoc.id ? resDoc.id : resDoc;
+        } catch (e) {
+            console.error('Falha ao persistir movimentação do pedido:', e);
+        }
     }
     return nova;
 }
@@ -3086,7 +3154,7 @@ const dashFiltros = { periodo: 'todos', tipo: 'todos', busca: '' };
 // [restore var b03a43a]
 const ordemPedidoStage = ['pendente', 'em_andamento', 'concluido'];
 // [restore var b03a43a]
-const AUDIO_BASE64_LIMIT = 4000000;
+const AUDIO_BASE64_LIMIT = 3500000;
 // [restore var b03a43a]
 let _chatAudioObjectUrls = [];
 
@@ -3656,13 +3724,16 @@ async function moverPedidoStatus(id, novoStatus) {
     if (!p || p.status === novoStatus) return;
     p.status = novoStatus;
     if (DBReady) {
-        await DB_SERVICE.updatePedido(p.docId, { clienteId: p.clienteId, servicos: p.servicos, materiais: p.materiais, desconto: p.desconto, status: novoStatus, total: p.total, parcial: p.parcial || 0, descontoPct: p.descontoPct || 0 });
+        try {
+            await DB_SERVICE.updatePedido(p.docId, { clienteId: p.clienteId, servicos: p.servicos, materiais: p.materiais, desconto: p.desconto, status: novoStatus, total: p.total, parcial: p.parcial || 0, descontoPct: p.descontoPct || 0 });
+        } catch (e) { console.error('updatePedido status', e); }
     }
     const mov = DB.movimentacoes.find(m => m.pedidoId != null && String(m.pedidoId) === String(id) && m.pagamento === 'pendente');
     if (novoStatus === 'cancelado' && mov) {
         DB.movimentacoes = DB.movimentacoes.filter(m => m.id !== mov.id);
         if (DBReady && mov.docId) await DB_SERVICE.deleteMovimentacao(mov.docId);
     }
+    await sincronizarFinanceiroPedido(p);
     renderPedidosAdmin();
     renderAdminDashboard();
     renderFinanceiro();
@@ -3974,7 +4045,7 @@ function showDashboard(role) {
 async function soltarPedidoKanban(event, status) {
     event.preventDefault();
     event.currentTarget.classList.remove('kanban-over');
-    const id = parseInt(event.dataTransfer.getData('text/plain'));
+    const id = event.dataTransfer.getData('text/plain');
     if (id) await moverPedidoStatus(id, status);
 }
 
@@ -4956,9 +5027,9 @@ window.excluirAudioPedido = async function(pedidoId, audioIdx) {
     const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
     if (p && p.audios) {
         p.audios.splice(audioIdx, 1);
-        const updId = p.id || p.docId;
+        const updId = p.docId || p.id;
         if (DBReady && updId) {
-            try { await DB_SERVICE.updatePedido(updId, p); } catch(err) { console.error(err); }
+            try { await DB_SERVICE.updatePedido(updId, { audios: p.audios }); } catch(err) { console.error(err); showToast(err.message || 'Falha ao excluir áudio no servidor', 'error'); }
         }
         renderBiblioteca();
         showToast('Áudio excluído!', 'success');
@@ -4981,26 +5052,44 @@ window.abrirUploadAudioAdmin = function(pedidoId) {
         for (let i = 0; i < e.target.files.length; i++) {
             const file = e.target.files[i];
             if (typeof validateAudioFile === 'function' && !validateAudioFile(file)) continue;
-            const b64 = await fileToBase64(file);
-            novosAudios.push({
-                nome: file.name,
-                base64: b64,
-                tamanho: file.size,
-                tipo: file.type || 'audio/mp3',
-                data: new Date().toISOString()
-            });
+            try {
+                const b64 = await arquivoAudioParaDataUrl(file);
+                novosAudios.push({
+                    nome: file.name,
+                    base64: b64,
+                    tamanho: file.size,
+                    tipo: file.type || 'audio/mp3',
+                    data: new Date().toISOString()
+                });
+            } catch (err) {
+                console.error('Falha ao processar áudio', file.name, err);
+                showToast(err && err.message ? err.message : `Falha ao processar ${file.name}`, 'error');
+            }
         }
         
         if (novosAudios.length === 0) return;
         p.audios = p.audios || [];
-        p.audios.push(...novosAudios);
-        
-        const updId = p.id || p.docId;
+        const candidatos = p.audios.concat(novosAudios);
+        const bytes = candidatos.reduce((s, a) => s + (a.base64 ? a.base64.length : 0), 0);
+        if (bytes > 3800000) {
+            showToast('Total de áudios do pedido excede o limite de envio (~3,8MB). Exclua alguns arquivos antes de enviar.', 'error');
+            return;
+        }
+        p.audios = candidatos;
+
+        const updId = p.docId || p.id;
+        let ok = !DBReady;
         if (DBReady && updId) {
-            try { await DB_SERVICE.updatePedido(updId, p); } catch(err) { console.error(err); }
+            try {
+                await DB_SERVICE.updatePedido(updId, { audios: p.audios });
+                ok = true;
+            } catch(err) {
+                console.error(err);
+                showToast(err && err.message ? err.message : 'Falha ao enviar áudios ao servidor', 'error');
+            }
         }
         renderBiblioteca();
-        showToast('Áudios enviados com sucesso!', 'success');
+        if (ok) showToast('Áudios enviados com sucesso!', 'success');
     };
     
     input.click();
@@ -5031,7 +5120,15 @@ window.enviarAudioBiblioteca = async function(input) {
         return;
     }
     
-    const b64 = await fileToBase64(file);
+    let b64;
+    try {
+        b64 = await arquivoAudioParaDataUrl(file);
+    } catch (err) {
+        console.error('Falha ao processar áudio', err);
+        showToast(err && err.message ? err.message : 'Falha ao processar o áudio.', 'error');
+        input.value = '';
+        return;
+    }
     const audioObj = {
         clienteId: currentUser.id,
         arquivoNome: file.name,
@@ -5051,6 +5148,7 @@ window.enviarAudioBiblioteca = async function(input) {
             if (docId && docId.id) audioObj.id = docId.id;
         } catch(e) {
             console.error('Erro ao salvar em DB_SERVICE.addBiblioteca:', e);
+            showToast(e && e.message ? e.message : 'Falha ao enviar áudio para a biblioteca', 'error');
         }
     }
 
@@ -5069,9 +5167,9 @@ window.enviarAudioBiblioteca = async function(input) {
             data: new Date().toISOString(),
             origem: 'chat'
         });
-        const updId = pedidoAtivo.id || pedidoAtivo.docId;
+        const updId = pedidoAtivo.docId || pedidoAtivo.id;
         if (DBReady && updId) {
-            try { await DB_SERVICE.updatePedido(updId, pedidoAtivo); } catch(err) { console.error(err); }
+            try { await DB_SERVICE.updatePedido(updId, { audios: pedidoAtivo.audios }); } catch(err) { console.error(err); showToast(err.message || 'Falha ao anexar áudio ao pedido', 'error'); }
         }
     }
     

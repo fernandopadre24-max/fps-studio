@@ -12,7 +12,10 @@ module.exports = async (req, res) => {
         const db = await getDb();
         const { method, query } = req;
         const action = query.action;
-        const id = query.id ? parseInt(query.id) : null;
+                const idParam = query.id;
+        const id = (idParam !== undefined && idParam !== null && idParam !== '' && !isNaN(parseInt(idParam, 10))) ? parseInt(idParam, 10) : null;
+        const needsId = ['PUT', 'DELETE'].includes(method) && ['servicos', 'materiais', 'clientes', 'pedidos', 'movimentacoes', 'biblioteca'].includes(action);
+        if (needsId && id === null) throw new Error('id inválido ou ausente para ' + method + ' em ' + action);
 
         let result;
 
@@ -108,9 +111,21 @@ module.exports = async (req, res) => {
                     saveDb(db);
                     result = { id: r.id };
                 } else if (method === 'PUT') {
-                    const { clienteId, servicos, materiais, desconto, status, total, parcial, descontoPct, dataPref, horarioPref, dataInicial, horaInicial, dataFinal, horaFinal, qtdFaixas, audios } = req.body;
-                    db.run('UPDATE pedidos SET clienteId=?, servicos=?, materiais=?, desconto=?, status=?, total=?, parcial=?, descontoPct=?, dataPref=?, horarioPref=?, dataInicial=?, horaInicial=?, dataFinal=?, horaFinal=?, qtdFaixas=?, audios=? WHERE id=?',
-                        [clienteId, JSON.stringify(servicos || []), JSON.stringify(materiais || []), desconto, status, total, parcial ? 1 : 0, descontoPct || 0, dataPref || '', horarioPref || '', dataInicial || '', horaInicial || '', dataFinal || '', horaFinal || '', qtdFaixas || 1, JSON.stringify(audios || []), id]);
+                    const allowed = ['clienteId', 'servicos', 'materiais', 'desconto', 'status', 'total', 'parcial', 'descontoPct', 'dataPref', 'horarioPref', 'dataInicial', 'horaInicial', 'dataFinal', 'horaFinal', 'qtdFaixas', 'audios'];
+                    const sets = [];
+                    const vals = [];
+                    for (const k of allowed) {
+                        if (req.body[k] === undefined) continue;
+                        let v = req.body[k];
+                        if (k === 'servicos' || k === 'materiais' || k === 'audios') v = JSON.stringify(v || []);
+                        else if (k === 'parcial') v = v ? 1 : 0;
+                        sets.push(`${k}=?`);
+                        vals.push(v);
+                    }
+                    if (sets.length) {
+                        vals.push(id);
+                        db.run(`UPDATE pedidos SET ${sets.join(', ')} WHERE id=?`, vals);
+                    }
                     saveDb(db);
                     result = { ok: true };
                 } else if (method === 'DELETE') {
@@ -313,6 +328,7 @@ module.exports = async (req, res) => {
                 return res.status(400).json({ error: 'Ação inválida' });
         }
 
+        try { await Promise.resolve(saveDb(db)); } catch (e) { console.error('saveDb:', e); }
         res.status(200).json(result);
     } catch (err) {
         console.error(err);
