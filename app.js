@@ -123,12 +123,25 @@ async function init() {
 }
 
 async function loadDB() {
-    DB.servicos = await DB_SERVICE.getServicos();
-    DB.materiais = await DB_SERVICE.getMateriais();
-    DB.clientes = await DB_SERVICE.getClientes();
-    DB.pedidos = await DB_SERVICE.getPedidos();
-    DB.movimentacoes = await DB_SERVICE.getMovimentacoes();
-    DB.config = await DB_SERVICE.getConfig();    DB.bibliotecas = await DB_SERVICE.getBiblioteca();
+    DB.servicos = (await DB_SERVICE.getServicos()) || [];
+    DB.materiais = (await DB_SERVICE.getMateriais()) || [];
+    DB.clientes = (await DB_SERVICE.getClientes()) || [];
+    DB.pedidos = (await DB_SERVICE.getPedidos()) || [];
+    DB.movimentacoes = (await DB_SERVICE.getMovimentacoes()) || [];
+    DB.config = (await DB_SERVICE.getConfig()) || {};
+    DB.bibliotecas = (await DB_SERVICE.getBiblioteca()) || [];
+
+    // Garantir docId para compatibilidade
+    [...DB.servicos, ...DB.materiais, ...DB.clientes, ...DB.pedidos, ...DB.movimentacoes, ...DB.bibliotecas].forEach(it => {
+        if (it && it.id && !it.docId) it.docId = it.id;
+    });
+
+    // Inicializar DB.nextId para evitar erros de undefined
+    DB.nextId = {
+        cliente: Math.max(0, ...DB.clientes.map(c => Number(c.id) || 0)) + 1,
+        pedido: Math.max(0, ...DB.pedidos.map(p => Number(p.id) || 0)) + 1,
+        movimentacao: Math.max(0, ...DB.movimentacoes.map(m => Number(m.id) || 0)) + 1
+    };
     
     DB.chats = {};
     for (const c of DB.clientes) {
@@ -327,29 +340,64 @@ function editarServico(id) {
     if (!s) return;
     clearForm('servico');
     document.getElementById('servicoId').value = s.id;
-    document.getElementById('servicoNome').value = s.nome;
-    document.getElementById('servicoDescricao').value = s.descricao;
+    document.getElementById('servicoNome').value = s.nome || '';
+    document.getElementById('servicoDescricao').value = s.descricao || '';
     
-    // Convert to string formatted for the mask if needed, but let's just set the string.
-    let precoFmt = Number(s.preco).toFixed(2).replace('.', ',');
+    let precoFmt = Number(s.preco || 0).toFixed(2).replace('.', ',');
     document.getElementById('servicoPreco').value = precoFmt;
     
     if (document.getElementById('servicoDuracao')) document.getElementById('servicoDuracao').value = s.duracao || '';
     if (document.getElementById('servicoIcone')) document.getElementById('servicoIcone').value = s.icone || 'fa-cog';
     if (document.getElementById('servicoCategoria')) document.getElementById('servicoCategoria').value = s.categoria || 'outro';
     
+    const imgPreview = document.getElementById('servicoImagemPreview');
+    const wrapper = document.getElementById('servicoPreviewWrapper');
+    const ph = document.getElementById('servicoImgPreview');
+    const info = document.getElementById('servicoImgInfo');
+    const input = document.getElementById('servicoImagem');
+
     if (s.imagem) {
-        document.getElementById('servicoImagemPreview').src = s.imagem;
-        document.getElementById('servicoImagemPreview').style.display = 'block';
+        if (imgPreview) { imgPreview.src = s.imagem; imgPreview.style.display = 'block'; }
+        if (wrapper) wrapper.style.display = 'block';
+        if (ph) ph.style.display = 'none';
+        if (info) info.textContent = 'Imagem atual';
+        if (input) input.dataset.base64 = s.imagem;
+    } else {
+        removerImagemServico();
     }
     openModal('servicoModal');
 }
 
+function removerImagemServico(e) {
+    if (e) { e.stopPropagation(); e.preventDefault(); }
+    const img = document.getElementById('servicoImagemPreview');
+    const wrapper = document.getElementById('servicoPreviewWrapper');
+    const ph = document.getElementById('servicoImgPreview');
+    const input = document.getElementById('servicoImagem');
+    if (img) { img.src = ''; img.style.display = 'none'; }
+    if (wrapper) wrapper.style.display = 'none';
+    if (ph) ph.style.display = 'block';
+    if (input) { input.value = ''; delete input.dataset.base64; }
+}
+
+function removerImagemMaterial(e) {
+    if (e) { e.stopPropagation(); e.preventDefault(); }
+    const img = document.getElementById('materialImagemPreview');
+    const wrapper = document.getElementById('materialPreviewWrapper');
+    const ph = document.getElementById('materialImgPreview');
+    const input = document.getElementById('materialImagem');
+    if (img) { img.src = ''; img.style.display = 'none'; }
+    if (wrapper) wrapper.style.display = 'none';
+    if (ph) ph.style.display = 'block';
+    if (input) { input.value = ''; delete input.dataset.base64; }
+}
+
 async function excluirServico(id) {
     if (!confirm('Excluir este serviço?')) return;
-    const s = DB.servicos.find(x => x.id === id);
-    DB.servicos = DB.servicos.filter(x => x.id !== id);
-    if (DBReady && s?.docId) await DB_SERVICE.deleteServico(s.docId);
+    const s = DB.servicos.find(x => String(x.id) === String(id));
+    DB.servicos = DB.servicos.filter(x => String(x.id) !== String(id));
+    const delId = s?.id || s?.docId;
+    if (DBReady && delId) await DB_SERVICE.deleteServico(delId);
     renderServicos();
     showToast('Serviço excluído', 'success');
 }
@@ -357,31 +405,46 @@ async function excluirServico(id) {
 async function salvarServico() {
     const id = document.getElementById('servicoId').value;
     const imgEl = document.getElementById('servicoImagemPreview');
-    const img = (imgEl && imgEl.style.display !== 'none' && imgEl.src) ? imgEl.src : null;
+    const inputEl = document.getElementById('servicoImagem');
+    const wrapper = document.getElementById('servicoPreviewWrapper');
+    
+    let img = '';
+    if (inputEl?.dataset?.base64) {
+        img = inputEl.dataset.base64;
+    } else if (imgEl && imgEl.src && !imgEl.src.endsWith('/') && (wrapper ? wrapper.style.display !== 'none' : imgEl.style.display !== 'none')) {
+        img = imgEl.src;
+    }
     
     let strPreco = document.getElementById('servicoPreco').value || '0';
     const precoFloat = parseFloat(strPreco.replace(/\./g, '').replace(',', '.')) || 0;
 
     const data = {
-        nome: document.getElementById('servicoNome').value,
-        descricao: document.getElementById('servicoDescricao').value,
+        nome: document.getElementById('servicoNome').value.trim(),
+        descricao: document.getElementById('servicoDescricao').value.trim(),
         preco: precoFloat,
         duracao: document.getElementById('servicoDuracao') ? document.getElementById('servicoDuracao').value : '',
         icone: document.getElementById('servicoIcone') ? document.getElementById('servicoIcone').value : 'fa-cog',
         categoria: document.getElementById('servicoCategoria') ? document.getElementById('servicoCategoria').value : 'outro',
-        imagem: img
+        imagem: img || ''
     };
+
+    if (!data.nome) {
+        showToast('Informe o nome do serviço!', 'error');
+        return;
+    }
     
     if (id) {
-        const item = DB.servicos.find(x => x.id === parseInt(id) || x.id === id);
+        const item = DB.servicos.find(x => String(x.id) === String(id));
         if (item) {
             Object.assign(item, data);
-            if (DBReady) await DB_SERVICE.updateServico(item.id, data);
+            const updId = item.id || item.docId;
+            if (DBReady && updId) await DB_SERVICE.updateServico(updId, data);
         }
     } else {
         if (DBReady) {
             const res = await DB_SERVICE.addServico(data);
             data.id = res.id;
+            data.docId = res.id;
         } else {
             data.id = 'serv_' + Date.now();
         }
@@ -390,7 +453,7 @@ async function salvarServico() {
     
     closeAllModals();
     renderServicos();
-    showToast('Serviço salvo', 'success');
+    showToast('Serviço salvo com sucesso!', 'success');
 }
 
 // ==========================================
@@ -414,30 +477,42 @@ function renderMateriais() {
 }
 
 function editarMaterial(id) {
-    const m = DB.materiais.find(x => x.id === parseInt(id) || x.id === id);
+    const m = DB.materiais.find(x => String(x.id) === String(id));
     if (!m) return;
     clearForm('material');
     document.getElementById('materialId').value = m.id;
-    document.getElementById('materialNome').value = m.nome;
-    document.getElementById('materialDescricao').value = m.descricao;
+    document.getElementById('materialNome').value = m.nome || '';
+    document.getElementById('materialDescricao').value = m.descricao || '';
     
-    let precoFmt = Number(m.preco).toFixed(2).replace('.', ',');
+    let precoFmt = Number(m.preco || 0).toFixed(2).replace('.', ',');
     document.getElementById('materialPreco').value = precoFmt;
 
     if (document.getElementById('materialCategoria')) document.getElementById('materialCategoria').value = m.categoria || 'outro';
     
+    const imgPreview = document.getElementById('materialImagemPreview');
+    const wrapper = document.getElementById('materialPreviewWrapper');
+    const ph = document.getElementById('materialImgPreview');
+    const info = document.getElementById('materialImgInfo');
+    const input = document.getElementById('materialImagem');
+
     if (m.imagem) {
-        document.getElementById('materialImagemPreview').src = m.imagem;
-        document.getElementById('materialImagemPreview').style.display = 'block';
+        if (imgPreview) { imgPreview.src = m.imagem; imgPreview.style.display = 'block'; }
+        if (wrapper) wrapper.style.display = 'block';
+        if (ph) ph.style.display = 'none';
+        if (info) info.textContent = 'Imagem atual';
+        if (input) input.dataset.base64 = m.imagem;
+    } else {
+        removerImagemMaterial();
     }
     openModal('materialModal');
 }
 
 async function excluirMaterial(id) {
     if (!confirm('Excluir este material?')) return;
-    const m = DB.materiais.find(x => x.id === id);
-    DB.materiais = DB.materiais.filter(x => x.id !== id);
-    if (DBReady && m?.docId) await DB_SERVICE.deleteMaterial(m.docId);
+    const m = DB.materiais.find(x => String(x.id) === String(id));
+    DB.materiais = DB.materiais.filter(x => String(x.id) !== String(id));
+    const delId = m?.id || m?.docId;
+    if (DBReady && delId) await DB_SERVICE.deleteMaterial(delId);
     renderMateriais();
     showToast('Material excluído', 'success');
 }
@@ -445,29 +520,44 @@ async function excluirMaterial(id) {
 async function salvarMaterial() {
     const id = document.getElementById('materialId').value;
     const imgEl = document.getElementById('materialImagemPreview');
-    const img = (imgEl && imgEl.style.display !== 'none') ? imgEl.src : null;
+    const inputEl = document.getElementById('materialImagem');
+    const wrapper = document.getElementById('materialPreviewWrapper');
+    
+    let img = '';
+    if (inputEl?.dataset?.base64) {
+        img = inputEl.dataset.base64;
+    } else if (imgEl && imgEl.src && !imgEl.src.endsWith('/') && (wrapper ? wrapper.style.display !== 'none' : imgEl.style.display !== 'none')) {
+        img = imgEl.src;
+    }
     
     let strPreco = document.getElementById('materialPreco').value || '0';
     const precoFloat = parseFloat(strPreco.replace(/\./g, '').replace(',', '.')) || 0;
 
     const data = {
-        nome: document.getElementById('materialNome').value,
-        descricao: document.getElementById('materialDescricao').value,
+        nome: document.getElementById('materialNome').value.trim(),
+        descricao: document.getElementById('materialDescricao').value.trim(),
         preco: precoFloat,
         categoria: document.getElementById('materialCategoria') ? document.getElementById('materialCategoria').value : 'outro',
-        imagem: img
+        imagem: img || ''
     };
+
+    if (!data.nome) {
+        showToast('Informe o nome do material!', 'error');
+        return;
+    }
     
     if (id) {
-        const item = DB.materiais.find(x => x.id === parseInt(id) || x.id === id);
+        const item = DB.materiais.find(x => String(x.id) === String(id));
         if (item) {
             Object.assign(item, data);
-            if (DBReady) await DB_SERVICE.updateMaterial(item.id, data);
+            const updId = item.id || item.docId;
+            if (DBReady && updId) await DB_SERVICE.updateMaterial(updId, data);
         }
     } else {
         if (DBReady) {
             const res = await DB_SERVICE.addMaterial(data);
             data.id = res.id;
+            data.docId = res.id;
         } else {
             data.id = 'mat_' + Date.now();
         }
@@ -476,7 +566,7 @@ async function salvarMaterial() {
     
     closeAllModals();
     renderMateriais();
-    showToast('Material salvo', 'success');
+    showToast('Material salvo com sucesso!', 'success');
 }
 
 // ==========================================
@@ -1135,6 +1225,34 @@ function verDetalhesPedidoClient(id) {
         html += `</div>`;
     }
 
+    // Seção de Áudios de Pedidos (MP3s anexados)
+    const audios = p.audios || [];
+    html += `<div class="detalhe-section">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <h4><i class="fas fa-music"></i> Áudios / Referências (${audios.length} de ${p.qtdFaixas || 1} faixas)</h4>
+            <button class="btn-primary btn-sm" onclick="clienteUploadAudioPedido('${p.id}')">
+                <i class="fas fa-plus"></i> Enviar MP3
+            </button>
+        </div>`;
+    if (audios.length > 0) {
+        html += `<div style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;">`;
+        audios.forEach((a, idx) => {
+            html += `
+            <div style="display:flex; align-items:center; gap:10px; background:var(--bg-lighter, #f1f2f6); padding:8px 12px; border-radius:6px;">
+                <i class="fas fa-file-audio" style="color:var(--primary-color, #6c5ce7); font-size:20px;"></i>
+                <div style="flex:1; min-width:0;">
+                    <div style="font-weight:600; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;" title="${a.nome}">${a.nome}</div>
+                    <audio controls src="${a.base64}" style="height:28px; width:100%; margin-top:4px;"></audio>
+                </div>
+                <a href="${a.base64}" download="${a.nome}" class="btn-icon" title="Baixar áudio"><i class="fas fa-download"></i></a>
+            </div>`;
+        });
+        html += `</div>`;
+    } else {
+        html += `<p style="color:var(--text-muted); font-size:13px; margin-bottom:10px;">Nenhum arquivo MP3 anexado a este pedido ainda.</p>`;
+    }
+    html += `</div>`;
+
     html += `<div class="pedido-total"><span>Total</span><strong>${formatCurrency(p.total)}</strong></div>`;
 
     html += `<div class="detalhe-section"><h4><i class="fas fa-hand-holding-usd"></i> Condição de Pagamento</h4>`;
@@ -1286,17 +1404,24 @@ async function salvarPedidoClient() {
     const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
     const descontoPct = condicao === 'vista' ? 10 : 0;
     const parcial = condicao === 'metade' ? 1 : 0;
-    const dataInicial = document.getElementById('clientPedidoDataInicial').value || '';
-    const horaInicial = document.getElementById('clientPedidoHoraInicial').value || '';
-    const horaFinal = document.getElementById('clientPedidoHoraFinal').value || '';
+    const dataInicial = document.getElementById('clientPedidoDataInicial')?.value || '';
+    const horaInicial = document.getElementById('clientPedidoHoraInicial')?.value || '';
+    const horaFinal = document.getElementById('clientPedidoHoraFinal')?.value || '';
     if (horaInicial || horaFinal) {
         if (!validarHorarioEstudio(horaInicial, horaFinal)) return;
     }
 
+    const qtdFaixas = parseInt(document.getElementById('clientPedidoQtdFaixas')?.value) || 1;
+
+    DB.nextId = DB.nextId || {};
+    const proximoId = DB.nextId.pedido || (DB.pedidos && DB.pedidos.length > 0 ? Math.max(...DB.pedidos.map(p => Number(p.id) || 0)) + 1 : 1);
+    DB.nextId.pedido = proximoId + 1;
+
     const novoPedido = {
-        id: DB.nextId.pedido++,
+        id: proximoId,
         clienteId: currentUser.id,
-        servicos, materiais,
+        servicos, 
+        materiais,
         desconto: 0,
         status: 'pendente',
         data: new Date().toISOString().split('T')[0],
@@ -1306,18 +1431,21 @@ async function salvarPedidoClient() {
         dataInicial,
         horaInicial,
         horaFinal,
-        qtdFaixas: parseInt(document.getElementById('clientPedidoQtdFaixas').value) || 1,
+        qtdFaixas,
         audios: []
     };
     
-    // Anexar áudios
+    // Anexar áudios MP3
     const fileInput = document.getElementById('clientPedidoAudios');
-    if (fileInput && fileInput.files.length > 0) {
+    if (fileInput && fileInput.files && fileInput.files.length > 0) {
         for (let i = 0; i < fileInput.files.length; i++) {
-            const b64 = await fileToBase64(fileInput.files[i]);
+            const file = fileInput.files[i];
+            const b64 = await fileToBase64(file);
             novoPedido.audios.push({
-                nome: fileInput.files[i].name,
+                nome: file.name,
                 base64: b64,
+                tamanho: file.size,
+                tipo: file.type || 'audio/mp3',
                 data: new Date().toISOString()
             });
         }
@@ -1325,12 +1453,19 @@ async function salvarPedidoClient() {
 
     DB.pedidos.push(novoPedido);
     if (DBReady) {
-        const docId = await DB_SERVICE.addPedido(novoPedido);
-        novoPedido.docId = docId;
+        try {
+            const res = await DB_SERVICE.addPedido(novoPedido);
+            if (res && res.id) {
+                novoPedido.id = res.id;
+                novoPedido.docId = res.id;
+            }
+        } catch (e) {
+            console.error('Erro ao salvar pedido no backend:', e);
+        }
     }
     await sincronizarFinanceiroPedido(novoPedido);
 
-    // Enviar pedido pelo chat para o administrador
+    // Enviar notificação de pedido pelo chat
     const chatKey = `admin_${currentUser.id}`;
     if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
 
@@ -1345,27 +1480,72 @@ async function salvarPedidoClient() {
         ? `Agendamento: ${formatDate(dataInicial)} ${horaInicial}`
         : '';
 
+    const audiosTxt = novoPedido.audios.length > 0 ? ` · ${novoPedido.audios.length} áudio(s) anexado(s)` : '';
+
     const msgData = {
         tipo: 'pedido',
         remetente: 'client',
         clienteId: currentUser.id,
         pedidoId: novoPedido.id,
         mensagem: `Novo pedido #${novoPedido.id} - ${formatCurrency(total)}`,
-        descricao: detalhes + ' · ' + rotuloCondicao + (prefHorario ? ' · ' + prefHorario : ''),
+        descricao: detalhes + ' · ' + rotuloCondicao + (prefHorario ? ' · ' + prefHorario : '') + audiosTxt,
         valor: total,
         data: new Date().toISOString(),
         lida: false
     };
     DB.chats[chatKey].push(msgData);
     if (DBReady) {
-        const res = await DB_SERVICE.sendMessage(msgData);
-        if (res && res.id) msgData.id = res.id;
+        try {
+            const res = await DB_SERVICE.sendMessage(msgData);
+            if (res && res.id) msgData.id = res.id;
+        } catch (e) {
+            console.warn('Erro ao enviar mensagem chat:', e);
+        }
     }
 
     closeAllModals();
     renderPedidosClient();
     renderClientDashboard();
+    if (typeof renderBiblioteca === 'function') renderBiblioteca();
     showToast('Pedido enviado com sucesso!', 'success');
+}
+
+async function clienteUploadAudioPedido(pedidoId) {
+    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
+    if (!p) return;
+
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'audio/mpeg, .mp3';
+    input.multiple = true;
+
+    input.onchange = async (e) => {
+        if (!e.target.files || e.target.files.length === 0) return;
+        const novos = [];
+        for (let i = 0; i < e.target.files.length; i++) {
+            const file = e.target.files[i];
+            if (typeof validateAudioFile === 'function' && !validateAudioFile(file)) continue;
+            const b64 = await fileToBase64(file);
+            novos.push({
+                nome: file.name,
+                base64: b64,
+                tamanho: file.size,
+                tipo: file.type || 'audio/mp3',
+                data: new Date().toISOString()
+            });
+        }
+        if (novos.length === 0) return;
+        p.audios = p.audios || [];
+        p.audios.push(...novos);
+        const updId = p.id || p.docId;
+        if (DBReady && updId) {
+            try { await DB_SERVICE.updatePedido(updId, p); } catch(err) { console.error(err); }
+        }
+        verDetalhesPedidoClient(pedidoId);
+        if (typeof renderBiblioteca === 'function') renderBiblioteca();
+        showToast('Áudio(s) anexado(s) com sucesso ao pedido!', 'success');
+    };
+    input.click();
 }
 
 function pixCrc16(str) {
@@ -2313,158 +2493,77 @@ function closeAllModals() {
     clearForm('mov');
     clearForm('comprovante');
     clearForm('orcamento');
+    removerImagemServico();
+    removerImagemMaterial();
     document.querySelectorAll('.imagem-preview').forEach(img => { img.src = ''; img.style.display = 'none'; });
 }
 
 // ============================================
-// UTILITIES
+// UTILITIES & UPLOAD DE IMAGENS
 // ============================================
-function previewImagem(input, previewId) {
-    const preview = document.getElementById(previewId);
-    if (input.files && input.files[0]) {
-        const reader = new FileReader();
-        reader.onload = e => { preview.src = e.target.result; preview.style.display = 'block'; };
-        reader.readAsDataURL(input.files[0]);
-    } else if (preview) {
-        preview.style.display = 'none';
-        preview.src = '';
-    }
-}
-
-function lerArquivoComoDataURL(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-    });
-}
-
-async function processarImagem(file) {
-    if (!file) return '';
-    const dataUrl = await lerArquivoComoDataURL(file);
-    const img = new Image();
-    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = dataUrl; });
-    const maxDim = 900;
-    let { width, height } = img;
-    if (width > maxDim || height > maxDim) {
-        const scale = Math.min(maxDim / width, maxDim / height);
-        width = Math.round(width * scale);
-        height = Math.round(height * scale);
-    }
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, width, height);
-    return canvas.toDataURL('image/jpeg', 0.7);
-}
-
-function formatCurrency(value) {
-    return 'R$ ' + value.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-}
-
-function formatDate(dateStr) {
-    if (!dateStr) return '';
-    const [y, m, d] = dateStr.split('-');
-    return `${d}/${m}/${y}`;
-}
-
-function formatPedidoDataHora(p) {
-    if (!p.dataInicial) return formatDate(p.data);
-    let txt = formatDate(p.dataInicial);
-    if (p.horaInicial) txt += ` <span class="hora-pedido">${p.horaInicial}</span>`;
-    return txt;
-}
-
-function validarDiaFuncionamento() {
-    const dp = document.getElementById('clientPedidoDataPref') || document.getElementById('pedidoDataPref');
-    if (!dp || !dp.value) return;
-    const d = new Date(dp.value + 'T12:00:00');
-    const dia = d.getDay();
-    const nomes = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
-    const funciona = dia >= 2 && dia <= 5;
-    document.querySelectorAll('.tarja-funcionamento.tarja-dinamica').forEach(t => t.classList.toggle('tarja-alerta', !funciona));
-    if (!funciona) showToast(`Atenção: o estúdio não funciona em ${nomes[dia]}s — atendemos de terça a sexta.`, 'error');
-}
-
-function formatDateTime(isoStr) {
-    if (!isoStr) return '';
-    const date = new Date(isoStr);
-    return date.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-}
-
-function timeAgo(isoStr) {
-    if (!isoStr) return '';
-    const date = new Date(isoStr);
-    const now = new Date();
-    const diff = Math.floor((now - date) / 1000);
-    if (diff < 60) return 'agora';
-    if (diff < 3600) return `${Math.floor(diff / 60)}min`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-    return `${Math.floor(diff / 86400)}d`;
-}
-
-function capitalize(str) {
-    if (!str) return '';
-    return str.charAt(0).toUpperCase() + str.slice(1).replace(/_/g, ' ');
-}
-
-function statusLabel(status) {
-    const labels = {
-        pendente: 'Pendente',
-        em_andamento: 'Em Andamento',
-        concluido: 'Concluído',
-        cancelado: 'Cancelado'
-    };
-    return labels[status] || status;
-}
-
-function formatMaterialPrice(m, cls = 'item-card-price') {
-    return m && m.preco <= 0
-        ? '<span class="badge-incluso"><i class="fas fa-gift"></i> INCLUSO</span>'
-        : `<span class="${cls}">${formatCurrency(m.preco)}</span>`;
-}
-
-function getCategoriaIcon(cat) {
-    const icons = {
-        microfone: 'fa-microphone',
-        fone: 'fa-headphones',
-        monitor: 'fa-volume-up',
-        interface: 'fa-plug',
-        cabo: 'fa-plug',
-        acessorio: 'fa-cog',
-        outro: 'fa-box'
-    };
-    return icons[cat] || 'fa-box';
-}
-
-// ============================================
-// UPLOAD DE IMAGENS
-// ============================================
-function previewImagem(input, previewId) {
-    const preview = document.getElementById(previewId);
-    const file = input.files[0];
+async function previewImagem(input, previewId) {
+    const file = input.files && input.files[0];
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
         showToast('Selecione apenas arquivos de imagem!', 'error');
+        input.value = '';
         return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-        showToast('Imagem muito grande! Máximo 5MB.', 'error');
+    if (file.size > 10 * 1024 * 1024) {
+        showToast('Imagem muito grande! Máximo 10MB.', 'error');
+        input.value = '';
         return;
     }
 
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        input.dataset.base64 = e.target.result;
-        const isServico = previewId === 'servicoImgPreview';
-        const removeFn = isServico ? 'removerImagemServico' : 'removerImagemMaterial';
-        preview.innerHTML = `<img src="${e.target.result}" class="upload-preview"><div class="upload-actions"><span>${file.name} (${(file.size / 1024).toFixed(0)}KB)</span><button onclick="${removeFn}(event)"><i class="fas fa-trash"></i> Remover</button></div>`;
-    };
-    reader.readAsDataURL(file);
+    try {
+        const base64 = await processarImagem(file);
+        input.dataset.base64 = base64;
+
+        if (previewId === 'servicoImagemPreview' || previewId === 'servicoImgPreview' || input.id === 'servicoImagem') {
+            const img = document.getElementById('servicoImagemPreview');
+            const wrapper = document.getElementById('servicoPreviewWrapper');
+            const ph = document.getElementById('servicoImgPreview');
+            const info = document.getElementById('servicoImgInfo');
+            if (img) { img.src = base64; img.style.display = 'block'; }
+            if (wrapper) wrapper.style.display = 'block';
+            if (ph) ph.style.display = 'none';
+            if (info) info.textContent = `${file.name} (${Math.round(file.size / 1024)}KB)`;
+        } else if (previewId === 'materialImagemPreview' || previewId === 'materialImgPreview' || input.id === 'materialImagem') {
+            const img = document.getElementById('materialImagemPreview');
+            const wrapper = document.getElementById('materialPreviewWrapper');
+            const ph = document.getElementById('materialImgPreview');
+            const info = document.getElementById('materialImgInfo');
+            if (img) { img.src = base64; img.style.display = 'block'; }
+            if (wrapper) wrapper.style.display = 'block';
+            if (ph) ph.style.display = 'none';
+            if (info) info.textContent = `${file.name} (${Math.round(file.size / 1024)}KB)`;
+        } else {
+            const el = document.getElementById(previewId);
+            if (el) {
+                if (el.tagName === 'IMG') {
+                    el.src = base64;
+                    el.style.display = 'block';
+                } else {
+                    el.innerHTML = `<img src="${base64}" class="upload-preview" style="max-height:160px; object-fit:contain;">`;
+                    el.style.display = 'block';
+                }
+            }
+        }
+    } catch (e) {
+        console.error('Erro ao processar preview de imagem:', e);
+        const reader = new FileReader();
+        reader.onload = ev => {
+            input.dataset.base64 = ev.target.result;
+            const el = document.getElementById(previewId);
+            if (el && el.tagName === 'IMG') {
+                el.src = ev.target.result;
+                el.style.display = 'block';
+            }
+        };
+        reader.readAsDataURL(file);
+    }
 }
 
 function setupDragDrop() {
@@ -2479,15 +2578,16 @@ function setupDragDrop() {
             this.classList.remove('dragover');
         });
 
-        area.addEventListener('drop', function(e) {
+        area.addEventListener('drop', async function(e) {
             e.preventDefault();
             this.classList.remove('dragover');
             const input = this.querySelector('input[type="file"]');
-            const previewId = input.id === 'servicoImagem' ? 'servicoImgPreview' : 'materialImgPreview';
+            if (!input) return;
             const files = e.dataTransfer.files;
-            if (files.length) {
+            if (files && files.length) {
                 input.files = files;
-                previewImagem(input, previewId);
+                const previewId = input.id === 'servicoImagem' ? 'servicoImagemPreview' : (input.id === 'materialImagem' ? 'materialImagemPreview' : 'preview');
+                await previewImagem(input, previewId);
             }
         });
     });
@@ -2516,15 +2616,8 @@ function clearForm(prefix) {
         }
     });
 
-    // Reset upload previews
-    if (prefix === 'servico') {
-        const preview = document.getElementById('servicoImgPreview');
-        if (preview) preview.innerHTML = `<i class="fas fa-cloud-upload-alt"></i><p>Clique para selecionar uma foto</p><span>ou arraste e solte aqui</span>`;
-    }
-    if (prefix === 'material') {
-        const preview = document.getElementById('materialImgPreview');
-        if (preview) preview.innerHTML = `<i class="fas fa-cloud-upload-alt"></i><p>Clique para selecionar uma foto</p><span>ou arraste e solte aqui</span>`;
-    }
+    if (prefix === 'servico') removerImagemServico();
+    if (prefix === 'material') removerImagemMaterial();
 
     // Uncheck checkboxes
     document.querySelectorAll('#pedidoServicos input, #pedidoMateriais input, #clientPedidoServicos input, #clientPedidoMateriais input').forEach(cb => {
@@ -3124,43 +3217,46 @@ window.renderBiblioteca = function() {
     const list = document.getElementById('bibliotecaBody');
     if (!list) return;
     
-    // Sort by most recent
-    const pedidosComAudio = DB.pedidos.filter(p => p.audios && p.audios.length > 0 || p.qtdFaixas > 0).sort((a,b) => b.id - a.id);
+    // Filtrar pedidos que tenham áudios anexados ou faixas previstas
+    const pedidosComAudio = (DB.pedidos || []).filter(p => 
+        (p.audios && p.audios.length > 0) || (Number(p.qtdFaixas) > 0)
+    ).sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0));
     
     if (pedidosComAudio.length === 0) {
-        list.innerHTML = '<tr><td colspan="6" class="text-center">Nenhum áudio encontrado.</td></tr>';
+        list.innerHTML = '<tr><td colspan="6" class="text-center" style="padding:20px; color:var(--text-muted);">Nenhum áudio de pedido encontrado.</td></tr>';
         return;
     }
     
     list.innerHTML = pedidosComAudio.map(p => {
-        const cliente = DB.clientes.find(c => c.id === p.clienteId);
-        const cliNome = cliente ? cliente.nome : 'Desconhecido';
+        const cliente = DB.clientes.find(c => String(c.id) === String(p.clienteId));
+        const cliNome = cliente ? cliente.nome : 'Cliente #' + (p.clienteId || '-');
         const audios = p.audios || [];
+        const qtdF = Number(p.qtdFaixas) || 1;
         
         let arquivosHtml = '';
         if (audios.length > 0) {
             arquivosHtml = audios.map((a, idx) => `
-                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;background:var(--bg-lighter);padding:4px 8px;border-radius:4px;font-size:12px;">
-                    <i class="fas fa-music text-primary"></i>
-                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${a.nome}">${a.nome}</span>
-                    <audio controls src="${a.base64}" style="height:24px;width:120px;"></audio>
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;background:var(--bg-lighter, #f1f2f6);padding:6px 10px;border-radius:4px;font-size:12px;">
+                    <i class="fas fa-file-audio text-primary" style="font-size:15px;"></i>
+                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;" title="${a.nome}">${a.nome}</span>
+                    <audio controls src="${a.base64}" style="height:26px;width:130px;"></audio>
                     <a href="${a.base64}" download="${a.nome}" class="btn-icon" title="Baixar"><i class="fas fa-download"></i></a>
-                    <button class="btn-icon text-danger" onclick="excluirAudioPedido(${p.id}, ${idx})" title="Excluir"><i class="fas fa-trash"></i></button>
+                    <button class="btn-icon text-danger" onclick="excluirAudioPedido('${p.id}', ${idx})" title="Excluir"><i class="fas fa-trash"></i></button>
                 </div>
             `).join('');
         } else {
-            arquivosHtml = '<span class="text-muted">Nenhum áudio enviado</span>';
+            arquivosHtml = '<span class="text-muted" style="font-style:italic;">Nenhum áudio enviado</span>';
         }
         
         return `
         <tr>
-            <td>#${p.id}</td>
+            <td><strong>#${p.id}</strong></td>
             <td>${cliNome}</td>
-            <td>${p.qtdFaixas || 1}</td>
-            <td>${audios.length} / ${p.qtdFaixas || 1}</td>
-            <td style="max-width:300px;">${arquivosHtml}</td>
+            <td>${qtdF}</td>
+            <td><span class="badge ${audios.length >= qtdF ? 'badge-success' : 'badge-warning'}">${audios.length} / ${qtdF}</span></td>
+            <td style="max-width:320px;">${arquivosHtml}</td>
             <td>
-                <button class="btn-primary btn-sm" onclick="abrirUploadAudioAdmin(${p.id})" title="Enviar novo áudio"><i class="fas fa-upload"></i> Upload</button>
+                <button class="btn-primary btn-sm" onclick="abrirUploadAudioAdmin('${p.id}')" title="Enviar novo áudio para este pedido"><i class="fas fa-upload"></i> Upload</button>
             </td>
         </tr>
         `;
@@ -3168,24 +3264,26 @@ window.renderBiblioteca = function() {
 };
 
 window.excluirAudioPedido = async function(pedidoId, audioIdx) {
-    if (!confirm('Excluir este áudio?')) return;
-    const p = DB.pedidos.find(x => x.id === pedidoId);
+    if (!confirm('Excluir este áudio do pedido?')) return;
+    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
     if (p && p.audios) {
         p.audios.splice(audioIdx, 1);
-        if (DBReady && p.docId) await DB_SERVICE.updatePedido(p.docId, p);
+        const updId = p.id || p.docId;
+        if (DBReady && updId) {
+            try { await DB_SERVICE.updatePedido(updId, p); } catch(err) { console.error(err); }
+        }
         renderBiblioteca();
         showToast('Áudio excluído!', 'success');
     }
 };
 
 window.abrirUploadAudioAdmin = function(pedidoId) {
-    const p = DB.pedidos.find(x => x.id === pedidoId);
-    if(!p) return;
+    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
+    if (!p) return;
     
-    // We'll create a hidden file input on the fly
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = 'audio/*';
+    input.accept = 'audio/mpeg, .mp3';
     input.multiple = true;
     
     input.onchange = async (e) => {
@@ -3194,25 +3292,31 @@ window.abrirUploadAudioAdmin = function(pedidoId) {
         const novosAudios = [];
         for (let i = 0; i < e.target.files.length; i++) {
             const file = e.target.files[i];
+            if (typeof validateAudioFile === 'function' && !validateAudioFile(file)) continue;
             const b64 = await fileToBase64(file);
             novosAudios.push({
                 nome: file.name,
                 base64: b64,
+                tamanho: file.size,
+                tipo: file.type || 'audio/mp3',
                 data: new Date().toISOString()
             });
         }
         
+        if (novosAudios.length === 0) return;
         p.audios = p.audios || [];
         p.audios.push(...novosAudios);
         
-        if (DBReady && p.docId) await DB_SERVICE.updatePedido(p.docId, p);
+        const updId = p.id || p.docId;
+        if (DBReady && updId) {
+            try { await DB_SERVICE.updatePedido(updId, p); } catch(err) { console.error(err); }
+        }
         renderBiblioteca();
         showToast('Áudios enviados com sucesso!', 'success');
     };
     
     input.click();
 };
-
 
 window.validateAudioFile = function(file) {
     // Apenas MP3
@@ -3253,13 +3357,37 @@ window.enviarAudioBiblioteca = async function(input) {
     DB.bibliotecas = DB.bibliotecas || [];
     DB.bibliotecas.push(audioObj);
     
-    
     if (DBReady) {
-        const docId = await DB_SERVICE.addBiblioteca(audioObj);
-        audioObj.id = docId.id;
+        try {
+            const docId = await DB_SERVICE.addBiblioteca(audioObj);
+            if (docId && docId.id) audioObj.id = docId.id;
+        } catch(e) {
+            console.error('Erro ao salvar em DB_SERVICE.addBiblioteca:', e);
+        }
+    }
+
+    // Vincular também ao pedido ativo/recente do cliente para aparecer em Áudios de Pedidos!
+    const pedidoAtivo = (DB.pedidos || [])
+        .filter(p => String(p.clienteId) === String(currentUser.id))
+        .sort((a,b) => (Number(b.id) || 0) - (Number(a.id) || 0))[0];
+
+    if (pedidoAtivo) {
+        pedidoAtivo.audios = pedidoAtivo.audios || [];
+        pedidoAtivo.audios.push({
+            nome: file.name,
+            base64: b64,
+            tamanho: file.size,
+            tipo: file.type || 'audio/mp3',
+            data: new Date().toISOString(),
+            origem: 'chat'
+        });
+        const updId = pedidoAtivo.id || pedidoAtivo.docId;
+        if (DBReady && updId) {
+            try { await DB_SERVICE.updatePedido(updId, pedidoAtivo); } catch(err) { console.error(err); }
+        }
     }
     
-    // Send a message in the chat to notify the admin!
+    // Notificar no chat
     const chatKey = 'admin_' + currentUser.id;
     if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
     
@@ -3267,16 +3395,18 @@ window.enviarAudioBiblioteca = async function(input) {
         tipo: 'mensagem',
         remetente: 'client',
         clienteId: currentUser.id,
-        mensagem: '🎵 Enviei um novo arquivo de áudio (' + file.name + ') para a Biblioteca Avulsa.',
+        mensagem: '🎵 Enviei um novo arquivo de áudio (' + file.name + ') para o estúdio.',
         data: new Date().toISOString(),
         lida: false
     };
     DB.chats[chatKey].push(msgData);
-    if (DBReady) await DB_SERVICE.sendMessage(msgData);
+    if (DBReady) {
+        try { await DB_SERVICE.sendMessage(msgData); } catch(e){}
+    }
     if (document.getElementById('chatMessagesClient')) renderChatMessagesClient();
+    if (typeof renderBiblioteca === 'function') renderBiblioteca();
     
-    showToast('Áudio enviado para a Biblioteca do estúdio!', 'success');
-
+    showToast('Áudio enviado com sucesso!', 'success');
     input.value = '';
 };
 

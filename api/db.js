@@ -188,7 +188,9 @@ async function initDb() {
             total REAL DEFAULT 0,
             parcial INTEGER DEFAULT 0,
             descontoPct REAL DEFAULT 0,
-            faixas INTEGER DEFAULT 1
+            faixas INTEGER DEFAULT 1,
+            qtdFaixas INTEGER DEFAULT 1,
+            audios TEXT DEFAULT '[]'
         )
     `);
 
@@ -202,6 +204,7 @@ async function initDb() {
     try { db.run('ALTER TABLE pedidos ADD COLUMN horaFinal TEXT DEFAULT ""'); } catch(e) {}
     try { db.run('ALTER TABLE pedidos ADD COLUMN audios TEXT DEFAULT "[]"'); } catch(e) {}
     try { db.run('ALTER TABLE pedidos ADD COLUMN faixas INTEGER DEFAULT 1'); } catch(e) {}
+    try { db.run('ALTER TABLE pedidos ADD COLUMN qtdFaixas INTEGER DEFAULT 1'); } catch(e) {}
 
     db.run(`
         CREATE TABLE IF NOT EXISTS movimentacoes (

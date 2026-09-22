@@ -22,16 +22,16 @@ module.exports = async (req, res) => {
                 if (method === 'GET') {
                     result = queryAll(db, 'SELECT * FROM servicos ORDER BY id');
                 } else if (method === 'POST') {
-                    const { nome, descricao, preco, duracao, icone, imagem } = req.body;
-                    db.run('INSERT INTO servicos (nome, descricao, preco, duracao, icone, imagem) VALUES (?, ?, ?, ?, ?, ?)',
-                        [nome, descricao || '', preco || 0, duracao || '', icone || 'fa-cog', imagem || '']);
+                    const { nome, descricao, preco, duracao, icone, imagem, categoria } = req.body;
+                    db.run('INSERT INTO servicos (nome, descricao, preco, duracao, icone, imagem, categoria) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                        [nome, descricao || '', preco || 0, duracao || '', icone || 'fa-cog', imagem || '', categoria || 'outro']);
                     const r = queryOne(db, 'SELECT last_insert_rowid() as id');
                     saveDb(db);
                     result = { id: r.id };
                 } else if (method === 'PUT') {
-                    const { nome, descricao, preco, duracao, icone, imagem } = req.body;
-                    db.run('UPDATE servicos SET nome=?, descricao=?, preco=?, duracao=?, icone=?, imagem=? WHERE id=?',
-                        [nome, descricao, preco, duracao, icone, imagem, id]);
+                    const { nome, descricao, preco, duracao, icone, imagem, categoria } = req.body;
+                    db.run('UPDATE servicos SET nome=?, descricao=?, preco=?, duracao=?, icone=?, imagem=?, categoria=? WHERE id=?',
+                        [nome, descricao, preco, duracao, icone, imagem, categoria || 'outro', id]);
                     saveDb(db);
                     result = { ok: true };
                 } else if (method === 'DELETE') {
@@ -97,7 +97,8 @@ module.exports = async (req, res) => {
                         ...p,
                         servicos: JSON.parse(p.servicos || '[]'),
                         materiais: JSON.parse(p.materiais || '[]'),
-                        audios: JSON.parse(p.audios || '[]')
+                        audios: JSON.parse(p.audios || '[]'),
+                        qtdFaixas: p.qtdFaixas || p.faixas || 1
                     }));
                 } else if (method === 'POST') {
                     const { clienteId, servicos, materiais, desconto, status, total, parcial, descontoPct, dataPref, horarioPref, dataInicial, horaInicial, dataFinal, horaFinal, qtdFaixas, audios } = req.body;
