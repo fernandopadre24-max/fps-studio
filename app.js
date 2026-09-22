@@ -322,8 +322,10 @@ function renderServicos() {
     const list = document.getElementById('listaServicosAdmin');
     if (!list) return;
     list.innerHTML = DB.servicos.map(s => `
-        <div class="card">
-            <img src="${s.imagem || 'https://via.placeholder.com/150'}" alt="${s.nome}" style="width:100%;height:120px;object-fit:cover;border-radius:4px;margin-bottom:10px;">
+        <div class="card" data-id="${String(s.id).replace(/"/g, '&quot;')}">
+            ${s.imagem
+                ? `<img src="${s.imagem}" alt="${s.nome}" style="width:100%;height:120px;object-fit:cover;border-radius:4px;margin-bottom:10px;">`
+                : `<div style="width:100%;height:120px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;border-radius:4px;margin-bottom:10px;color:#bbb;"><i class="fas fa-image" style="font-size:28px;"></i></div>`}
             <h4>${s.nome}</h4>
             <p style="font-size:12px;color:var(--text-light);height:40px;overflow:hidden;">${s.descricao || ''}</p>
             <div style="font-weight:bold;margin:10px 0;color:var(--primary-color);">${formatCurrency(s.preco)} ${s.isPorHora ? '/ hora' : ''}</div>
@@ -463,8 +465,10 @@ function renderMateriais() {
     const list = document.getElementById('listaMateriaisAdmin');
     if (!list) return;
     list.innerHTML = DB.materiais.map(m => `
-        <div class="card">
-            <img src="${m.imagem || 'https://via.placeholder.com/150'}" alt="${m.nome}" style="width:100%;height:120px;object-fit:cover;border-radius:4px;margin-bottom:10px;">
+        <div class="card" data-id="${String(m.id).replace(/"/g, '&quot;')}">
+            ${m.imagem
+                ? `<img src="${m.imagem}" alt="${m.nome}" style="width:100%;height:120px;object-fit:cover;border-radius:4px;margin-bottom:10px;">`
+                : `<div style="width:100%;height:120px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;border-radius:4px;margin-bottom:10px;color:#bbb;"><i class="fas fa-cube" style="font-size:28px;"></i></div>`}
             <h4>${m.nome}</h4>
             <p style="font-size:12px;color:var(--text-light);height:40px;overflow:hidden;">${m.descricao || ''}</p>
             <div style="font-weight:bold;margin:10px 0;color:var(--primary-color);">${formatCurrency(m.preco)}</div>
