@@ -410,10 +410,11 @@ async function salvarServico() {
     const inputEl = document.getElementById('servicoImagem');
     const wrapper = document.getElementById('servicoPreviewWrapper');
     
-    let img = '';
-    if (inputEl?.dataset?.base64) {
-        img = inputEl.dataset.base64;
-    } else if (imgEl && imgEl.src && !imgEl.src.endsWith('/') && (wrapper ? wrapper.style.display !== 'none' : imgEl.style.display !== 'none')) {
+    let img = inputEl?.dataset?.base64 || '';
+    if (!img && inputEl?.files && inputEl.files[0]) {
+        img = await processarImagem(inputEl.files[0]).catch(() => '');
+    }
+    if (!img && imgEl && imgEl.src && !imgEl.src.endsWith('/')) {
         img = imgEl.src;
     }
     
@@ -527,10 +528,11 @@ async function salvarMaterial() {
     const inputEl = document.getElementById('materialImagem');
     const wrapper = document.getElementById('materialPreviewWrapper');
     
-    let img = '';
-    if (inputEl?.dataset?.base64) {
-        img = inputEl.dataset.base64;
-    } else if (imgEl && imgEl.src && !imgEl.src.endsWith('/') && (wrapper ? wrapper.style.display !== 'none' : imgEl.style.display !== 'none')) {
+    let img = inputEl?.dataset?.base64 || '';
+    if (!img && inputEl?.files && inputEl.files[0]) {
+        img = await processarImagem(inputEl.files[0]).catch(() => '');
+    }
+    if (!img && imgEl && imgEl.src && !imgEl.src.endsWith('/')) {
         img = imgEl.src;
     }
     
