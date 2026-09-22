@@ -218,13 +218,58 @@ document.addEventListener("DOMContentLoaded", () => {
     const pf = document.getElementById('pinForm');
     if (pf) pf.addEventListener('submit', login);
     
-    // NOTE: register form should ideally call a register func, but for now we can alert
     const rf = document.getElementById('registerForm');
-    if (rf) rf.addEventListener('submit', (e) => {
-        e.preventDefault();
-        alert('Cadastro não implementado nesta demonstração.');
-    });
+    if (rf) rf.addEventListener('submit', criarConta);
 });
+
+async function criarConta(e) {
+    e.preventDefault();
+    const nome = document.getElementById('regNome').value.trim();
+    const email = document.getElementById('regEmail').value.trim();
+    const telefone = document.getElementById('regTelefone').value.trim();
+    const senha = document.getElementById('regSenha').value;
+    const pin = Array.from(document.querySelectorAll('.reg-pin')).map(i => i.value).join('');
+
+    if (!nome || !email || !telefone || !senha) {
+        showToast('Preencha todos os campos!', 'error');
+        return;
+    }
+    if (senha.length < 6) {
+        showToast('A senha deve ter pelo menos 6 caracteres!', 'error');
+        return;
+    }
+    if (pin.length !== 4) {
+        showToast('O PIN deve ter exatamente 4 dígitos!', 'error');
+        return;
+    }
+    if (DB.clientes.some(c => c.email && c.email.toLowerCase() === email.toLowerCase())) {
+        showToast('Este e-mail já está cadastrado!', 'error');
+        return;
+    }
+
+    const novo = {
+        id: DB.nextId.cliente++,
+        nome, email, telefone, senha, pin,
+        tipoPessoa: 'fisica',
+        cnpj: '', instagram: ''
+    };
+    DB.clientes.push(novo);
+    if (DBReady) {
+        try {
+            const docId = await DB_SERVICE.addCliente(novo);
+            novo.docId = docId;
+        } catch (err) {
+            console.error('Falha ao persistir conta:', err);
+            showToast('Conta criada, mas houve falha ao sincronizar.', 'error');
+        }
+    }
+
+    currentUser = { ...novo, role: 'cliente' };
+    showToast('Conta criada com sucesso!', 'success');
+    document.getElementById('registerForm').reset();
+    showView('clientDashboard');
+    renderClientDashboard();
+}
 
 function logout() {
     currentUser = null;
