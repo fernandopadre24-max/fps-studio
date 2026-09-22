@@ -311,7 +311,7 @@ function renderAdminDashboard() {
     renderClientes();
 
     const movs = DB.movimentacoes.filter(m => dashEmPeriodo(m.data) && (dashFiltros.tipo === 'todos' || m.tipo === dashFiltros.tipo));
-    const totalReceita = movs.filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente').reduce((s, m) => s + m.valor, 0);
+    const totalReceita = movs.filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente').reduce((s, m) => s + (Number(m.valor) || 0), 0);
     const pedidosAtivos = DB.pedidos.filter(p => p.status !== 'cancelado' && p.status !== 'concluido').length;
 
     document.getElementById('statReceita').textContent = formatCurrency(totalReceita);
@@ -690,7 +690,7 @@ function renderPedidosBoard() {
             <div style="font-weight:bold;margin-bottom:5px;">${c ? c.nome : 'Pedido Avulso'}</div>
             <div style="font-size:12px;color:var(--text-light);margin-bottom:10px;">${formatDate(p.data)}</div>
             <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span style="font-weight:bold;color:var(--primary-color);">${formatCurrency(p.total)}</span>
+                <span style="font-weight:bold;color:var(--primary-color);">${formatCurrency(valorEsperadoPedido(p))}</span>
                 <button class="btn-secondary btn-sm" onclick="editarPedido('${p.id}')">Editar</button>
             </div>
         `;
@@ -699,7 +699,7 @@ function renderPedidosBoard() {
 }
 
 function editarPedido(id) {
-    const p = DB.pedidos.find(x => x.id === id);
+    const p = DB.pedidos.find(x => String(x.id) === String(id));
     if (!p) return;
     clearForm('pedido');
     document.getElementById('pedidoId').value = p.id;
@@ -714,7 +714,7 @@ function editarPedido(id) {
     const materiaisHtml = DB.materiais.map(m => `<label><input type="checkbox" value="${m.id}" ${p.materiais.includes(m.id) ? 'checked' : ''} onchange="updatePedidoTotal()"> ${m.nome} (${formatCurrency(m.preco)})</label>`).join('');
     document.getElementById('pedidoMateriais').innerHTML = materiaisHtml;
     
-    document.getElementById('pedidoDesconto').value = p.desconto ? fmtCalc(p.desconto) : '0,00';
+    document.getElementById('pedidoDesconto').value = p.desconto ? fmtValorBR(p.desconto) : '0,00';
     document.getElementById('pedidoQtdFaixas').value = p.qtdFaixas || 1;
     if(document.getElementById('pedidoHoraInicial')) document.getElementById('pedidoHoraInicial').value = p.horaInicial || '';
     if(document.getElementById('pedidoHoraFinal')) document.getElementById('pedidoHoraFinal').value = p.horaFinal || '';
@@ -723,8 +723,8 @@ function editarPedido(id) {
 
 async function excluirPedido(id) {
     if (!confirm('Excluir este pedido?')) return;
-    const p = DB.pedidos.find(x => x.id === id);
-    DB.pedidos = DB.pedidos.filter(x => x.id !== id);
+    const p = DB.pedidos.find(x => String(x.id) === String(id));
+    DB.pedidos = DB.pedidos.filter(x => String(x.id) !== String(id));
     if (DBReady && p?.docId) await DB_SERVICE.deletePedido(p.docId);
     renderPedidos();
     showToast('Pedido excluído', 'success');
@@ -741,8 +741,8 @@ window.updatePedidoTotal = function() {
         if(m) t += m.preco;
     });
     const descStr = document.getElementById('pedidoDesconto').value;
-    const desc = parseFloat((descStr || '0').replace(/\./g, '').replace(',', '.'));
-    t = Math.max(0, t - desc);
+    const desc = parseFloat((descStr || '0').replace(/\./g, '').replace(',', '.')) || 0;
+    t = Math.max(0, Math.round((t - desc) * 100) / 100);
     const prev = document.getElementById('pedidoTotalPreview');
     if(prev) prev.textContent = formatCurrency(t);
     return {t, desc};
@@ -770,9 +770,11 @@ async function salvarPedido() {
     };
     
     if (id) {
-        const item = DB.pedidos.find(x => x.id === id);
-        Object.assign(item, data);
-        if (DBReady && item.docId) await DB_SERVICE.updatePedido(item.docId, data);
+        const item = DB.pedidos.find(x => String(x.id) === String(id));
+        if (item) {
+            Object.assign(item, data);
+            if (DBReady && item.docId) await DB_SERVICE.updatePedido(item.docId, data);
+        }
     } else {
         data.id = 'ped_' + Date.now();
         if (DBReady) {
@@ -816,7 +818,7 @@ function renderMovimentacoes() {
             : metodoPagamentoRotulo(m.pagamento)}</td>
         <td>
             <div class="table-actions">
-                ${m.pagamento === 'pendente' && pidMov ? `<button class="btn-primary btn-sm" onclick="confirmarPagamentoPedidoAdmin(${pidMov})" title="Confirmar Pagamento"><i class="fas fa-check-circle"></i> Confirmar</button>` : ''}
+                ${m.pagamento === 'pendente' && pidMov ? `<button class="btn-primary btn-sm" onclick="confirmarPagamentoPedidoAdmin('${pidMov}')" title="Confirmar Pagamento"><i class="fas fa-check-circle"></i> Confirmar</button>` : ''}
                 <button class="btn-del" onclick="excluirMovimentacao('${m.id}')" title="Excluir"><i class="fas fa-trash"></i></button>
             </div>
         </td>
@@ -878,8 +880,9 @@ async function salvarMovimentacao() {
 }
 
 function htmlResumoMovimentacoesCliente(pedidos) {
-    let totalPedidos = pedidos.reduce((sum, p) => sum + Number(p.total), 0);
-    let pagos = DB.movimentacoes.filter(m => pedidos.find(p => p.id === m.pedidoId) && m.tipo === 'entrada').reduce((sum, m) => sum + Number(m.valor), 0);
+    const ativos = pedidos.filter(p => p.status !== 'cancelado');
+    const totalPedidos = ativos.reduce((sum, p) => sum + valorEsperadoPedido(p), 0);
+    const pagos = ativos.reduce((sum, p) => sum + valorPagoPedido(p), 0);
     return `
         <div style="margin-top:10px;padding:10px;background:var(--bg-lighter);border-radius:4px;border:1px solid var(--border-color);">
             <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
@@ -892,7 +895,7 @@ function htmlResumoMovimentacoesCliente(pedidos) {
             </div>
             <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border-color);padding-top:5px;font-weight:bold;color:var(--danger-color);">
                 <span>Em Aberto:</span>
-                <span>${formatCurrency(totalPedidos - pagos)}</span>
+                <span>${formatCurrency(Math.max(0, Math.round((totalPedidos - pagos) * 100) / 100))}</span>
             </div>
         </div>
     `;
@@ -902,8 +905,8 @@ function htmlResumoMovimentacoesCliente(pedidos) {
 function renderClientes() {
     const tbody = document.getElementById('clientesBody');
     tbody.innerHTML = DB.clientes.map(c => {
-        const pedidos = DB.pedidos.filter(p => p.clienteId === c.id);
-        const totalGasto = pedidos.reduce((s, p) => s + valorEsperadoPedido(p), 0);
+        const pedidos = DB.pedidos.filter(p => String(p.clienteId) === String(c.id));
+        const totalGasto = pedidos.filter(p => p.status !== 'cancelado').reduce((s, p) => s + valorEsperadoPedido(p), 0);
         const aberto = clientesExpandidos.has(c.id);
         const tipoBadge = c.tipoPessoa === 'juridica'
             ? '<span class="cond-badge" style="margin-left:6px;font-size:10px;">PJ</span>'
@@ -938,7 +941,7 @@ function toggleDetalhesCliente(id, btn) {
     } else {
         clientesExpandidos.add(id);
         
-        const pedidos = DB.pedidos.filter(p => p.clienteId === id);
+        const pedidos = DB.pedidos.filter(p => String(p.clienteId) === String(id));
         td.innerHTML = htmlResumoMovimentacoesCliente(pedidos);
         row.style.display = '';
     }
@@ -1179,12 +1182,12 @@ async function salvarPerfilClient() {
 // ============================================
 function renderClientDashboard() {
     if (!currentUser || currentUser.role !== 'client') return;
-    const meusPedidos = DB.pedidos.filter(p => p.clienteId === currentUser.id);
+    const meusPedidos = DB.pedidos.filter(p => String(p.clienteId) === String(currentUser.id) && p.status !== 'cancelado');
 
-    document.getElementById('clientStatPedidos').textContent = meusPedidos.length;
+    document.getElementById('clientStatPedidos').textContent = DB.pedidos.filter(p => String(p.clienteId) === String(currentUser.id)).length;
     document.getElementById('clientStatPendentes').textContent = meusPedidos.filter(p => p.status === 'pendente' || p.status === 'em_andamento').length;
     document.getElementById('clientStatConcluidos').textContent = meusPedidos.filter(p => p.status === 'concluido').length;
-    document.getElementById('clientStatTotal').textContent = formatCurrency(meusPedidos.reduce((s, p) => s + p.total, 0));
+    document.getElementById('clientStatTotal').textContent = formatCurrency(meusPedidos.reduce((s, p) => s + valorEsperadoPedido(p), 0));
 
     // Serviços em destaque
     const destaque = DB.servicos.slice(0, 3);
@@ -1274,12 +1277,12 @@ function renderPedidosClient() {
             <td><strong>#${p.id}</strong></td>
             <td>${servicoNomes || '-'}</td>
             <td>${materialNomes || '-'}</td>
-            <td><strong>${formatCurrency(p.total)}</strong>${condRotulo ? `<small class="cond-badge">${condRotulo}</small>` : ''}</td>
+            <td><strong>${formatCurrency(valorEsperadoPedido(p))}</strong>${condRotulo ? `<small class="cond-badge">${condRotulo}</small>` : ''}</td>
             <td><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></td>
             <td>${formatPedidoDataHora(p)}</td>
             <td>
                 <div class="table-actions">
-                    <button onclick="verDetalhesPedidoClient(${p.id})" title="Ver Detalhes"><i class="fas fa-eye"></i></button>
+                    <button onclick="verDetalhesPedidoClient('${p.id}')" title="Ver Detalhes"><i class="fas fa-eye"></i></button>
                 </div>
             </td>
         </tr>`;
@@ -1287,7 +1290,7 @@ function renderPedidosClient() {
 }
 
 function verDetalhesPedidoClient(id) {
-    const p = DB.pedidos.find(x => x.id === id);
+    const p = DB.pedidos.find(x => String(x.id) === String(id));
     if (!p) return;
     const servicos = p.servicos.map(id => DB.servicos.find(s => s.id === id)).filter(Boolean);
     const materiais = p.materiais.map(id => DB.materiais.find(m => m.id === id)).filter(Boolean);
@@ -1345,17 +1348,19 @@ function verDetalhesPedidoClient(id) {
     }
     html += `</div>`;
 
-    html += `<div class="pedido-total"><span>Total</span><strong>${formatCurrency(p.total)}</strong></div>`;
+    html += `<div class="pedido-total"><span>Total</span><strong>${formatCurrency(valorEsperadoPedido(p))}</strong></div>`;
 
     html += `<div class="detalhe-section"><h4><i class="fas fa-hand-holding-usd"></i> Condição de Pagamento</h4>`;
     if (p.parcial) {
+        const metade = Math.round((valorEsperadoPedido(p) / 2) * 100) / 100;
         html += `<div class="detalhe-item"><span>Condição</span><strong>Dividido em 2x (50% + 50%)</strong></div>`;
-        html += `<div class="detalhe-item"><span>Entrada agora</span><strong>${formatCurrency(p.total / 2)}</strong></div>`;
-        html += `<div class="detalhe-item"><span>Saldo ao finalizar</span><strong>${formatCurrency(p.total / 2)}</strong></div>`;
+        html += `<div class="detalhe-item"><span>Entrada agora</span><strong>${formatCurrency(metade)}</strong></div>`;
+        html += `<div class="detalhe-item"><span>Saldo ao finalizar</span><strong>${formatCurrency(metade)}</strong></div>`;
         html += `<div class="detalhe-item"><span>Já pago</span><strong>${formatCurrency(valorPagoPedido(p))}</strong></div>`;
     } else if (p.descontoPct) {
         html += `<div class="detalhe-item"><span>Condição</span><strong>À vista com ${p.descontoPct}% de desconto</strong></div>`;
-        html += `<div class="detalhe-item"><span>Total a pagar</span><strong>${formatCurrency(p.total * (1 - p.descontoPct / 100))}</strong></div>`;
+        html += `<div class="detalhe-item"><span>Total a pagar</span><strong>${formatCurrency(valorEsperadoPedido(p))}</strong></div>`;
+        html += `<div class="detalhe-item"><span>Já pago</span><strong>${formatCurrency(valorPagoPedido(p))}</strong></div>`;
     } else {
         html += `<div class="detalhe-item"><span>Condição</span><strong>Pagamento integral</strong></div>`;
         html += `<div class="detalhe-item"><span>Já pago</span><strong>${formatCurrency(valorPagoPedido(p))}</strong></div>`;
@@ -1414,14 +1419,14 @@ function valoresPedidoClient() {
     let total = 0;
     document.querySelectorAll('#clientPedidoServicos input:checked').forEach(cb => {
         const s = DB.servicos.find(x => x.id === parseInt(cb.value));
-        if (s) total += s.preco;
+        if (s) total += Number(s.preco) || 0;
     });
     document.querySelectorAll('#clientPedidoMateriais input:checked').forEach(cb => {
         const m = DB.materiais.find(x => x.id === parseInt(cb.value));
-        if (m) total += m.preco;
+        if (m) total += Number(m.preco) || 0;
     });
     const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
-    return { subTotal: total, condicao };
+    return { subTotal: Math.round(total * 100) / 100, condicao };
 }
 
 
@@ -1459,10 +1464,11 @@ function updateClientPedidoTotal() {
     const { subTotal } = valoresPedidoClient();
     const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
 
-    const desconto = condicao === 'vista' ? subTotal * 0.10 : 0;
-    const totalFinal = subTotal - desconto;
-    const entrada = condicao === 'metade' ? subTotal / 2 : totalFinal;
-    const saldo = condicao === 'metade' ? subTotal / 2 : 0;
+    const desconto = condicao === 'vista' ? Math.round(subTotal * 0.10 * 100) / 100 : 0;
+    const totalFinal = Math.round((subTotal - desconto) * 100) / 100;
+    const meia = Math.round((subTotal / 2) * 100) / 100;
+    const entrada = condicao === 'metade' ? meia : totalFinal;
+    const saldo = condicao === 'metade' ? meia : 0;
 
     document.getElementById('clientCondVistaValor').textContent = formatCurrency(subTotal * 0.90);
     document.getElementById('clientCondMetaValor').textContent = formatCurrency(subTotal / 2);
@@ -1490,8 +1496,9 @@ async function salvarPedidoClient() {
     }
 
     let total = 0;
-    servicos.forEach(id => { const s = DB.servicos.find(x => x.id === id); if (s) total += s.preco; });
-    materiais.forEach(id => { const m = DB.materiais.find(x => x.id === id); if (m) total += m.preco; });
+    servicos.forEach(id => { const s = DB.servicos.find(x => x.id === id); if (s) total += Number(s.preco) || 0; });
+    materiais.forEach(id => { const m = DB.materiais.find(x => x.id === id); if (m) total += Number(m.preco) || 0; });
+    total = Math.round(total * 100) / 100;
 
     const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
     const descontoPct = condicao === 'vista' ? 10 : 0;
@@ -1668,13 +1675,13 @@ function gerarPixEmv(chave, nome, cidade, valor, txid) {
 
 function abrirPagamento(pedidoId) {
     selectedPedidoId = pedidoId;
-    const p = DB.pedidos.find(x => x.id === pedidoId);
+    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
     if (!p) return;
     if (!currentUser || currentUser.role !== 'client') return;
 
     const chatKey = `admin_${currentUser.id}`;
-    const orc = (DB.chats[chatKey] || []).filter(m => m.tipo === 'orcamento' && m.pedidoId === pedidoId).pop();
-    const base = Math.max(0, orc ? ((orc.valor || 0) - (orc.desconto || 0)) : p.total);
+    const orc = (DB.chats[chatKey] || []).filter(m => m.tipo === 'orcamento' && m.pedidoId != null && String(m.pedidoId) === String(pedidoId)).pop();
+    const base = Math.max(0, orc ? ((orc.valor || 0) - (orc.desconto || 0)) : (Number(p.total) || 0));
 
     let valorPag = base;
     let condRotulo = 'Pagamento integral';
@@ -1687,11 +1694,11 @@ function abrirPagamento(pedidoId) {
             showToast('Este pedido já está totalmente pago!', 'info');
             return;
         }
-        valorPag = Math.min(base / 2, falta);
-        saldo = Math.max(0, base - (jaPago + valorPag));
+        valorPag = Math.min(Math.round((base / 2) * 100) / 100, falta);
+        saldo = Math.max(0, Math.round((base - (jaPago + valorPag)) * 100) / 100);
         condRotulo = jaPago > 0 ? 'Pagamento da 2ª parcela (50%)' : 'Entrada de 50%';
     } else if (p.descontoPct) {
-        valorPag = base * (1 - p.descontoPct / 100);
+        valorPag = Math.round(base * (1 - p.descontoPct / 100) * 100) / 100;
         condRotulo = `Pagamento à vista com ${p.descontoPct}% de desconto`;
     } else {
         valorPag = base;
@@ -1753,7 +1760,7 @@ function copiarPix() {
 async function confirmarPagamento() {
     if (!selectedPedidoId) return;
     const tipo = document.querySelector('input[name="pagamentoTipo"]:checked').value;
-    const p = DB.pedidos.find(x => x.id === selectedPedidoId);
+    const p = DB.pedidos.find(x => String(x.id) === String(selectedPedidoId));
     if (!p) return;
 
     const fileInput = document.getElementById('pagamentoComprovanteImagem');
@@ -1763,16 +1770,18 @@ async function confirmarPagamento() {
     if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
 
     let rotuloCond = 'Pagamento integral';
-    if (p.parcial) rotuloCond = valorPagoPedido(p) > 0 && (selectedPagamentoValor || 0) >= (p.total / 2) ? '2ª parcela (50% restante)' : 'Entrada de 50%';
+    const meiaEsperada = Math.round((valorEsperadoPedido(p) / 2) * 100) / 100;
+    if (p.parcial) rotuloCond = valorPagoPedido(p) > 0 && (selectedPagamentoValor || 0) >= meiaEsperada ? '2ª parcela (50% restante)' : 'Entrada de 50%';
     else if (p.descontoPct) rotuloCond = `À vista com ${p.descontoPct}% de desconto`;
 
+    const valorMsg = selectedPagamentoValor || valorEsperadoPedido(p);
     const msgData = {
         tipo: 'comprovante',
         remetente: 'client',
         clienteId: currentUser.id,
-        mensagem: `Pagamento de ${formatCurrency(selectedPagamentoValor || p.total)} (${rotuloCond}) realizado via ${tipo === 'pix' ? 'PIX' : 'Cartão de Crédito'} para o Pedido #${p.id}`,
+        mensagem: `Pagamento de ${formatCurrency(valorMsg)} (${rotuloCond}) realizado via ${tipo === 'pix' ? 'PIX' : 'Cartão de Crédito'} para o Pedido #${p.id}`,
         descricao: `Pagamento do Pedido #${p.id} - ${rotuloCond}`,
-        valor: selectedPagamentoValor || p.total,
+        valor: valorMsg,
         desconto: 0,
         pedidoId: p.id,
         status: 'aguardando',
@@ -1898,10 +1907,10 @@ function renderChatMessagesAdmin(chatKey) {
             </div>`;
         } else if (m.tipo === 'comprovante') {
             const isFromClient = m.remetente === 'client';
-            const pedidoLinked = DB.pedidos.find(x => x.id === (m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0)));
-            const valorPedido = pedidoLinked ? pedidoLinked.total : (m.valor || 0);
+            const pedidoLinked = DB.pedidos.find(x => String(x.id) === String(m.pedidoId || (m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || ''));
+            const valorPedido = m.valor || (pedidoLinked ? valorEsperadoPedido(pedidoLinked) : 0);
             const desconto = m.desconto || 0;
-            const total = Math.max(0, valorPedido - desconto);
+            const total = Math.max(0, Math.round((valorPedido - desconto) * 100) / 100);
             let acoes = '';
             let descontoArea = '';
             if (isFromClient) {
@@ -2004,16 +2013,17 @@ function abrirOrcamentoParaPedido(msgIdx) {
     const m = msgs[msgIdx];
     if (!m) return;
 
-    const pedido = DB.pedidos.find(x => x.id === m.pedidoId);
+    const pedido = DB.pedidos.find(x => String(x.id) === String(m.pedidoId));
     orcamentoPedidoId = m.pedidoId || null;
     orcamentoCondicao = pedido ? { parcial: !!pedido.parcial, descontoPct: pedido.descontoPct || 0 } : null;
 
     const nomesServicos = (pedido ? pedido.servicos : []).map(id => { const s = DB.servicos.find(x => x.id === id); return s ? s.nome : ''; }).filter(Boolean);
     const nomesMateriais = (pedido ? pedido.materiais : []).map(id => { const mm = DB.materiais.find(x => x.id === id); return mm ? mm.nome : ''; }).filter(Boolean);
 
-    document.getElementById('orcamentoPedidoInfo').value = pedido ? `#${pedido.id} - ${formatCurrency(pedido.total)}` : '';
+    const orcBase = pedido ? valorEsperadoPedido(pedido) : 0;
+    document.getElementById('orcamentoPedidoInfo').value = pedido ? `#${pedido.id} - ${formatCurrency(orcBase)}` : '';
     document.getElementById('orcamentoDescricao').value = [...nomesServicos, ...nomesMateriais].join(', ');
-    document.getElementById('orcamentoValor').value = pedido ? pedido.total.toFixed(2) : '';
+    document.getElementById('orcamentoValor').value = pedido ? (Number(orcBase) || 0).toFixed(2) : '';
     document.getElementById('orcamentoDesconto').value = '0';
     document.getElementById('orcamentoValidade').value = '15 dias';
 
@@ -2024,9 +2034,9 @@ function abrirOrcamentoParaPedido(msgIdx) {
 function atualizarCondicaoOrcamento() {
     const el = document.getElementById('orcamentoCondicaoInfo');
     if (!el) return;
-    const valor = parseFloat(document.getElementById('orcamentoValor').value) || 0;
-    const desconto = parseFloat(document.getElementById('orcamentoDesconto').value) || 0;
-    const base = Math.max(0, valor - desconto);
+    const valor = parseValorBR(document.getElementById('orcamentoValor').value) || 0;
+    const desconto = parseValorBR(document.getElementById('orcamentoDesconto').value) || 0;
+    const base = Math.max(0, Math.round((valor - desconto) * 100) / 100);
     const c = orcamentoCondicao;
     let html = '';
     if (!c) {
@@ -2044,9 +2054,9 @@ function atualizarCondicaoOrcamento() {
 }
 
 function atualizarTotalOrcamento() {
-    const valor = parseFloat(document.getElementById('orcamentoValor').value) || 0;
-    const desconto = parseFloat(document.getElementById('orcamentoDesconto').value) || 0;
-    document.getElementById('orcamentoTotal').textContent = formatCurrency(Math.max(0, valor - desconto));
+    const valor = parseValorBR(document.getElementById('orcamentoValor').value) || 0;
+    const desconto = parseValorBR(document.getElementById('orcamentoDesconto').value) || 0;
+    document.getElementById('orcamentoTotal').textContent = formatCurrency(Math.max(0, Math.round((valor - desconto) * 100) / 100));
     atualizarCondicaoOrcamento();
 }
 
@@ -2060,8 +2070,8 @@ async function enviarOrcamento() {
         remetente: 'admin',
         clienteId: currentChatClient,
         descricao: document.getElementById('orcamentoDescricao').value,
-        valor: parseFloat(document.getElementById('orcamentoValor').value) || 0,
-        desconto: parseFloat(document.getElementById('orcamentoDesconto').value) || 0,
+        valor: parseValorBR(document.getElementById('orcamentoValor').value) || 0,
+        desconto: parseValorBR(document.getElementById('orcamentoDesconto').value) || 0,
         pedidoId: orcamentoPedidoId,
         validade: document.getElementById('orcamentoValidade').value || '15 dias',
         parcial: orcamentoCondicao ? (orcamentoCondicao.parcial ? 1 : 0) : 0,
@@ -2142,10 +2152,10 @@ function atualizarTotalComprovante(msgIdx) {
     if (!m || m.tipo !== 'comprovante') return;
     const input = document.getElementById(`descontoComp_${msgIdx}`);
     const desconto = input ? (parseFloat(input.value) || 0) : (m.desconto || 0);
-    const pedidoLinked = DB.pedidos.find(x => x.id === (m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0)));
-    const valorPedido = pedidoLinked ? pedidoLinked.total : (m.valor || 0);
+    const pedidoLinked = DB.pedidos.find(x => String(x.id) === String(m.pedidoId || (m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || ''));
+    const valorPedido = m.valor || (pedidoLinked ? valorEsperadoPedido(pedidoLinked) : 0);
     const el = document.getElementById(`totalComp_${msgIdx}`);
-    if (el) el.textContent = formatCurrency(Math.max(0, valorPedido - desconto));
+    if (el) el.textContent = formatCurrency(Math.max(0, Math.round((valorPedido - desconto) * 100) / 100));
 }
 
 async function confirmarRecebidoComprovante(msgIdx) {
@@ -2179,14 +2189,14 @@ async function confirmarPagoComprovante(msgIdx) {
     m.lida = true;
     if (DBReady && m.id) await DB_SERVICE.updateMessage(m.id, { status: 'pago', desconto: descontoAdmin });
 
-    const pedidoId = m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0);
-    const pedido = DB.pedidos.find(x => x.id === pedidoId);
-    const totalPago = Math.max(0, (m.valor || (pedido ? pedido.total : 0)) - descontoAdmin);
+    const pedidoIdRaw = m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0);
+    const pedido = DB.pedidos.find(x => String(x.id) === String(pedidoIdRaw));
+    const totalPago = Math.max(0, Math.round(((Number(m.valor) || (pedido ? (Number(pedido.total) || 0) : 0)) - descontoAdmin) * 100) / 100);
     const metodoPag = (m.mensagem || '').includes('Cartão') ? 'cartao_credito' : 'pix';
 
     if (pedido && totalPago > 0) {
-        const jaConfirmado = DB.movimentacoes.find(mm => mm.pedidoId === pedido.id && mm.pagamento !== 'pendente');
-        if (pedido.parcial && jaConfirmado) {
+            const jaConfirmado = DB.movimentacoes.find(mm => mm.pedidoId != null && String(mm.pedidoId) === String(pedido.id) && mm.pagamento !== 'pendente');
+            if (pedido.parcial && jaConfirmado) {
             const nova = {
                 id: DB.nextId.movimentacao++,
                 tipo: 'entrada',
@@ -2200,8 +2210,8 @@ async function confirmarPagoComprovante(msgIdx) {
             DB.movimentacoes.push(nova);
             if (DBReady) DB_SERVICE.addMovimentacao(nova).then(d => { if (d && d.id) nova.docId = d.id; });
         } else {
-            const mov = DB.movimentacoes.find(mm => mm.pagamento === 'pendente' && (mm.pedidoId === pedido.id || (mm.descricao || '').includes(`Pedido #${pedido.id}`)));
-            if (mov) {
+                const mov = DB.movimentacoes.find(mm => mm.pagamento === 'pendente' && movRefereAoPedido(mm, pedido.id));
+                if (mov) {
                 mov.tipo = 'entrada';
                 mov.descricao = `Pagamento Pedido #${pedido.id}`;
                 mov.valor = totalPago;
@@ -2467,7 +2477,7 @@ function prepareClientPagamentoModal() {
     if (!currentUser || currentUser.role !== 'client') return;
     const select = document.getElementById('clientPagamentoPedido');
     const meusPedidos = DB.pedidos.filter(p => p.clienteId === currentUser.id && p.status !== 'cancelado');
-    select.innerHTML = meusPedidos.map(p => `<option value="${p.id}">#${p.id} - ${formatCurrency(p.total)}</option>`).join('') || '<option value="">Nenhum pedido</option>';
+    select.innerHTML = meusPedidos.map(p => `<option value="${p.id}">#${p.id} - ${formatCurrency(valorEsperadoPedido(p))}</option>`).join('') || '<option value="">Nenhum pedido</option>';
 
     document.getElementById('clientPagamentoValor').value = '';
     preencherDestinoPagamento();
@@ -2489,12 +2499,12 @@ function preencherDestinoPagamento() {
 }
 
 function preencherValorPedidoClient() {
-    const pedidoId = parseInt(document.getElementById('clientPagamentoPedido').value);
-    const p = DB.pedidos.find(x => x.id === pedidoId);
-    let valor = p ? p.total : 0;
-    if (currentUser) {
+    const pedidoId = document.getElementById('clientPagamentoPedido').value;
+    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
+    let valor = p ? valorEsperadoPedido(p) : 0;
+    if (currentUser && p) {
         const orc = (DB.chats[`admin_${currentUser.id}`] || [])
-            .filter(m => m.tipo === 'orcamento' && m.pedidoId === pedidoId).pop();
+            .filter(m => m.tipo === 'orcamento' && m.pedidoId != null && String(m.pedidoId) === String(pedidoId)).pop();
         if (orc) valor = Math.max(0, (orc.valor || 0) - (orc.desconto || 0));
     }
     document.getElementById('clientPagamentoValor').value = valor ? valor.toFixed(2) : '';
@@ -2508,7 +2518,7 @@ function atualizarTotalPagamentoClient() {
 
 async function enviarPagamentoClient() {
     if (!currentUser || currentUser.role !== 'client') return;
-    const pedidoId = parseInt(document.getElementById('clientPagamentoPedido').value);
+    const pedidoId = document.getElementById('clientPagamentoPedido').value;
     const valor = parseFloat(document.getElementById('clientPagamentoValor').value) || 0;
 
     if (!pedidoId) { showToast('Selecione um pedido!', 'error'); return; }
@@ -2568,7 +2578,7 @@ function openModal(id) {
     if (id === 'comprovanteModal' || id === 'enviarComprovanteModal') {
         const select = document.getElementById('comprovantePedido');
         if (select) {
-            select.innerHTML = DB.pedidos.map(p => `<option value="${p.id}">Pedido #${p.id} - ${formatCurrency(p.total)}</option>`).join('');
+            select.innerHTML = DB.pedidos.map(p => `<option value="${p.id}">Pedido #${p.id} - ${formatCurrency(valorEsperadoPedido(p))}</option>`).join('');
         }
         document.getElementById('comprovanteData').value = new Date().toISOString().split('T')[0];
     }
@@ -2733,7 +2743,19 @@ function fecharLightbox() {
 
 // === formatCurrency ===
 function formatCurrency(value) {
-    return 'R$ ' + value.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return 'R$ ' + (Number(value) || 0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+// === movRefereAoPedido ===
+// Match seguro: String equality em pedidoId + regex com (?!\d) para
+// 'Pedido #1' NÃO casar com 'Pedido #10' / '#11' / '#100'.
+function movRefereAoPedido(m, pedidoId) {
+    if (!m || pedidoId === null || pedidoId === undefined || pedidoId === '') return false;
+    const id = String(pedidoId);
+    if (m.pedidoId !== null && m.pedidoId !== undefined && String(m.pedidoId) === id) return true;
+    const esc = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp('(?:Pedido\\s*#|#)' + esc + '(?!\\d)');
+    return re.test(String(m.descricao || '')) || re.test(String(m.mensagem || ''));
 }
 
 // === formatDate ===
@@ -2827,9 +2849,9 @@ async function processarImagem(file) {
 
 // === renderFinanceiro ===
 function renderFinanceiro() {
-    const recebido = DB.movimentacoes.filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente').reduce((s, m) => s + m.valor, 0);
-    const aReceber = DB.movimentacoes.filter(m => m.tipo === 'entrada' && m.pagamento === 'pendente').reduce((s, m) => s + m.valor, 0);
-    const saida = DB.movimentacoes.filter(m => m.tipo === 'saida').reduce((s, m) => s + m.valor, 0);
+    const recebido = DB.movimentacoes.filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente').reduce((s, m) => s + (Number(m.valor) || 0), 0);
+    const aReceber = DB.movimentacoes.filter(m => m.tipo === 'entrada' && m.pagamento === 'pendente').reduce((s, m) => s + (Number(m.valor) || 0), 0);
+    const saida = DB.movimentacoes.filter(m => m.tipo === 'saida').reduce((s, m) => s + (Number(m.valor) || 0), 0);
 
     document.getElementById('totalEntradas').textContent = formatCurrency(recebido);
     const aReceberEl = document.getElementById('totalAReceber');
@@ -2877,7 +2899,7 @@ function renderPedidosAdmin() {
     let pedidos = DB.pedidos.filter(p => {
         const cliente = DB.clientes.find(c => c.id === p.clienteId);
         const nome = cliente ? cliente.nome.toLowerCase() : '';
-        if (clienteVal && p.clienteId !== parseInt(clienteVal)) return false;
+        if (clienteVal && String(p.clienteId) !== String(clienteVal)) return false;
         if (busca && !String(p.id).includes(busca.replace('#', '')) && !nome.includes(busca)) return false;
         return true;
     });
@@ -2897,15 +2919,15 @@ function renderPedidosAdmin() {
             <td><strong>#${p.id}</strong></td>
             <td>${cliente ? cliente.nome : 'N/A'}</td>
             <td>${servicoNomes || '-'}</td>
-            <td><strong>${formatCurrency(p.total)}</strong>${condRotulo ? `<small class="cond-badge">${condRotulo}</small>` : ''}</td>
+            <td><strong>${formatCurrency(valorEsperadoPedido(p))}</strong>${condRotulo ? `<small class="cond-badge">${condRotulo}</small>` : ''}</td>
             <td><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></td>
             <td>${formatPedidoDataHora(p)}</td>
             <td>
                 <div class="table-actions">
-                    ${restoPed > 0 ? `<button class="btn-primary btn-sm" onclick="confirmarPagamentoPedidoAdmin(${p.id})" title="Confirmar Pagamento"><i class="fas fa-check-circle"></i></button>` : ''}
-                    <button onclick="verDetalhesPedido(${p.id})" title="Ver Detalhes"><i class="fas fa-eye"></i></button>
-                    <button onclick="editarPedido(${p.id})" title="Editar"><i class="fas fa-edit"></i></button>
-                    <button class="btn-del" onclick="excluirPedido(${p.id})" title="Excluir"><i class="fas fa-trash"></i></button>
+                    ${restoPed > 0 ? `<button class="btn-primary btn-sm" onclick="confirmarPagamentoPedidoAdmin('${p.id}')" title="Confirmar Pagamento"><i class="fas fa-check-circle"></i></button>` : ''}
+                    <button onclick="verDetalhesPedido('${p.id}')" title="Ver Detalhes"><i class="fas fa-eye"></i></button>
+                    <button onclick="editarPedido('${p.id}')" title="Editar"><i class="fas fa-edit"></i></button>
+                    <button class="btn-del" onclick="excluirPedido('${p.id}')" title="Excluir"><i class="fas fa-trash"></i></button>
                 </div>
             </td>
         </tr>`;
@@ -2920,8 +2942,8 @@ function salvarSessao() {
 // === sincronizarFinanceiroPedido ===
 async function sincronizarFinanceiroPedido(p) {
     if (!p) return null;
-    const existente = DB.movimentacoes.find(m => m.pedidoId === p.id) ||
-        DB.movimentacoes.find(m => m.tipo === 'entrada' && (m.pedidoId === p.id || (m.descricao || '').includes(`Pedido #${p.id}`)) && m.pagamento !== 'pendente');
+    const existente = DB.movimentacoes.find(m => m.pedidoId != null && String(m.pedidoId) === String(p.id)) ||
+        DB.movimentacoes.find(m => m.tipo === 'entrada' && movRefereAoPedido(m, p.id) && m.pagamento !== 'pendente');
 
     if (p.status === 'cancelado') {
         if (existente) {
@@ -3001,9 +3023,10 @@ function validarDiaFuncionamento(campoId) {
 
 // === valorPagoPedido ===
 function valorPagoPedido(p) {
+    if (!p) return 0;
     return DB.movimentacoes
-        .filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente' && (m.pedidoId === p.id || (m.descricao || '').includes(`Pedido #${p.id}`)))
-        .reduce((s, m) => s + m.valor, 0);
+        .filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente' && movRefereAoPedido(m, p.id))
+        .reduce((s, m) => s + (Number(m.valor) || 0), 0);
 }
 
 
@@ -3059,7 +3082,7 @@ function arrayBufferToDataUrl(buffer, mime) {
 
 // [restore b03a43a] avancarStagePedido
 function avancarStagePedido(id) {
-    const p = DB.pedidos.find(x => x.id === id);
+    const p = DB.pedidos.find(x => String(x.id) === String(id));
     if (!p) return;
     if (p.status === 'cancelado') { moverPedidoStatus(id, 'pendente'); return; }
     const idx = ordemPedidoStage.indexOf(p.status);
@@ -3162,15 +3185,14 @@ async function comprimirAudio(arrayBuffer, kbps) {
 
 // [restore b03a43a] confirmarPagamentoPedidoAdmin
 async function confirmarPagamentoPedidoAdmin(pedidoId) {
-    const p = DB.pedidos.find(x => x.id === pedidoId);
+    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
     if (!p) return;
     const clienteId = p.clienteId;
     const chatKey = `admin_${clienteId}`;
     const msgs = DB.chats[chatKey] || [];
 
     const comp = msgs
-        .filter(m => m.tipo === 'comprovante' && m.status !== 'pago' &&
-            (m.pedidoId === pedidoId || (m.mensagem || '').includes(`Pedido #${pedidoId}`) || (m.descricao || '').includes(`Pedido #${pedidoId}`)))
+        .filter(m => m.tipo === 'comprovante' && m.status !== 'pago' && movRefereAoPedido(m, p.id))
         .sort((a, b) => (b.id || 0) - (a.id || 0))[0];
 
     if (comp) {
@@ -3178,7 +3200,7 @@ async function confirmarPagamentoPedidoAdmin(pedidoId) {
         return;
     }
 
-    const pendentes = DB.movimentacoes.filter(m => m.pagamento === 'pendente' && (m.pedidoId === pedidoId || (m.descricao || '').includes(`Pedido #${pedidoId}`)));
+    const pendentes = DB.movimentacoes.filter(m => m.pagamento === 'pendente' && movRefereAoPedido(m, p.id));
     const restanteAtual = Math.max(0, Math.round((valorEsperadoPedido(p) - valorPagoPedido(p)) * 100) / 100);
     if (restanteAtual <= 0) {
         showToast('Este pedido não possui pendência para confirmar.', 'info');
@@ -3280,16 +3302,16 @@ async function executarConfirmacaoPagamentoAdmin(m, chatKey, descontoAdmin) {
     m.desconto = descontoAdmin;
     m.lida = true;
 
-    const pedidoId = m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0);
-    const pedido = DB.pedidos.find(x => x.id === pedidoId);
-    const totalPago = Math.max(0, Math.round(((m.valor || (pedido ? pedido.total : 0)) - descontoAdmin) * 100) / 100);
+    const pedidoIdRaw = m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0);
+    const pedido = DB.pedidos.find(x => String(x.id) === String(pedidoIdRaw));
+    const totalPago = Math.max(0, Math.round(((Number(m.valor) || (pedido ? (Number(pedido.total) || 0) : 0)) - descontoAdmin) * 100) / 100);
     const metodoPag = (m.mensagem || '').includes('Cartão') ? 'cartao_credito' : 'pix';
 
     try {
         if (m.id) await DB_SERVICE.updateMessage(m.id, { status: 'pago', desconto: descontoAdmin });
 
         if (pedido && totalPago > 0) {
-            const jaConfirmado = DB.movimentacoes.find(mm => mm.pedidoId === pedido.id && mm.pagamento !== 'pendente');
+            const jaConfirmado = DB.movimentacoes.find(mm => mm.pedidoId != null && String(mm.pedidoId) === String(pedido.id) && mm.pagamento !== 'pendente');
             if (pedido.parcial && jaConfirmado) {
                 const nova = {
                     id: DB.nextId.movimentacao++,
@@ -3306,7 +3328,7 @@ async function executarConfirmacaoPagamentoAdmin(m, chatKey, descontoAdmin) {
                 const docId = await DB_SERVICE.addMovimentacao(nova);
                 if (docId && docId.id) nova.docId = docId.id;
             } else {
-                const mov = DB.movimentacoes.find(mm => mm.pagamento === 'pendente' && (mm.pedidoId === pedido.id || (mm.descricao || '').includes(`Pedido #${pedido.id}`)));
+                const mov = DB.movimentacoes.find(mm => mm.pagamento === 'pendente' && movRefereAoPedido(mm, pedido.id));
                 if (mov) {
                     mov.tipo = 'entrada';
                     mov.descricao = `Pagamento Pedido #${pedido.id}`;
@@ -3341,7 +3363,7 @@ async function executarConfirmacaoPagamentoAdmin(m, chatKey, descontoAdmin) {
             const esperado = valorEsperadoPedido(pedido);
             const pagoAte = valorPagoPedido(pedido);
             const restante = Math.max(0, Math.round((esperado - pagoAte) * 100) / 100);
-            const pendentes = DB.movimentacoes.filter(mm => mm.pagamento === 'pendente' && (mm.pedidoId === pedido.id || (mm.descricao || '').includes(`Pedido #${pedido.id}`)));
+            const pendentes = DB.movimentacoes.filter(mm => mm.pagamento === 'pendente' && movRefereAoPedido(mm, pedido.id));
             if (restante > 0) {
                 const pend = pendentes[pendentes.length - 1];
                 if (pend) {
@@ -3430,7 +3452,7 @@ function formatValorBR(num) {
 
 // [restore b03a43a] htmlResumoServicosCliente
 function htmlResumoServicosCliente(clienteId) {
-    const pedidos = DB.pedidos.filter(p => p.clienteId === clienteId && p.status !== 'cancelado');
+    const pedidos = DB.pedidos.filter(p => String(p.clienteId) === String(clienteId) && p.status !== 'cancelado');
     const itens = new Map();
     pedidos.forEach(p => {
         (p.servicos || []).forEach(sId => {
@@ -3586,13 +3608,13 @@ function metodoPagamentoRotulo(pagamento) {
 
 // [restore b03a43a] moverPedidoStatus
 async function moverPedidoStatus(id, novoStatus) {
-    const p = DB.pedidos.find(x => x.id === id);
+    const p = DB.pedidos.find(x => String(x.id) === String(id));
     if (!p || p.status === novoStatus) return;
     p.status = novoStatus;
     if (DBReady) {
         await DB_SERVICE.updatePedido(p.docId, { clienteId: p.clienteId, servicos: p.servicos, materiais: p.materiais, desconto: p.desconto, status: novoStatus, total: p.total, parcial: p.parcial || 0, descontoPct: p.descontoPct || 0 });
     }
-    const mov = DB.movimentacoes.find(m => m.pedidoId === id && m.pagamento === 'pendente');
+    const mov = DB.movimentacoes.find(m => m.pedidoId != null && String(m.pedidoId) === String(id) && m.pagamento === 'pendente');
     if (novoStatus === 'cancelado' && mov) {
         DB.movimentacoes = DB.movimentacoes.filter(m => m.id !== mov.id);
         if (DBReady && mov.docId) await DB_SERVICE.deleteMovimentacao(mov.docId);
@@ -3610,7 +3632,7 @@ function msgSig(m) {
 
 // [restore b03a43a] nomeClienteDoPedido
 function nomeClienteDoPedido(pedidoId) {
-    const p = DB.pedidos.find(x => x.id === pedidoId);
+    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
     if (!p) return '';
     const c = DB.clientes.find(x => x.id === p.clienteId);
     return c ? c.nome : '';
@@ -3629,10 +3651,10 @@ function normChatData(d) {
 // [restore b03a43a] pagamentosPedidoResumo
 function pagamentosPedidoResumo(p) {
     const pagamentos = DB.movimentacoes
-        .filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente' && (m.pedidoId === p.id || (m.descricao || '').includes(`Pedido #${p.id}`)))
+        .filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente' && movRefereAoPedido(m, p.id))
         .sort((a, b) => (a.data || '').localeCompare(b.data || '') || (a.id || 0) - (b.id || 0));
     if (pagamentos.length === 0) {
-        const temPendente = DB.movimentacoes.some(m => m.pagamento === 'pendente' && (m.pedidoId === p.id || (m.descricao || '').includes(`Pedido #${p.id}`)));
+        const temPendente = DB.movimentacoes.some(m => m.pagamento === 'pendente' && movRefereAoPedido(m, p.id));
         return temPendente
             ? '<span class="pag-badge pag-pend"><i class="fas fa-hourglass-half"></i> Aguardando pagamento</span>'
             : '<span class="pag-badge">Sem pagamento</span>';
@@ -3699,15 +3721,15 @@ function pedidoKanbanCard(p) {
             ${extra > 0 ? `<span class="kanban-chip">+${extra}</span>` : ''}
         </div>
         <div class="kanban-card-bottom">
-            <strong class="kanban-total">${formatCurrency(p.total)}</strong>
+            <strong class="kanban-total">${formatCurrency(valorEsperadoPedido(p))}</strong>
             <span class="kanban-data">${formatPedidoDataHora(p)}</span>
         </div>
         <div class="kanban-card-acoes">
-            ${restoPed > 0 && p.status !== 'cancelado' ? `<button title="Confirmar pagamento" onclick="confirmarPagamentoPedidoAdmin(${p.id})"><i class="fas fa-check-circle"></i></button>` : ''}
-            <button title="Ver detalhes" onclick="verDetalhesPedido(${p.id})"><i class="fas fa-eye"></i></button>
-            <button title="Avançar etapa" onclick="avancarStagePedido(${p.id})"><i class="fas fa-forward"></i></button>
-            <button title="Editar" onclick="editarPedido(${p.id})"><i class="fas fa-edit"></i></button>
-            <button class="btn-del" title="Excluir" onclick="excluirPedido(${p.id})"><i class="fas fa-trash"></i></button>
+            ${restoPed > 0 && p.status !== 'cancelado' ? `<button title="Confirmar pagamento" onclick="confirmarPagamentoPedidoAdmin('${p.id}')"><i class="fas fa-check-circle"></i></button>` : ''}
+            <button title="Ver detalhes" onclick="verDetalhesPedido('${p.id}')"><i class="fas fa-eye"></i></button>
+            <button title="Avançar etapa" onclick="avancarStagePedido('${p.id}')"><i class="fas fa-forward"></i></button>
+            <button title="Editar" onclick="editarPedido('${p.id}')"><i class="fas fa-edit"></i></button>
+            <button class="btn-del" title="Excluir" onclick="excluirPedido('${p.id}')"><i class="fas fa-trash"></i></button>
         </div>
     </div>`;
 }
@@ -3916,10 +3938,11 @@ async function soltarPedidoKanban(event, status) {
 function toggleClienteDetalhe(id) {
     const content = document.createElement('div');
     const cliente = DB.clientes.find(c => c.id === id);
-    const pedidos = DB.pedidos.filter(p => p.clienteId === id);
-    const totalGasto = pedidos.reduce((s, p) => s + valorEsperadoPedido(p), 0);
-    const totalPago = pedidos.reduce((s, p) => s + valorPagoPedido(p), 0);
-    const emAberto = totalGasto - totalPago;
+    const pedidos = DB.pedidos.filter(p => String(p.clienteId) === String(id));
+    const ativos = pedidos.filter(p => p.status !== 'cancelado');
+    const totalGasto = ativos.reduce((s, p) => s + valorEsperadoPedido(p), 0);
+    const totalPago = ativos.reduce((s, p) => s + valorPagoPedido(p), 0);
+    const emAberto = Math.max(0, Math.round((totalGasto - totalPago) * 100) / 100);
     const abrindo = !clientesExpandidos.has(id);
 
     content.className = 'cliente-detalhe-content';
@@ -3953,14 +3976,14 @@ function toggleClienteDetalhe(id) {
             ];
             const esperado = valorEsperadoPedido(p);
             const pago = valorPagoPedido(p);
-            const restante = Math.max(0, esperado - pago);
+            const restante = Math.max(0, Math.round((esperado - pago) * 100) / 100);
             const cond = p.parcial
                 ? '<span class="pag-cond">50% + 50%</span>'
                 : (p.descontoPct ? `<span class="pag-cond">-${p.descontoPct}% \u00e0 vista</span>` : '<span class="pag-cond">Integral</span>');
 
-            const movs = DB.movimentacoes.filter(m => m.pedidoId === p.id || (m.descricao || '').includes(`Pedido #${p.id}`));
+            const movs = DB.movimentacoes.filter(m => movRefereAoPedido(m, p.id));
             const compsPendentes = (DB.chats[`admin_${id}`] || [])
-                .filter(m => m.tipo === 'comprovante' && m.status === 'aguardando' && (m.pedidoId === p.id || (m.mensagem || '').includes(`#${p.id}`) || (m.descricao || '').includes(`#${p.id}`)))
+                .filter(m => m.tipo === 'comprovante' && m.status === 'aguardando' && movRefereAoPedido(m, p.id))
                 .map(m => ({ ...m, orig: 'chat', tipo: 'entrada', valor: m.valor || 0, categoria: m.categoria || 'servico' }));
             const todos = [...movs, ...compsPendentes].sort((a, b) => {
                 const da = a.data || '', db_ = b.data || '';
@@ -3991,7 +4014,7 @@ function toggleClienteDetalhe(id) {
                     </tr>`;
                 }).join('');
 
-            const somaConfirmado = movs.filter(m => m.pagamento !== 'pendente').reduce((s, m) => s + (m.valor || 0), 0);
+            const somaConfirmado = movs.filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente').reduce((s, m) => s + (Number(m.valor) || 0), 0);
             const somaPendente = Math.max(0, Math.round((esperado - somaConfirmado) * 100) / 100);
 
             const horaAgend = p.horaInicial ? `${p.horaInicial}${p.horaFinal ? ' &rarr; ' + p.horaFinal : ''}` : '';
@@ -4008,7 +4031,7 @@ function toggleClienteDetalhe(id) {
                         <span>Total: <strong>${formatCurrency(esperado)}</strong></span>
                         <span class="valor-pago">Pago: <strong>${formatCurrency(pago)}</strong></span>
                         ${restante > 0 ? `<span class="valor-aberto">Falta: <strong>${formatCurrency(restante)}</strong></span>` : `<span style="color:#26cc00;"><i class="fas fa-check-circle"></i> Quitado</span>`}
-                        ${restante > 0 && p.status !== 'cancelado' ? `<button class="btn-primary btn-sm" onclick="confirmarPagamentoPedidoAdmin(${p.id})"><i class="fas fa-check-circle"></i> Confirmar Pagamento</button>` : ''}
+                        ${restante > 0 && p.status !== 'cancelado' ? `<button class="btn-primary btn-sm" onclick="confirmarPagamentoPedidoAdmin('${p.id}')"><i class="fas fa-check-circle"></i> Confirmar Pagamento</button>` : ''}
                     </div>
                 </div>
                 <table class="data-table sub-table" style="margin:0;">
@@ -4055,13 +4078,15 @@ function toggleClienteDetalhe(id) {
 
 // [restore b03a43a] valorEsperadoPedido
 function valorEsperadoPedido(p) {
-    if (p && !p.parcial && p.descontoPct) return Math.max(0, (p.total || 0) * (1 - p.descontoPct / 100));
-    return p.total || 0;
+    if (!p) return 0;
+    const total = Number(p.total) || 0;
+    if (!p.parcial && p.descontoPct) return Math.max(0, Math.round(total * (1 - p.descontoPct / 100) * 100) / 100);
+    return total;
 }
 
 // [restore b03a43a] verDetalhesPedido
 function verDetalhesPedido(id) {
-    const p = DB.pedidos.find(x => x.id === id);
+    const p = DB.pedidos.find(x => String(x.id) === String(id));
     if (!p) return;
     const cliente = DB.clientes.find(c => c.id === p.clienteId);
     const servicos = p.servicos.map(id => DB.servicos.find(s => s.id === id)).filter(Boolean);
@@ -4100,7 +4125,7 @@ function verDetalhesPedido(id) {
         html += `<div class="detalhe-section"><div class="detalhe-item"><span>Desconto</span><span style="color:var(--danger)">-${formatCurrency(p.desconto)}</span></div></div>`;
     }
 
-    html += `<div class="pedido-total"><span>Total do Pedido</span><strong>${formatCurrency(p.total)}</strong></div>`;
+    html += `<div class="pedido-total"><span>Total do Pedido</span><strong>${formatCurrency(valorEsperadoPedido(p))}</strong></div>`;
 
     document.getElementById('detalhesPedidoContent').innerHTML = html;
     openModal('detalhesPedidoModal');
@@ -4539,6 +4564,11 @@ function fmtCalc(n) {
     return String(parseFloat(n.toFixed(8)));
 }
 
+// Formato BR para inputs com mascaraMoedaBR (ex: 50.5 -> "50,50")
+function fmtValorBR(n) {
+    return (Number(n) || 0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
 function calcClick(sfx, key) {
     const st = calcEstado[sfx];
     const displayEl = document.getElementById('calcDisplay' + (sfx === '' ? '' : 'Client'));
@@ -4657,7 +4687,7 @@ function gerarNotificacoes() {
     if (!currentUser) return lista;
     if (currentUser.role === 'admin') {
         DB.pedidos.filter(p => p.status === 'pendente').slice(0, 5).forEach(p => {
-            lista.push({ icone: 'fa-clipboard-list', classe: 'notif-primary', titulo: `Pedido #${p.id} pendente`, texto: `Aguardando orçamento/pagamento - ${formatCurrency(p.total)}`, pagina: 'adminPedidos' });
+            lista.push({ icone: 'fa-clipboard-list', classe: 'notif-primary', titulo: `Pedido #${p.id} pendente`, texto: `Aguardando orçamento/pagamento - ${formatCurrency(valorEsperadoPedido(p))}`, pagina: 'adminPedidos' });
         });
         Object.keys(DB.chats).forEach(key => {
             (DB.chats[key] || []).forEach(m => {
