@@ -2505,6 +2505,421 @@ function closeAllModals() {
 }
 
 // ============================================
+// ===== BLOCO RESTAURADO b03a43a (6 finais) =====
+// === aplicarFiltrosDashboard ===
+function aplicarFiltrosDashboard() {
+    dashFiltros.periodo = document.getElementById('filtroPeriodoDash').value;
+    dashFiltros.tipo = document.getElementById('filtroTipoDash').value;
+    dashFiltros.busca = document.getElementById('buscaMovDash').value.trim().toLowerCase();
+    renderAdminDashboard();
+}
+
+// === capitalize ===
+function capitalize(str) {
+    if (!str) return '';
+    return str.charAt(0).toUpperCase() + str.slice(1).replace(/_/g, ' ');
+}
+
+// === desenharDonutServicos ===
+function desenharDonutServicos() {
+    const ring = document.getElementById('donutServicosRing');
+    const legendEl = document.getElementById('legendServicos');
+    const totalEl = document.getElementById('donutTotal');
+    if (!ring || !legendEl || !totalEl) return;
+
+    const servicosMap = {};
+    let outros = 0;
+    DB.movimentacoes.forEach(m => {
+        if (m.tipo !== 'entrada' || m.pagamento === 'pendente') return;
+        const pedido = m.pedidoId ? DB.pedidos.find(p => p.id === m.pedidoId) : null;
+        if (!pedido || !pedido.servicos || !pedido.servicos.length) { outros += m.valor; return; }
+        const share = m.valor / pedido.servicos.length;
+        pedido.servicos.forEach(id => {
+            const nome = (DB.servicos.find(s => s.id === id) || {}).nome || 'Serviço';
+            servicosMap[nome] = (servicosMap[nome] || 0) + share;
+        });
+    });
+    if (outros > 1e-9) servicosMap['Outros'] = outros;
+
+    const entradas = Object.entries(servicosMap).sort((a, b) => b[1] - a[1]);
+    const total = entradas.reduce((s, [, v]) => s + v, 0);
+    totalEl.textContent = formatCurrency(total);
+
+    if (!total) {
+        ring.style.background = 'conic-gradient(#e1e8f0 0 100%)';
+        legendEl.innerHTML = '<span class="leg-vazio">Sem receita confirmada ainda</span>';
+        return;
+    }
+
+    const cores = ['#667eea', '#f093fb', '#43e97b', '#fdcb6e', '#f5576c', '#00b894', '#4facfe', '#e17055', '#6c5ce7', '#00cec9'];
+    let acum = 0;
+    const partes = [];
+    const legend = entradas.map(([nome, valor], i) => {
+        const pct = (valor / total) * 100;
+        const cor = cores[i % cores.length];
+        partes.push(`${cor} ${acum.toFixed(2)}% ${(acum + pct).toFixed(2)}%`);
+        acum += pct;
+        return `<span class="leg-item"><i style="background:${cor}"></i>${nome}<strong>${formatCurrency(valor)}</strong></span>`;
+    }).join('');
+    ring.style.background = `conic-gradient(${partes.join(', ')})`;
+    legendEl.innerHTML = legend;
+}
+
+// === desenharGraficoBarras ===
+function desenharGraficoBarras() {
+    const canvas = document.getElementById('graficoBarras');
+    const legendEl = document.getElementById('legendBarras');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const cores = dashCores();
+    const dpr = window.devicePixelRatio || 1;
+    const wrap = canvas.parentElement;
+    const cssW = wrap.clientWidth || 320;
+    const cssH = 220;
+    canvas.width = cssW * dpr;
+    canvas.height = cssH * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const agora = new Date();
+    const meses = [];
+    for (let i = 5; i >= 0; i--) {
+        const d = new Date(agora.getFullYear(), agora.getMonth() - i, 1);
+        meses.push({ ano: d.getFullYear(), mes: d.getMonth(), entradas: 0, saidas: 0 });
+    }
+    DB.movimentacoes.forEach(m => {
+        const idx = meses.findIndex(x => `${x.ano}-${String(x.mes + 1).padStart(2, '0')}` === (m.data || '').slice(0, 7));
+        if (idx === -1) return;
+        if (m.tipo === 'entrada' && m.pagamento !== 'pendente') meses[idx].entradas += m.valor;
+        if (m.tipo === 'saida') meses[idx].saidas += m.valor;
+    });
+
+    const maxVal = Math.max(...meses.flatMap(x => [x.entradas, x.saidas]), 1);
+    const padL = 46, padR = 10, padT = 18, padB = 26;
+    const w = cssW - padL - padR;
+    const h = cssH - padT - padB;
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    const linhas = 4;
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = cores.grid;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'right';
+    ctx.font = '10px Inter, sans-serif';
+    ctx.fillStyle = cores.texto;
+    for (let i = 0; i <= linhas; i++) {
+        const y = padT + (h / linhas) * i;
+        ctx.beginPath();
+        ctx.moveTo(padL, y);
+        ctx.lineTo(cssW - padR, y);
+        ctx.stroke();
+        ctx.fillText(compactValor(maxVal - (maxVal / linhas) * i), padL - 6, y);
+    }
+
+    const nomesMesShort = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    const barW = Math.min(26, (w / meses.length) / 2.6);
+    meses.forEach((m, i) => {
+        const groupW = w / meses.length;
+        const xC = padL + groupW * i + groupW / 2;
+        const hE = (m.entradas / maxVal) * h;
+        const hS = (m.saidas / maxVal) * h;
+        ctx.fillStyle = '#667eea';
+        ctx.fillRect(xC - barW - 2, padT + h - Math.max(hE, 1), barW, Math.max(hE, 1));
+        ctx.fillStyle = '#f5576c';
+        ctx.fillRect(xC + 2, padT + h - Math.max(hS, 1), barW, Math.max(hS, 1));
+        ctx.fillStyle = cores.texto;
+        ctx.font = '9px Inter, sans-serif';
+        if (hE > 0) ctx.fillText(compactValor(m.entradas), xC - barW - 2, padT + h - hE - 6);
+        if (hS > 0) ctx.fillText(compactValor(m.saidas), xC + 2, padT + h - hS - 6);
+        ctx.font = '10px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(nomesMesShort[m.mes], xC, padT + h + 16);
+        ctx.textAlign = 'right';
+    });
+
+    if (legendEl) legendEl.innerHTML = `<span class="leg-item"><i style="background:#667eea"></i>Entradas</span><span class="leg-item"><i style="background:#f5576c"></i>Saídas</span>`;
+}
+
+// === fecharLightbox ===
+function fecharLightbox() {
+    document.getElementById('lightboxOverlay').classList.remove('active');
+    document.getElementById('lightboxImg').src = '';
+}
+
+// === formatCurrency ===
+function formatCurrency(value) {
+    return 'R$ ' + value.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+// === formatDate ===
+function formatDate(dateStr) {
+    if (!dateStr) return '';
+    const [y, m, d] = dateStr.split('-');
+    return `${d}/${m}/${y}`;
+}
+
+// === formatDateTime ===
+function formatDateTime(isoStr) {
+    if (!isoStr) return '';
+    const date = parseDataChat(isoStr);
+    if (!date) return isoStr;
+    return date.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+// === formatMaterialPrice ===
+function formatMaterialPrice(m, cls = 'item-card-price') {
+    return m && m.preco <= 0
+        ? '<span class="badge-incluso"><i class="fas fa-gift"></i> INCLUSO</span>'
+        : `<span class="${cls}">${formatCurrency(m.preco)}</span>`;
+}
+
+// === formatPedidoDataHora ===
+function formatPedidoDataHora(p) {
+    const d = p.dataPref || p.data;
+    let txt = formatDate(d);
+    if (p.horarioPref) txt += ` <span class="hora-pedido">${p.horarioPref}</span>`;
+    return txt;
+}
+
+// === getCategoriaIcon ===
+function getCategoriaIcon(cat) {
+    const icons = {
+        microfone: 'fa-microphone',
+        fone: 'fa-headphones',
+        monitor: 'fa-volume-up',
+        interface: 'fa-plug',
+        cabo: 'fa-plug',
+        acessorio: 'fa-cog',
+        outro: 'fa-box'
+    };
+    return icons[cat] || 'fa-box';
+}
+
+// === parcela ===
+                        const parcela = (m.descricao || '').includes('(2\u00aa parcela)') ? ' <span class="pag-cond">2\u00aa parcela</span>' : '';
+                        metodoHtml = `<i class="fas ${icon}"></i> ${isPendente ? '<em>Aguardando</em>' : metodoPagamentoRotulo(m.pagamento)}${parcela}`;
+
+// === preparePedidoModal ===
+function preparePedidoModal() {
+    const clienteSelect = document.getElementById('pedidoCliente');
+    clienteSelect.innerHTML = DB.clientes.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+
+    const servicosDiv = document.getElementById('pedidoServicos');
+    servicosDiv.innerHTML = DB.servicos.map(s => `<div class="checkbox-item">
+        <input type="checkbox" id="ps_${s.id}" value="${s.id}" onchange="updatePedidoTotal()">
+        <label for="ps_${s.id}">${s.nome}</label>
+        <span class="item-price">${formatCurrency(s.preco)}</span>
+    </div>`).join('');
+
+    const materiaisDiv = document.getElementById('pedidoMateriais');
+    materiaisDiv.innerHTML = DB.materiais.map(m => `<div class="checkbox-item">
+        <input type="checkbox" id="pm_${m.id}" value="${m.id}" onchange="updatePedidoTotal()">
+        <label for="pm_${m.id}">${m.nome}</label>
+        ${formatMaterialPrice(m, 'item-price')}
+    </div>`).join('');
+}
+
+// === processarImagem ===
+async function processarImagem(file) {
+    if (!file) return '';
+    const dataUrl = await lerArquivoComoDataURL(file);
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = dataUrl; });
+    const maxDim = 900;
+    let { width, height } = img;
+    if (width > maxDim || height > maxDim) {
+        const scale = Math.min(maxDim / width, maxDim / height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, width, height);
+    return canvas.toDataURL('image/jpeg', 0.7);
+}
+
+// === renderFinanceiro ===
+function renderFinanceiro() {
+    const recebido = DB.movimentacoes.filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente').reduce((s, m) => s + m.valor, 0);
+    const aReceber = DB.movimentacoes.filter(m => m.tipo === 'entrada' && m.pagamento === 'pendente').reduce((s, m) => s + m.valor, 0);
+    const saida = DB.movimentacoes.filter(m => m.tipo === 'saida').reduce((s, m) => s + m.valor, 0);
+
+    document.getElementById('totalEntradas').textContent = formatCurrency(recebido);
+    const aReceberEl = document.getElementById('totalAReceber');
+    if (aReceberEl) aReceberEl.textContent = formatCurrency(aReceber);
+    document.getElementById('totalSaidas').textContent = formatCurrency(saida);
+    document.getElementById('saldoGeral').textContent = formatCurrency(recebido - saida);
+
+    renderMovimentacoes();
+}
+
+// === renderFooterStudio ===
+function renderFooterStudio() {
+    const st = studioDados();
+    const enderecoCompleto = [st.endereco, st.cidade].filter(Boolean).join(', ');
+    ['', 'Client'].forEach(sfx => {
+        const nomeEl = document.getElementById('footerStudioNome' + sfx);
+        if (!nomeEl) return;
+        nomeEl.textContent = st.nome || 'FPS Studio';
+        const linhas = { footerStudioEndereco: st.endereco, footerStudioCidade: st.cidade, footerStudioTelefone: st.telefone, footerStudioEmail: st.email };
+        Object.keys(linhas).forEach(base => {
+            const el = document.getElementById(base + sfx);
+            if (!el) return;
+            const val = linhas[base];
+            if (val) { el.style.display = ''; el.querySelector('span').textContent = val; }
+            else el.style.display = 'none';
+        });
+        const maps = document.getElementById('rotaGoogle' + sfx);
+        const waze = document.getElementById('rotaWaze' + sfx);
+        if (maps) maps.href = 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(enderecoCompleto);
+        if (waze) waze.href = 'https://waze.com/ul?q=' + encodeURIComponent(enderecoCompleto) + '&navigate=yes';
+        const rotas = document.getElementById('footerRotas' + sfx);
+        if (rotas) rotas.style.display = enderecoCompleto ? '' : 'none';
+    });
+}
+
+// === renderPedidosAdmin ===
+function renderPedidosAdmin() {
+    const selCliente = document.getElementById('filtroClientePedido');
+    const clienteVal = selCliente.value;
+    selCliente.innerHTML = '<option value="">Todos os clientes</option>' +
+        DB.clientes.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+    selCliente.value = clienteVal;
+
+    const busca = (document.getElementById('buscaPedidoAdmin').value || '').trim().toLowerCase();
+    let pedidos = DB.pedidos.filter(p => {
+        const cliente = DB.clientes.find(c => c.id === p.clienteId);
+        const nome = cliente ? cliente.nome.toLowerCase() : '';
+        if (clienteVal && p.clienteId !== parseInt(clienteVal)) return false;
+        if (busca && !String(p.id).includes(busca.replace('#', '')) && !nome.includes(busca)) return false;
+        return true;
+    });
+
+    renderKanbanPedidos(pedidos);
+
+    const filtro = document.getElementById('filtroStatusPedido').value;
+    let tabela = pedidos;
+    if (filtro !== 'todos') tabela = tabela.filter(p => p.status === filtro);
+    const tbody = document.getElementById('pedidosAdminBody');
+    tbody.innerHTML = tabela.map(p => {
+        const cliente = DB.clientes.find(c => c.id === p.clienteId);
+        const servicoNomes = p.servicos.map(id => DB.servicos.find(s => s.id === id)?.nome || '').filter(Boolean).join(', ');
+        const condRotulo = p.parcial ? '50% + 50%' : (p.descontoPct ? `-${p.descontoPct}% à vista` : '');
+        const restoPed = Math.max(0, Math.round((valorEsperadoPedido(p) - valorPagoPedido(p)) * 100) / 100);
+        return `<tr>
+            <td><strong>#${p.id}</strong></td>
+            <td>${cliente ? cliente.nome : 'N/A'}</td>
+            <td>${servicoNomes || '-'}</td>
+            <td><strong>${formatCurrency(p.total)}</strong>${condRotulo ? `<small class="cond-badge">${condRotulo}</small>` : ''}</td>
+            <td><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></td>
+            <td>${formatPedidoDataHora(p)}</td>
+            <td>
+                <div class="table-actions">
+                    ${restoPed > 0 ? `<button class="btn-primary btn-sm" onclick="confirmarPagamentoPedidoAdmin(${p.id})" title="Confirmar Pagamento"><i class="fas fa-check-circle"></i></button>` : ''}
+                    <button onclick="verDetalhesPedido(${p.id})" title="Ver Detalhes"><i class="fas fa-eye"></i></button>
+                    <button onclick="editarPedido(${p.id})" title="Editar"><i class="fas fa-edit"></i></button>
+                    <button class="btn-del" onclick="excluirPedido(${p.id})" title="Excluir"><i class="fas fa-trash"></i></button>
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+// === salvarSessao ===
+function salvarSessao() {
+    if (currentUser) localStorage.setItem('fps_session', JSON.stringify(currentUser));
+}
+
+// === sincronizarFinanceiroPedido ===
+async function sincronizarFinanceiroPedido(p) {
+    if (!p) return null;
+    const existente = DB.movimentacoes.find(m => m.pedidoId === p.id) ||
+        DB.movimentacoes.find(m => m.tipo === 'entrada' && (m.pedidoId === p.id || (m.descricao || '').includes(`Pedido #${p.id}`)) && m.pagamento !== 'pendente');
+
+    if (p.status === 'cancelado') {
+        if (existente) {
+            DB.movimentacoes = DB.movimentacoes.filter(m => m.id !== existente.id);
+            if (DBReady && existente.docId) await DB_SERVICE.deleteMovimentacao(existente.docId);
+        }
+        return null;
+    }
+
+    if (existente) {
+        const mudancas = { tipo: 'entrada', descricao: `Pedido #${p.id}`, valor: valorEsperadoPedido(p), categoria: 'servico', pagamento: existente.pagamento || 'pendente', data: existente.data, hora: existente.hora || agoraHora(), pedidoId: p.id };
+        Object.assign(existente, mudancas);
+        if (DBReady && existente.docId) await DB_SERVICE.updateMovimentacao(existente.docId, mudancas);
+        return existente;
+    }
+
+    const nova = {
+        id: DB.nextId.movimentacao++,
+        tipo: 'entrada',
+        descricao: `Pedido #${p.id}`,
+        valor: valorEsperadoPedido(p),
+        categoria: 'servico',
+        pagamento: 'pendente',
+        data: new Date().toISOString().split('T')[0],
+        hora: agoraHora(),
+        pedidoId: p.id
+    };
+    DB.movimentacoes.push(nova);
+    if (DBReady) {
+        const docId = await DB_SERVICE.addMovimentacao(nova);
+        nova.docId = docId;
+    }
+    return nova;
+}
+
+// === statusLabel ===
+function statusLabel(status) {
+    const labels = {
+        pendente: 'Pendente',
+        em_andamento: 'Em Andamento',
+        concluido: 'Concluído',
+        cancelado: 'Cancelado'
+    };
+    return labels[status] || status;
+}
+
+// === studioDados ===
+function studioDados() {
+    const cfg = APP_CONFIG || CONFIG_DEFAULT;
+    return Object.assign({}, CONFIG_DEFAULT.studio, (cfg.studio && typeof cfg.studio === 'object' ? cfg.studio : {}));
+}
+
+// === timeAgo ===
+function timeAgo(isoStr) {
+    if (!isoStr) return '';
+    const date = parseDataChat(isoStr);
+    if (!date) return '';
+    const now = new Date();
+    const diff = Math.floor((now - date) / 1000);
+    if (diff < 60) return 'agora';
+    if (diff < 3600) return `${Math.floor(diff / 60)}min`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+    return `${Math.floor(diff / 86400)}d`;
+}
+
+// === validarDiaFuncionamento ===
+function validarDiaFuncionamento(campoId) {
+    const dp = campoId ? document.getElementById(campoId) : (document.getElementById('clientPedidoDataInicial') || document.getElementById('pedidoDataInicial'));
+    if (!dp || !dp.value) return;
+    const d = new Date(dp.value + 'T12:00:00');
+    const dia = d.getDay();
+    const nomes = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+    const funciona = dia >= 2 && dia <= 5;
+    document.querySelectorAll('.tarja-funcionamento.tarja-dinamica').forEach(t => t.classList.toggle('tarja-alerta', !funciona));
+    if (!funciona) showToast(`Atenção: o estúdio não funciona em ${nomes[dia]}s — atendemos de terça a sexta.`, 'error');
+}
+
+// === valorPagoPedido ===
+function valorPagoPedido(p) {
+    return DB.movimentacoes
+        .filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente' && (m.pedidoId === p.id || (m.descricao || '').includes(`Pedido #${p.id}`)))
+        .reduce((s, m) => s + m.valor, 0);
+}
+
 // UTILITIES & UPLOAD DE IMAGENS
 // ============================================
 async function previewImagem(input, previewId) {
