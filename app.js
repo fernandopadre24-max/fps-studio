@@ -77,6 +77,8 @@ function setupNavigation() {
             if(pageId === 'adminConfig') preencherFormConfig();
             
             if(pageId === 'clientHome') renderClientDashboard();
+            if(pageId === 'clientServicos') renderServicosClient();
+            if(pageId === 'clientMateriais') renderMateriaisClient();
             if(pageId === 'clientPedidos') renderPedidosClient();
             if(pageId === 'clientChat') renderClientChat();
             
@@ -183,7 +185,7 @@ async function login(event) {
             user = { id: 'admin', role: 'admin', nome: 'Admin' };
         } else {
             const c = DB.clientes.find(x => (x.email === email || x.nome === email) && x.senha === senha);
-            if (c) user = { ...c, role: 'cliente' };
+            if (c) user = { ...c, role: 'client' };
         }
     } else if (tab.includes('pin')) {
         const email = document.getElementById('pinEmail').value;
@@ -194,7 +196,7 @@ async function login(event) {
              user = { id: 'admin', role: 'admin', nome: 'Admin' };
         } else {
              const c = DB.clientes.find(x => (x.email === email || x.nome === email) && x.pin === pin);
-             if (c) user = { ...c, role: 'cliente' };
+             if (c) user = { ...c, role: 'client' };
         }
     }
 
@@ -267,7 +269,7 @@ async function criarConta(e) {
         }
     }
 
-    currentUser = { ...novo, role: 'cliente' };
+    currentUser = { ...novo, role: 'client' };
     showToast('Conta criada com sucesso!', 'success');
     document.getElementById('registerForm').reset();
     showView('clientDashboard');
@@ -3863,6 +3865,7 @@ function restaurarSessao() {
     try {
         const user = JSON.parse(saved);
         if (!user || !user.role) return;
+        if (user.role === 'cliente') user.role = 'client';
         if (user.role === 'client') {
             const cliente = DB.clientes.find(c => c.id === user.id);
             if (!cliente) { limparSessao(); return; }
