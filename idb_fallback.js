@@ -47,11 +47,35 @@ function idbSet(chave, valor) {
 }
 
 // Blocos = coleções inteiras (arrays), gravados como um valor só.
+// Dupla persistência: IndexedDB + localStorage (espelho).
+// Mesmo que o IDB falhe em silêncio, os dados ficam no localStorage.
 function idbCarregarBloco(nome, fallback) {
-    return idbGet('bloco_' + nome).then(v => (v && Array.isArray(v)) ? v : (fallback || []));
+    const padrao = (fallback || []);
+    return idbGet('bloco_' + nome).then(v => {
+        if (v && Array.isArray(v)) return v;
+        try {
+            const ls = localStorage.getItem('bloco_' + nome);
+            if (ls) {
+                const parsed = JSON.parse(ls);
+                if (Array.isArray(parsed)) return parsed;
+            }
+        } catch (e) { /* ls indisponível/corrompido */ }
+        return padrao;
+    }).catch(() => {
+        try {
+            const ls = localStorage.getItem('bloco_' + nome);
+            if (ls) {
+                const parsed = JSON.parse(ls);
+                if (Array.isArray(parsed)) return parsed;
+            }
+        } catch (e2) { /* ignore */ }
+        return padrao;
+    });
 }
 function idbSalvarBloco(nome, arr) {
-    return idbSet('bloco_' + nome, Array.isArray(arr) ? arr : []);
+    const a = Array.isArray(arr) ? arr : [];
+    try { localStorage.setItem('bloco_' + nome, JSON.stringify(a)); } catch (e) { /* quota ok p/ dados básicos */ }
+    return idbSet('bloco_' + nome, a).then(() => ({ ok: true })).catch(() => ({ ok: true, fallback: 'ls' }));
 }
 
 // Lista nomes de bloco (para percorrer chats)
