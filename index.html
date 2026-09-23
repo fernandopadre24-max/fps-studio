@@ -979,7 +979,7 @@
                                 <button class="btn-icon" onclick="document.getElementById('chatAudioClient').click()" title="Enviar Áudio (MP3 / WAV)">
                                     <i class="fas fa-music"></i>
                                 </button>
-                                <input type="file" id="chatAudioClient" accept="audio/*,.mp3,.wav,.ogg,.m4a" style="display:none;" onchange="enviarAudioBiblioteca(this)">
+                                <input type="file" id="chatAudioClient" accept="audio/*,.mp3,.wav,.ogg,.m4a" style="display:none;" onchange="sendAudioChat('client', this)">
                                 <input type="text" id="chatInputClient" placeholder="Digite sua mensagem..." onkeypress="if(event.key==='Enter')sendMessageClient()">
                                 <button class="btn-send" onclick="sendMessageClient()">
                                     <i class="fas fa-paper-plane"></i>

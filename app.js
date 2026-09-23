@@ -28,6 +28,17 @@ const CONFIG_DEFAULT = {
 
 let APP_CONFIG = null;
 
+let usingIDB = false;
+let currentChatClient = null;
+let selectedPedidoId = null;
+let selectedPagamentoValor = 0;
+const dashFiltros = { periodo: 'todos', tipo: 'todos', busca: '' };
+const ordemPedidoStage = ['pendente', 'em_andamento', 'concluido'];
+const AUDIO_BASE64_LIMIT = 3500000;
+const PAYLOAD_AUDIO_LIMIT = 4000000;
+let _chatAudioObjectUrls = [];
+
+
 let currentUser = null;
 let DB = {
     servicos: [],
@@ -230,22 +241,42 @@ function stopSync() {
 
 async function init() {
     let ok = false;
-    try { ok = await DB_SERVICE.init(); } catch (e) { ok = false; }
 
-    if (!ok && window.IDB_SERVICE) {
-        await IDB_SERVICE.init();
-        for (const k of Object.keys(IDB_SERVICE)) {
-            if (typeof IDB_SERVICE[k] === 'function') DB_SERVICE[k] = IDB_SERVICE[k].bind(IDB_SERVICE);
+    // IndexedDB é a camada LOCAL (sempre disponível, persistente entre
+    // F5 e offline). Usamos ELA como camada primária de dados. O backend
+    // /api (Vercel serverless → SQLite em /tmp ÉFEMERO) é só espelho
+    // opcional: se o IndexedDB falhar, tentamos a API.
+    if (window.IDB_SERVICE) {
+        try {
+            await IDB_SERVICE.init();
+            for (const k of Object.keys(IDB_SERVICE)) {
+                if (typeof IDB_SERVICE[k] === 'function') DB_SERVICE[k] = IDB_SERVICE[k].bind(IDB_SERVICE);
+            }
+            ok = await DB_SERVICE.init();
+            if (ok) {
+                usingIDB = true;
+                console.log('[PERSIST] Usando IndexedDB local como camada primária.');
+            }
+        } catch (e) {
+            ok = false;
+            console.warn('[PERSIST] IndexedDB indisponível:', (e && e.message) ? e.message : e);
         }
-        ok = await DB_SERVICE.init();
-        if (ok) console.warn('[PERSIST] Backend off-line — usando IndexedDB local.');
+    }
+
+    // Fallback: backend /api (só se IndexedDB falhou)
+    if (!ok) {
+        try { ok = await DB_SERVICE.init(); } catch (e) { ok = false; }
+        if (ok) {
+            usingIDB = false;
+            console.log('[PERSIST] Usando backend /api (SQLite).');
+        }
     }
 
     if (ok) {
         DBReady = true;
         await loadDB();
     } else {
-        console.warn('[PERSIST] Nenhuma camada de dados disponível (backend e IDB falharam).');
+        console.warn('[PERSIST] Nenhuma camada de dados disponível (IDB e backend falharam).');
     }
 
     const saved = restaurarSessao();
@@ -1335,6 +1366,11 @@ function renderMovimentacoes() {
     atualizarTotaisFinanceiro();
 }
 
+function renderFinanceiro() {
+    if (typeof renderMovimentacoes === 'function') renderMovimentacoes();
+}
+
+
 function editarMovimentacao(id) {
     const m = DB.movimentacoes.find(x => x.id == id);
     if (!m) return;
@@ -2098,12 +2134,9 @@ async function salvarPedidoClient() {
                     continue;
                 }
                 try {
-                    const b64 = await fileToBase64(f);
-                    novoPedido.audios.push({
-                        nome: f.name,
-                        base64: b64,
-                        data: new Date().toISOString()
-                    });
+                    if (typeof validateAudioFile === 'function' && !validateAudioFile(f)) continue;
+                    const prep = await prepararAudioPedido(f);
+                    novoPedido.audios.push(prep);
                 } catch(e) {
                     console.error('Erro ao ler áudio:', e);
                 }
@@ -3025,59 +3058,89 @@ function renderClientChat() {
 
 async function sendAudioChat(remetente, inputElement) {
     if (!inputElement.files || inputElement.files.length === 0) return;
-    
+
     let clienteId = null;
     if (remetente === 'client') {
-        clienteId = currentUser ? currentUser.id : null;
+        clienteId = currentUser && currentUser.id;
     } else {
         clienteId = currentChatClient;
     }
-    
+
     if (!clienteId) {
-        showToast('Selecione um cliente para enviar o áudio.', 'error');
-        inputElement.value = '';
+        showToast(remetente === 'client' ? 'Faça login para enviar o áudio.' : 'Selecione uma conversa para enviar o áudio.', 'error');
         return;
     }
     
     for (let i = 0; i < inputElement.files.length; i++) {
         const file = inputElement.files[i];
-        if (!validateAudioFile(file)) continue;
+        if (!file.type.includes('audio') && !file.name.toLowerCase().endsWith('.mp3') && !file.name.toLowerCase().endsWith('.wav')) {
+            showToast('Apenas arquivos de áudio são permitidos!', 'error');
+            continue;
+        }
         
         try {
-            const b64 = await fileToBase64(file);
+            if(!validateAudioFile(file)) continue;
+            let prep;
+            try {
+                prep = await prepararAudioPedido(file);
+            } catch (err) {
+                prep = { base64: await arquivoAudioParaDataUrl(file) };
+            }
+            const audioSrcVal = prep.url || prep.base64;
             const msgAudio = {
                 tipo: 'audio',
                 remetente: remetente,
                 clienteId: clienteId,
-                mensagem: remetente === 'client' ? ('🎵 Áudio enviado: ' + file.name) : ('🎵 Áudio do estúdio: ' + file.name),
-                audio: b64,
+                mensagem: remetente === 'client' ? 'Áudio de referência enviado' : 'Áudio enviado',
+                audio: audioSrcVal,
+                audioUrl: prep.url || '',
                 arquivoNome: file.name,
                 data: new Date().toISOString(),
                 lida: false
             };
-            
+
             const chatKey = `admin_${clienteId}`;
             if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
             DB.chats[chatKey].push(msgAudio);
 
-            if (DBReady) {
-                const res = await DB_SERVICE.sendMessage(msgAudio);
-                if (res && res.id) msgAudio.id = res.id;
+            if (DBReady) await DB_SERVICE.sendMessage(msgAudio);
+
+            // Cliente: anexar também ao pedido recente para aparecer em Áudios de Pedidos
+            if (remetente === 'client') {
+                const pedidoAtivo = (DB.pedidos || [])
+                    .filter(ped => String(ped.clienteId) === String(clienteId))
+                    .sort((a,b) => (Number(b.id) || 0) - (Number(a.id) || 0))[0];
+                if (pedidoAtivo) {
+                    pedidoAtivo.audios = pedidoAtivo.audios || [];
+                    pedidoAtivo.audios.push({
+                        nome: file.name,
+                        base64: prep.base64 || '',
+                        url: prep.url || '',
+                        tamanho: file.size,
+                        tipo: file.type || 'audio/mp3',
+                        data: new Date().toISOString(),
+                        origem: 'chat'
+                    });
+                    const updId = pedidoAtivo.docId || pedidoAtivo.id;
+                    if (DBReady && updId) {
+                        try { await DB_SERVICE.updatePedido(updId, { audios: pedidoAtivo.audios }); } catch (err) { console.error(err); }
+                    }
+                }
             }
         } catch(e) {
-            console.error('Erro ao processar áudio:', e);
+            console.error(e);
             showToast('Erro ao processar áudio.', 'error');
         }
     }
     
-    inputElement.value = '';
-    const chatKey = `admin_${clienteId}`;
+    inputElement.value = ''; // clear
     if (remetente === 'client') {
         renderClientChat();
     } else {
-        renderChatMessagesAdmin(chatKey);
-        renderChatList();
+        try { renderChatMessagesAdmin(`admin_${clienteId}`); } catch (e) { console.error(e); }
     }
+    try { renderChatList(); } catch (e) {}
+    if (typeof renderBiblioteca === 'function') renderBiblioteca();
     showToast('Áudio enviado!', 'success');
 }
 
@@ -3445,6 +3508,58 @@ function getCategoriaIcon(cat) {
         outro: 'fa-box'
     };
     return icons[cat] || 'fa-box';
+}
+
+function limiteAudioBase64() {
+    return usingIDB ? Infinity : AUDIO_BASE64_LIMIT;
+}
+
+function limitePayloadAudio() {
+    return usingIDB ? Infinity : PAYLOAD_AUDIO_LIMIT;
+}
+
+function agoraHora() {
+    const d = new Date();
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+async function arquivoAudioParaDataUrl(file) {
+    const arrayBuffer = await lerArquivoComoArrayBuffer(file);
+    let dataUrl = '';
+    const estimado = Math.ceil(arrayBuffer.byteLength * 4 / 3) + 30;
+    const limite = limiteAudioBase64();
+    if (estimado <= limite) {
+        dataUrl = arrayBufferToDataUrl(arrayBuffer, file.type || 'audio/mpeg');
+    } else {
+        let kbps = 96;
+        while (kbps >= 32) {
+            const blob = await comprimirAudio(arrayBuffer, kbps);
+            const du = await blobToDataUrl(blob);
+            if (du.length <= limite) { dataUrl = du; break; }
+            kbps = Math.floor(kbps / 2);
+        }
+        if (!dataUrl) throw new Error('Audio maior que o limite de envio (~4MB).');
+    }
+    return dataUrl;
+}
+
+async function prepararAudioPedido(file) {
+    const b64 = await arquivoAudioParaDataUrl(file);
+    const base = {
+        nome: file.name,
+        tamanho: file.size,
+        tipo: file.type || 'audio/mp3',
+        data: new Date().toISOString()
+    };
+    if (usingIDB) return { ...base, base64: b64 };
+    if (!b64 || b64.length < 500000) return { ...base, base64: b64 };
+    try {
+        const up = await DB_SERVICE.uploadAudio({ base64: b64, nome: file.name, tipo: file.type || 'audio/mpeg' });
+        if (up && up.url) return { ...base, url: up.url, origem: 'blob' };
+    } catch (e) {
+        console.warn('upload_audio falhou, mantendo base64:', e);
+    }
+    return { ...base, base64: b64 };
 }
 
 function audioSrc(a) {
@@ -4706,6 +4821,204 @@ function visualizarImagem(src) {
     document.getElementById('lightboxOverlay').classList.add('active');
 }
 
+function studioDados() {
+    const cfg = APP_CONFIG || CONFIG_DEFAULT;
+    return Object.assign({}, CONFIG_DEFAULT.studio, (cfg.studio && typeof cfg.studio === 'object' ? cfg.studio : {}));
+}
+
+function fmtValorBR(n) {
+    return (Number(n) || 0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+function valorPagoPedido(p) {
+    if (!p) return 0;
+    return DB.movimentacoes
+        .filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente' && movRefereAoPedido(m, p.id))
+        .reduce((s, m) => s + (Number(m.valor) || 0), 0);
+}
+
+function movRefereAoPedido(m, pedidoId) {
+    if (!m || pedidoId === null || pedidoId === undefined || pedidoId === '') return false;
+    const id = String(pedidoId);
+    if (m.pedidoId !== null && m.pedidoId !== undefined && String(m.pedidoId) === id) return true;
+    const esc = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp('(?:Pedido\\s*#|#)' + esc + '(?!\\d)');
+    return re.test(String(m.descricao || '')) || re.test(String(m.mensagem || ''));
+}
+
+async function sincronizarFinanceiroPedido(p) {
+    if (!p) return null;
+    const doPedido = (DB.movimentacoes || []).filter(m =>
+        (m.pedidoId != null && String(m.pedidoId) === String(p.id)) ||
+        (m.tipo === 'entrada' && movRefereAoPedido(m, p.id))
+    );
+    const pagas = doPedido.filter(m => m.pagamento !== 'pendente');
+    const pendentes = doPedido.filter(m => m.pagamento === 'pendente');
+
+    if (p.status === 'cancelado') {
+        for (const m of doPedido) {
+            DB.movimentacoes = (DB.movimentacoes || []).filter(x => x.id !== m.id);
+            if (DBReady && m.docId) {
+                try { await DB_SERVICE.deleteMovimentacao(m.docId); } catch (e) {}
+            }
+        }
+        return null;
+    }
+
+    // Nunca sobrescrever valor já recebido: paga mantém o valor pago;
+    // pendente recebe apenas o restante (esperado - pago).
+    const pago = pagas.reduce((s, m) => s + (Number(m.valor) || 0), 0);
+    const esperado = valorEsperadoPedido(p);
+    const restante = Math.max(0, Math.round((esperado - pago) * 100) / 100);
+
+    let ref = null;
+    if (pagas.length) {
+        ref = pagas[pagas.length - 1];
+        const mudancas = { descricao: `Pedido #${p.id}`, pedidoId: p.id, categoria: ref.categoria || 'servico' };
+        Object.assign(ref, mudancas);
+        if (DBReady && ref.docId) {
+            try { await DB_SERVICE.updateMovimentacao(ref.docId, mudancas); } catch (e) {}
+        }
+    }
+
+    if (restante > 0) {
+        if (pendentes.length) {
+            const pend = pendentes[pendentes.length - 1];
+            const mudancas = { tipo: 'entrada', descricao: `Pedido #${p.id}`, valor: restante, categoria: 'servico', pagamento: 'pendente', pedidoId: p.id };
+            Object.assign(pend, mudancas);
+            if (DBReady && pend.docId) {
+                try { await DB_SERVICE.updateMovimentacao(pend.docId, mudancas); } catch (e) {}
+            }
+            ref = ref || pend;
+        } else {
+            const nova = {
+                id: DB.nextId.movimentacao++,
+                tipo: 'entrada',
+                descricao: `Pedido #${p.id}`,
+                valor: restante,
+                categoria: 'servico',
+                pagamento: 'pendente',
+                data: new Date().toISOString().split('T')[0],
+                hora: agoraHora(),
+                pedidoId: p.id
+            };
+            DB.movimentacoes.push(nova);
+            if (DBReady) {
+                try {
+                    const resDoc = await DB_SERVICE.addMovimentacao(nova);
+                    nova.docId = resDoc && resDoc.id ? resDoc.id : resDoc;
+                } catch (e) {
+                    console.error('Falha ao persistir movimentação do pedido:', e);
+                }
+            }
+            ref = nova;
+        }
+    } else {
+        // Tudo já pago: remove pendentes órfãs
+        for (const pend of pendentes) {
+            DB.movimentacoes = (DB.movimentacoes || []).filter(x => x.id !== pend.id);
+            if (DBReady && pend.docId) {
+                try { await DB_SERVICE.deleteMovimentacao(pend.docId); } catch (e) {}
+            }
+        }
+    }
+
+    if (!ref && !pagas.length && restante > 0) {
+        // fallback: cria pendente pelo total
+        const nova = {
+            id: DB.nextId.movimentacao++,
+            tipo: 'entrada',
+            descricao: `Pedido #${p.id}`,
+            valor: esperado,
+            categoria: 'servico',
+            pagamento: 'pendente',
+            data: new Date().toISOString().split('T')[0],
+            hora: agoraHora(),
+            pedidoId: p.id
+        };
+        DB.movimentacoes.push(nova);
+        if (DBReady) {
+            try {
+                const resDoc = await DB_SERVICE.addMovimentacao(nova);
+                nova.docId = resDoc && resDoc.id ? resDoc.id : resDoc;
+            } catch (e) {}
+        }
+        ref = nova;
+    }
+    return ref;
+}
+
+function preparePedidoModal() {
+    const clienteSelect = document.getElementById('pedidoCliente');
+    if (clienteSelect) clienteSelect.innerHTML = DB.clientes.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+
+    const servicosDiv = document.getElementById('pedidoServicos');
+    if (servicosDiv) {
+        servicosDiv.innerHTML = DB.servicos.map(s => `<div class="checkbox-item">
+        <input type="checkbox" id="ps_${s.id}" value="${String(s.id).replace(/"/g, '&quot;')}" onchange="updatePedidoTotal()">
+        <label for="ps_${s.id}">${s.nome}</label>
+        <span class="item-price">${formatCurrency(s.preco)}</span>
+    </div>`).join('');
+        servicosDiv.onclick = (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'LABEL') return;
+            const item = e.target.closest('.checkbox-item');
+            if (!item) return;
+            const cb = item.querySelector('input');
+            if (cb) { cb.checked = !cb.checked; updatePedidoTotal(); }
+        };
+    }
+
+    const materiaisDiv = document.getElementById('pedidoMateriais');
+    if (materiaisDiv) {
+        materiaisDiv.innerHTML = DB.materiais.map(m => `<div class="checkbox-item">
+        <input type="checkbox" id="pm_${m.id}" value="${String(m.id).replace(/"/g, '&quot;')}" onchange="updatePedidoTotal()">
+        <label for="pm_${m.id}">${m.nome}</label>
+        ${formatMaterialPrice(m, 'item-price')}
+    </div>`).join('');
+        materiaisDiv.onclick = (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'LABEL') return;
+            const item = e.target.closest('.checkbox-item');
+            if (!item) return;
+            const cb = item.querySelector('input');
+            if (cb) { cb.checked = !cb.checked; updatePedidoTotal(); }
+        };
+    }
+    updatePedidoTotal();
+}
+
+function renderFooterStudio() {
+    const st = studioDados();
+    const enderecoCompleto = [st.endereco, st.cidade].filter(Boolean).join(', ');
+    ['', 'Client'].forEach(sfx => {
+        const nomeEl = document.getElementById('footerStudioNome' + sfx);
+        if (!nomeEl) return;
+        nomeEl.textContent = st.nome || 'FPS Studio';
+        const linhas = { footerStudioEndereco: st.endereco, footerStudioCidade: st.cidade, footerStudioTelefone: st.telefone, footerStudioEmail: st.email };
+        Object.keys(linhas).forEach(base => {
+            const el = document.getElementById(base + sfx);
+            if (!el) return;
+            const val = linhas[base];
+            if (val) { el.style.display = ''; el.querySelector('span').textContent = val; }
+            else el.style.display = 'none';
+        });
+        const maps = document.getElementById('rotaGoogle' + sfx);
+        const waze = document.getElementById('rotaWaze' + sfx);
+        if (maps) maps.href = 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(enderecoCompleto);
+        if (waze) waze.href = 'https://waze.com/ul?q=' + encodeURIComponent(enderecoCompleto) + '&navigate=yes';
+        const rotas = document.getElementById('footerRotas' + sfx);
+        if (rotas) rotas.style.display = enderecoCompleto ? '' : 'none';
+    });
+}
+
+function fecharLightbox() {
+    document.getElementById('lightboxOverlay').classList.remove('active');
+    document.getElementById('lightboxImg').src = '';
+}
+
+function desenharDonutServicos(a, b) {
+    if (typeof renderizarDonutServicos === 'function') return renderizarDonutServicos(a, b);
+}
+
 // UTILITIES & UPLOAD DE IMAGENS
 // ============================================
 // UPLOAD DE IMAGENS - DRAG & DROP E FORM CLEANUP
@@ -5403,8 +5716,8 @@ window.renderBiblioteca = function() {
                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;background:var(--bg-lighter);padding:4px 8px;border-radius:4px;font-size:12px;">
                     <i class="fas fa-music text-primary"></i>
                     <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${a.nome}">${a.nome}</span>
-                    <audio controls src="${a.base64}" style="height:24px;width:120px;"></audio>
-                    <a href="${a.base64}" download="${a.nome}" class="btn-icon" title="Baixar"><i class="fas fa-download"></i></a>
+                    <audio controls src="${audioSrc(a)}" style="height:24px;width:120px;"></audio>
+                    <a href="${audioSrc(a)}" download="${a.nome}" class="btn-icon" title="Baixar"><i class="fas fa-download"></i></a>
                     <button class="btn-icon text-danger" onclick="excluirAudioPedido(${p.id}, ${idx})" title="Excluir"><i class="fas fa-trash"></i></button>
                 </div>
             `).join('');
@@ -5454,12 +5767,13 @@ window.abrirUploadAudioAdmin = function(pedidoId) {
         const novosAudios = [];
         for (let i = 0; i < e.target.files.length; i++) {
             const file = e.target.files[i];
-            const b64 = await fileToBase64(file);
-            novosAudios.push({
-                nome: file.name,
-                base64: b64,
-                data: new Date().toISOString()
-            });
+            if (typeof validateAudioFile === 'function' && !validateAudioFile(file)) continue;
+            try {
+                const prep = await prepararAudioPedido(file);
+                novosAudios.push(prep);
+            } catch (err) {
+                console.error('Falha ao processar áudio', file.name, err);
+            }
         }
         
         p.audios = p.audios || [];
@@ -5508,11 +5822,18 @@ window.enviarAudioBiblioteca = async function(input) {
     showToast('Enviando áudio...', 'info');
     
     try {
-        const b64 = await fileToBase64(file);
+        let prep;
+        try {
+            prep = await prepararAudioPedido(file);
+        } catch (err) {
+            prep = { nome: file.name, base64: await fileToBase64(file), data: new Date().toISOString() };
+        }
+        const b64 = prep.url || prep.base64;
         const audioObj = {
             clienteId: currentUser.id,
             arquivoNome: file.name,
             audio: b64,
+            audioUrl: prep.url || '',
             descricao: 'Enviado pelo Chat do Cliente',
             duracao: 0,
             data: new Date().toISOString().split('T')[0],
