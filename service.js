@@ -60,9 +60,10 @@ const DB_SERVICE = {
     async deleteMovimentacao(id) { return apiCall('movimentacoes', 'DELETE', null, { id }); },
 
     // CHAT
-    async getChat(clienteId) { return apiCall('chat', 'GET', null, { clienteId }); },
+    async getChat(clienteId) { return apiCall('chat', 'GET', null, clienteId ? { clienteId } : {}); },
+    async getAllChats() { return apiCall('chat', 'GET'); },
     async sendMessage(d) { return apiCall('chat', 'POST', d); },
-    async updateMessage(id, d) { return apiCall('chat', 'PUT', d, { id }); },
+    async updateMessage(id, d) { return apiCall('chat', 'PUT', d, id ? { id } : {}); },
 
     // BIBLIOTECA DE ÁUDIOS
     async getBiblioteca(clienteId) { return apiCall('biblioteca', 'GET', null, clienteId ? { clienteId } : {}); },

@@ -28,8 +28,6 @@ const CONFIG_DEFAULT = {
 
 let APP_CONFIG = null;
 
-let usingIDB = false;
-
 let currentUser = null;
 let DB = { servicos: [], materiais: [], clientes: [], pedidos: [], movimentacoes: [], chats: {}, config: {} };
 let DBReady = false;
@@ -72,7 +70,7 @@ function setupNavigation() {
             if(pageId === 'adminServicos') renderServicos();
             if(pageId === 'adminMateriais') renderMateriais();
             if(pageId === 'adminPedidos') renderPedidos();
-            if(pageId === 'adminFinanceiro') renderFinanceiro();
+            if(pageId === 'adminFinanceiro') renderMovimentacoes();
             if(pageId === 'adminBiblioteca') renderBiblioteca();
             if(pageId === 'adminBibliotecas') renderBibliotecas();
             if(pageId === 'adminChat') renderChatList();
@@ -91,81 +89,216 @@ function setupNavigation() {
 
 document.addEventListener("DOMContentLoaded", () => { init(); setupNavigation(); });
 
+function salvarSessao() {
+    try {
+        if (currentUser) {
+            sessionStorage.setItem('fps_current_user', JSON.stringify(currentUser));
+        } else {
+            sessionStorage.removeItem('fps_current_user');
+        }
+    } catch(e) {}
+}
+
+function restaurarSessao() {
+    try {
+        const saved = sessionStorage.getItem('fps_current_user');
+        if (saved) {
+            const u = JSON.parse(saved);
+            if (u && (u.role === 'cliente' || u.role === 'client')) {
+                u.role = 'client';
+            }
+            return u;
+        }
+    } catch(e) {}
+    return null;
+}
+
+let syncInterval = null;
+function startSync() {
+    if (syncInterval) clearInterval(syncInterval);
+    syncInterval = setInterval(async () => {
+        if (!currentUser || !DBReady) return;
+        try {
+            if (currentUser.role === 'admin') {
+                // Sincronizar clientes periodicamente
+                const clis = await DB_SERVICE.getClientes();
+                if (Array.isArray(clis) && clis.length !== (DB.clientes || []).length) {
+                    DB.clientes = clis;
+                    DB.clientes.forEach(x => { x.docId = x.id; });
+                    if (document.getElementById('adminClientes')?.classList.contains('active')) {
+                        renderClientes();
+                    }
+                    if (document.getElementById('adminChat')?.classList.contains('active')) {
+                        renderChatList(document.getElementById('buscaChatAdmin')?.value || '');
+                    }
+                }
+
+                // Sincronizar pedidos periodicamente
+                const peds = await DB_SERVICE.getPedidos();
+                if (Array.isArray(peds) && peds.length !== (DB.pedidos || []).length) {
+                    DB.pedidos = peds;
+                    DB.pedidos.forEach(x => { x.docId = x.id; });
+                    if (document.getElementById('adminPedidos')?.classList.contains('active')) {
+                        renderPedidos();
+                    }
+                    if (document.getElementById('adminHome')?.classList.contains('active')) {
+                        renderAdminDashboard();
+                    }
+                }
+
+                const allChats = await DB_SERVICE.getAllChats();
+                if (Array.isArray(allChats)) {
+                    let hasNew = false;
+                    for (const m of allChats) {
+                        const key = `admin_${m.clienteId}`;
+                        DB.chats[key] = DB.chats[key] || [];
+                        const existingIdx = DB.chats[key].findIndex(x => x.id && m.id && x.id === m.id);
+                        if (existingIdx === -1) {
+                            DB.chats[key].push(m);
+                            hasNew = true;
+                        } else if (JSON.stringify(DB.chats[key][existingIdx]) !== JSON.stringify(m)) {
+                            DB.chats[key][existingIdx] = m;
+                            hasNew = true;
+                        }
+                    }
+                    if (hasNew) {
+                        updateChatBadge();
+                        if (document.getElementById('adminChat')?.classList.contains('active')) {
+                            renderChatList(document.getElementById('buscaChatAdmin')?.value || '');
+                            if (currentChatClient) renderChatMessagesAdmin('admin_' + currentChatClient);
+                        }
+                    }
+                }
+                const bibs = await DB_SERVICE.getBiblioteca();
+                if (Array.isArray(bibs) && bibs.length !== (DB.bibliotecas || []).length) {
+                    DB.bibliotecas = bibs;
+                    if (document.getElementById('adminBibliotecas')?.classList.contains('active')) {
+                        renderBibliotecas();
+                    }
+                }
+            } else if (currentUser.role === 'client' || currentUser.role === 'cliente') {
+                const myChats = await DB_SERVICE.getChat(currentUser.id);
+                if (Array.isArray(myChats)) {
+                    const key = `admin_${currentUser.id}`;
+                    DB.chats[key] = DB.chats[key] || [];
+                    if (myChats.length !== DB.chats[key].length || JSON.stringify(myChats) !== JSON.stringify(DB.chats[key])) {
+                        DB.chats[key] = myChats;
+                        updateChatBadge();
+                        if (document.getElementById('clientChat')?.classList.contains('active')) {
+                            renderClientChat();
+                        }
+                    }
+                }
+                const peds = await DB_SERVICE.getPedidos();
+                if (Array.isArray(peds)) {
+                    DB.pedidos = peds;
+                    if (document.getElementById('clientPedidos')?.classList.contains('active')) {
+                        renderPedidosClient();
+                    }
+                }
+            }
+        } catch(e) {}
+    }, 3000);
+}
+
+function stopSync() {
+    if (syncInterval) {
+        clearInterval(syncInterval);
+        syncInterval = null;
+    }
+}
+
 async function init() {
     let ok = false;
+    try { ok = await DB_SERVICE.init(); } catch (e) { ok = false; }
 
-    // IndexedDB é a camada LOCAL (sempre disponível, persistente entre
-    // F5 e offline). Usamos ELA como camada primária de dados. O backend
-    // /api (Vercel serverless → SQLite em /tmp ÉFEMERO) é só espelho
-    // opcional: se o IndexedDB falhar, tentamos a API.
-    if (window.IDB_SERVICE) {
-        try {
-            await IDB_SERVICE.init();
-            for (const k of Object.keys(IDB_SERVICE)) {
-                if (typeof IDB_SERVICE[k] === 'function') DB_SERVICE[k] = IDB_SERVICE[k].bind(IDB_SERVICE);
-            }
-            ok = await DB_SERVICE.init();
-            if (ok) {
-                usingIDB = true;
-                console.log('[PERSIST] Usando IndexedDB local como camada primária.');
-            }
-        } catch (e) {
-            ok = false;
-            console.warn('[PERSIST] IndexedDB indisponível:', (e && e.message) ? e.message : e);
+    if (!ok && window.IDB_SERVICE) {
+        await IDB_SERVICE.init();
+        for (const k of Object.keys(IDB_SERVICE)) {
+            if (typeof IDB_SERVICE[k] === 'function') DB_SERVICE[k] = IDB_SERVICE[k].bind(IDB_SERVICE);
         }
-    }
-
-    // Fallback: backend /api (só se IndexedDB falhou)
-    if (!ok) {
-        try { ok = await DB_SERVICE.init(); } catch (e) { ok = false; }
-        if (ok) {
-            usingIDB = false;
-            console.log('[PERSIST] Usando backend /api (SQLite).');
-        }
+        ok = await DB_SERVICE.init();
+        if (ok) console.warn('[PERSIST] Backend off-line — usando IndexedDB local.');
     }
 
     if (ok) {
         DBReady = true;
         await loadDB();
     } else {
-        console.warn('[PERSIST] Nenhuma camada de dados disponível (IDB e backend falharam).');
+        console.warn('[PERSIST] Nenhuma camada de dados disponível (backend e IDB falharam).');
     }
-    showView('loginScreen');
+
+    const saved = restaurarSessao();
+    if (saved) {
+        currentUser = saved;
+        if (currentUser.role === 'admin') {
+            showView('adminDashboard');
+            renderAdminDashboard();
+        } else {
+            showView('clientDashboard');
+            const nameEl = document.getElementById('clientNameDisplay');
+            if (nameEl) nameEl.textContent = currentUser.nome;
+            renderClientDashboard();
+        }
+        startSync();
+    } else {
+        showView('loginScreen');
+    }
 }
 
 async function loadDB() {
-    DB.servicos = (await DB_SERVICE.getServicos()) || [];
-    DB.materiais = (await DB_SERVICE.getMateriais()) || [];
-    DB.clientes = (await DB_SERVICE.getClientes()) || [];
-    DB.pedidos = (await DB_SERVICE.getPedidos()) || [];
-    DB.movimentacoes = (await DB_SERVICE.getMovimentacoes()) || [];
-    DB.config = (await DB_SERVICE.getConfig()) || {};
-    DB.bibliotecas = (await DB_SERVICE.getBiblioteca()) || [];
+    try {
+        const [servicos, materiais, clientes, pedidos, movimentacoes, config, bibliotecas] = await Promise.all([
+            DB_SERVICE.getServicos(),
+            DB_SERVICE.getMateriais(),
+            DB_SERVICE.getClientes(),
+            DB_SERVICE.getPedidos(),
+            DB_SERVICE.getMovimentacoes(),
+            DB_SERVICE.getConfig(),
+            DB_SERVICE.getBiblioteca()
+        ]);
+        
+        DB.servicos = servicos || [];
+        DB.materiais = materiais || [];
+        DB.clientes = clientes || [];
+        DB.pedidos = pedidos || [];
+        DB.movimentacoes = movimentacoes || [];
+        DB.config = config || {};
+        DB.bibliotecas = bibliotecas || [];
+        
+        // Normalizar IDs
+        DB.servicos.forEach(x => { x.docId = x.id; });
+        DB.materiais.forEach(x => { x.docId = x.id; });
+        DB.clientes.forEach(x => { x.docId = x.id; });
+        DB.pedidos.forEach(x => { x.docId = x.id; });
+        DB.movimentacoes.forEach(x => { x.docId = x.id; });
+        DB.bibliotecas.forEach(x => { x.docId = x.id; });
 
-    // Garantir docId para compatibilidade
-    [...DB.servicos, ...DB.materiais, ...DB.clientes, ...DB.pedidos, ...DB.movimentacoes, ...DB.bibliotecas].forEach(it => {
-        if (it && it.id && !it.docId) it.docId = it.id;
-    });
+        // Inicializar conversas para todos os clientes
+        DB.chats = {};
+        DB.clientes.forEach(c => {
+            DB.chats[`admin_${c.id}`] = [];
+        });
 
-    // Inicializar DB.nextId para evitar erros de undefined
-    DB.nextId = {
-        cliente: Math.max(0, ...DB.clientes.map(c => Number(c.id) || 0)) + 1,
-        pedido: Math.max(0, ...DB.pedidos.map(p => Number(p.id) || 0)) + 1,
-        movimentacao: Math.max(0, ...DB.movimentacoes.map(m => Number(m.id) || 0)) + 1,
-        servico: Math.max(0, ...DB.servicos.map(s => Number(s.id) || 0)) + 1,
-        material: Math.max(0, ...DB.materiais.map(m2 => Number(m2.id) || 0)) + 1,
-        biblioteca: Math.max(0, ...(DB.bibliotecas || []).map(b => Number(b.id) || 0)) + 1
-    };
-    
-    DB.chats = {};
-    for (const c of DB.clientes) {
         try {
-            const cChats = await DB_SERVICE.getChat(c.id);
-            DB.chats[`admin_${c.id}`] = cChats || [];
-        } catch (e) {
-            console.warn('Falha ao carregar chat do cliente', c.id, e);
-            DB.chats[`admin_${c.id}`] = DB.chats[`admin_${c.id}`] || [];
+            const allChats = await DB_SERVICE.getAllChats();
+            if (Array.isArray(allChats)) {
+                allChats.forEach(m => {
+                    const key = `admin_${m.clienteId}`;
+                    DB.chats[key] = DB.chats[key] || [];
+                    DB.chats[key].push(m);
+                });
+            }
+        } catch(e) {
+            for (const c of DB.clientes) {
+                try {
+                    const cChats = await DB_SERVICE.getChat(c.id);
+                    DB.chats[`admin_${c.id}`] = cChats || [];
+                } catch(err) {}
+            }
         }
+    } catch (e) {
+        console.error('Erro ao carregar dados do banco:', e);
     }
 }
 
@@ -193,23 +326,23 @@ async function login(event) {
     
     let user = null;
     if (tab.includes('senha') || tab.includes('conta')) {
-        const email = document.getElementById('loginEmail').value;
-        const senha = document.getElementById('loginPassword').value;
-        if (email === 'admin' && (senha === 'admin' || senha === 'admin123')) {
-            user = { id: 'admin', role: 'admin', nome: 'Admin' };
+        const email = (document.getElementById('loginEmail')?.value || '').trim();
+        const senha = (document.getElementById('loginPassword')?.value || '').trim();
+        if (email.toLowerCase() === 'admin' && (senha === 'admin' || senha === 'admin123')) {
+            user = { id: 'admin', role: 'admin', nome: 'Administrador' };
         } else {
-            const c = DB.clientes.find(x => (x.email === email || x.nome === email) && x.senha === senha);
+            const c = DB.clientes.find(x => (x.email?.toLowerCase() === email.toLowerCase() || x.nome?.toLowerCase() === email.toLowerCase()) && x.senha === senha);
             if (c) user = { ...c, role: 'client' };
         }
     } else if (tab.includes('pin')) {
-        const email = document.getElementById('pinEmail').value;
+        const email = (document.getElementById('pinEmail')?.value || '').trim();
         const pinInputs = Array.from(document.querySelectorAll('.pin-digit:not(.reg-pin)')).map(i => i.value).join('');
         const pin = pinInputs;
         
-        if (email === 'admin' && pin === '1234') {
-             user = { id: 'admin', role: 'admin', nome: 'Admin' };
+        if (email.toLowerCase() === 'admin' && pin === '1234') {
+             user = { id: 'admin', role: 'admin', nome: 'Administrador' };
         } else {
-             const c = DB.clientes.find(x => (x.email === email || x.nome === email) && x.pin === pin);
+             const c = DB.clientes.find(x => (x.email?.toLowerCase() === email.toLowerCase() || x.nome?.toLowerCase() === email.toLowerCase()) && x.pin === pin);
              if (c) user = { ...c, role: 'client' };
         }
     }
@@ -220,18 +353,85 @@ async function login(event) {
         showToast('Login efetuado com sucesso', 'success');
         if (user.role === 'admin') {
             showView('adminDashboard');
-            try { renderAdminDashboard(); } catch (e) { console.error(e); }
-            try { renderFinanceiro(); } catch (e) { console.error(e); }
-            try { renderChatList(); } catch (e) { console.error(e); }
-            try { updateChatBadge(); } catch (e) { console.error(e); }
-            try { if (typeof renderBiblioteca === 'function') renderBiblioteca(); } catch (e) { console.error(e); }
+            renderAdminDashboard();
         } else {
             showView('clientDashboard');
-            try { renderClientDashboard(); } catch (e) { console.error(e); }
-            try { updateChatBadge(); } catch (e) { console.error(e); }
+            const nameEl = document.getElementById('clientNameDisplay');
+            if (nameEl) nameEl.textContent = currentUser.nome;
+            renderClientDashboard();
         }
+        startSync();
     } else {
         showToast('Credenciais inválidas', 'error');
+    }
+}
+
+async function registerClient(event) {
+    if (event) event.preventDefault();
+    const nome = (document.getElementById('regNome')?.value || '').trim();
+    const email = (document.getElementById('regEmail')?.value || '').trim();
+    const telefone = (document.getElementById('regTelefone')?.value || '').trim();
+    const senha = (document.getElementById('regSenha')?.value || '').trim();
+    const pin = Array.from(document.querySelectorAll('.reg-pin')).map(i => i.value).join('');
+
+    if (!nome || !email || !senha) {
+        showToast('Preencha os campos obrigatórios (Nome, E-mail, Senha).', 'error');
+        return;
+    }
+
+    if (DB.clientes.some(c => c.email && c.email.toLowerCase() === email.toLowerCase())) {
+        showToast('Este e-mail já está cadastrado.', 'error');
+        return;
+    }
+
+    const novoCliente = {
+        nome,
+        email,
+        telefone,
+        senha,
+        pin: pin || '0000',
+        tipoPessoa: 'fisica',
+        cpf: '',
+        cnpj: '',
+        razaoSocial: '',
+        endereco: '',
+        numero: '',
+        complemento: '',
+        bairro: '',
+        cep: '',
+        cidade: '',
+        estado: '',
+        dataCadastro: new Date().toISOString().split('T')[0]
+    };
+
+    try {
+        if (DBReady) {
+            const res = await DB_SERVICE.addCliente(novoCliente);
+            if (res && res.id) {
+                novoCliente.id = res.id;
+                novoCliente.docId = res.id;
+            }
+        } else {
+            novoCliente.id = Date.now();
+            novoCliente.docId = novoCliente.id;
+        }
+
+        DB.clientes.push(novoCliente);
+        DB.chats[`admin_${novoCliente.id}`] = [];
+
+        currentUser = { ...novoCliente, role: 'client' };
+        salvarSessao();
+
+        const nameEl = document.getElementById('clientNameDisplay');
+        if (nameEl) nameEl.textContent = currentUser.nome;
+
+        showToast('Conta criada com sucesso!', 'success');
+        showView('clientDashboard');
+        renderClientDashboard();
+        startSync();
+    } catch(err) {
+        console.error('Erro ao cadastrar cliente:', err);
+        showToast('Erro ao criar conta.', 'error');
     }
 }
 
@@ -244,60 +444,13 @@ document.addEventListener("DOMContentLoaded", () => {
     if (pf) pf.addEventListener('submit', login);
     
     const rf = document.getElementById('registerForm');
-    if (rf) rf.addEventListener('submit', criarConta);
+    if (rf) rf.addEventListener('submit', registerClient);
 });
-
-async function criarConta(e) {
-    e.preventDefault();
-    const nome = document.getElementById('regNome').value.trim();
-    const email = document.getElementById('regEmail').value.trim();
-    const telefone = document.getElementById('regTelefone').value.trim();
-    const senha = document.getElementById('regSenha').value;
-    const pin = Array.from(document.querySelectorAll('.reg-pin')).map(i => i.value).join('');
-
-    if (!nome || !email || !telefone || !senha) {
-        showToast('Preencha todos os campos!', 'error');
-        return;
-    }
-    if (senha.length < 6) {
-        showToast('A senha deve ter pelo menos 6 caracteres!', 'error');
-        return;
-    }
-    if (pin.length !== 4) {
-        showToast('O PIN deve ter exatamente 4 dígitos!', 'error');
-        return;
-    }
-    if (DB.clientes.some(c => c.email && c.email.toLowerCase() === email.toLowerCase())) {
-        showToast('Este e-mail já está cadastrado!', 'error');
-        return;
-    }
-
-    const novo = {
-        id: DB.nextId.cliente++,
-        nome, email, telefone, senha, pin,
-        tipoPessoa: 'fisica',
-        cnpj: '', instagram: ''
-    };
-    DB.clientes.push(novo);
-    if (DBReady) {
-        try {
-            const resDoc = await DB_SERVICE.addCliente(novo);
-            novo.docId = resDoc && resDoc.id ? resDoc.id : resDoc;
-        } catch (err) {
-            console.error('Falha ao persistir conta:', err);
-            showToast('Conta criada, mas houve falha ao sincronizar.', 'error');
-        }
-    }
-
-    currentUser = { ...novo, role: 'client' };
-    showToast('Conta criada com sucesso!', 'success');
-    document.getElementById('registerForm').reset();
-    showView('clientDashboard');
-    renderClientDashboard();
-}
 
 function logout() {
     currentUser = null;
+    salvarSessao();
+    stopSync();
     showView('loginScreen');
 }
 
@@ -306,105 +459,333 @@ function toggleSidebar(id) {
     if (sb) sb.classList.toggle('collapsed');
 }
 
-function alternarVisaoPedidos(modo) {
-    document.getElementById('kanbanPedidos').style.display = modo === 'board' ? '' : 'none';
-    document.getElementById('tabelaPedidosWrap').style.display = modo === 'board' ? 'none' : 'block';
-    document.getElementById('btnViewBoard').classList.toggle('active', modo === 'board');
-    document.getElementById('btnViewTable').classList.toggle('active', modo === 'table');
-    document.getElementById('wrapStatusFiltro').style.display = modo === 'board' ? 'none' : 'inline-flex';
-    renderPedidosAdmin();
+function alternarVisaoPedidos(view) {
+    const btnBoard = document.getElementById('btnViewBoard');
+    const btnTable = document.getElementById('btnViewTable');
+    const boardEl = document.getElementById('kanbanPedidos');
+    const tableEl = document.getElementById('tabelaPedidosWrap');
+    const wrapStatus = document.getElementById('wrapStatusFiltro');
+    
+    if (view === 'board') {
+        if (btnBoard) btnBoard.classList.add('active');
+        if (btnTable) btnTable.classList.remove('active');
+        if (boardEl) boardEl.style.display = 'grid';
+        if (tableEl) tableEl.style.display = 'none';
+        if (wrapStatus) wrapStatus.style.display = 'none';
+    } else {
+        if (btnBoard) btnBoard.classList.remove('active');
+        if (btnTable) btnTable.classList.add('active');
+        if (boardEl) boardEl.style.display = 'none';
+        if (tableEl) tableEl.style.display = 'block';
+        if (wrapStatus) wrapStatus.style.display = 'block';
+    }
+    renderPedidos();
 }
 
-function limparFiltrosDashboard() {
-    document.getElementById('filtroPeriodoDash').value = 'todos';
-    document.getElementById('filtroTipoDash').value = 'todos';
-    document.getElementById('buscaMovDash').value = '';
-    dashFiltros.periodo = 'todos'; dashFiltros.tipo = 'todos'; dashFiltros.busca = '';
-    renderAdminDashboard();
+function desenharGraficoBarras(movimentacoes) {
+    const canvas = document.getElementById('graficoBarras');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const width = canvas.width = rect.width || 400;
+    const height = canvas.height = rect.height || 220;
+    ctx.clearRect(0, 0, width, height);
+    
+    const meses = [];
+    const agora = new Date();
+    for (let i = 5; i >= 0; i--) {
+        const d = new Date(agora.getFullYear(), agora.getMonth() - i, 1);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const rotulo = d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase();
+        meses.push({ chave: `${y}-${m}`, rotulo, entradas: 0, saidas: 0 });
+    }
+    
+    (movimentacoes || []).forEach(m => {
+        if (!m.data) return;
+        const chave = m.data.slice(0, 7);
+        const item = meses.find(x => x.chave === chave);
+        if (item) {
+            const v = parseFloat(m.valor) || 0;
+            if (m.tipo === 'entrada') item.entradas += v;
+            else if (m.tipo === 'saida') item.saidas += v;
+        }
+    });
+    
+    let maxVal = 100;
+    meses.forEach(m => {
+        if (m.entradas > maxVal) maxVal = m.entradas;
+        if (m.saidas > maxVal) maxVal = m.saidas;
+    });
+    maxVal = maxVal * 1.15;
+    
+    const padX = 35;
+    const padY = 25;
+    const chartW = width - padX * 2;
+    const chartH = height - padY * 2;
+    const colW = chartW / meses.length;
+    const barW = Math.min(20, colW * 0.35);
+    
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 3; i++) {
+        const y = padY + (chartH / 3) * i;
+        ctx.beginPath();
+        ctx.moveTo(padX, y);
+        ctx.lineTo(width - padX, y);
+        ctx.stroke();
+    }
+    
+    meses.forEach((m, idx) => {
+        const centerX = padX + colW * idx + colW / 2;
+        const hEntrada = (m.entradas / maxVal) * chartH;
+        const hSaida = (m.saidas / maxVal) * chartH;
+        
+        const xEntrada = centerX - barW - 2;
+        const yEntrada = padY + chartH - hEntrada;
+        ctx.fillStyle = '#43e97b';
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(xEntrada, yEntrada, barW, Math.max(3, hEntrada), [4, 4, 0, 0]);
+        else ctx.rect(xEntrada, yEntrada, barW, Math.max(3, hEntrada));
+        ctx.fill();
+        
+        const xSaida = centerX + 2;
+        const ySaida = padY + chartH - hSaida;
+        ctx.fillStyle = '#f5576c';
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(xSaida, ySaida, barW, Math.max(3, hSaida), [4, 4, 0, 0]);
+        else ctx.rect(xSaida, ySaida, barW, Math.max(3, hSaida));
+        ctx.fill();
+        
+        ctx.fillStyle = '#718096';
+        ctx.font = '11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(m.rotulo, centerX, height - 8);
+    });
+    
+    const totalEntradas6M = meses.reduce((s, m) => s + m.entradas, 0);
+    const totalSaidas6M = meses.reduce((s, m) => s + m.saidas, 0);
+    const legEl = document.getElementById('legendBarras');
+    if (legEl) {
+        legEl.innerHTML = `
+            <span class="leg-item"><i style="background:#43e97b"></i> Receitas: <strong>${formatCurrency(totalEntradas6M)}</strong></span>
+            <span class="leg-item"><i style="background:#f5576c"></i> Despesas: <strong>${formatCurrency(totalSaidas6M)}</strong></span>
+        `;
+    }
+}
+
+function renderizarDonutServicos(pedidos, movimentacoes) {
+    const donutRing = document.getElementById('donutServicosRing');
+    const donutTotal = document.getElementById('donutTotal');
+    const legendEl = document.getElementById('legendServicos');
+    if (!donutRing || !donutTotal || !legendEl) return;
+    
+    const cores = ['#667eea', '#764ba2', '#4facfe', '#00f2fe', '#43e97b', '#f093fb', '#f5576c', '#fdcb6e'];
+    
+    const servMap = {};
+    (DB.servicos || []).forEach(s => { servMap[s.id] = { nome: s.nome, total: 0 }; });
+    
+    (pedidos || []).forEach(p => {
+        const sIds = Array.isArray(p.servicos) ? p.servicos : [];
+        if (sIds.length > 0) {
+            const part = (parseFloat(p.total) || 0) / sIds.length;
+            sIds.forEach(id => {
+                if (!servMap[id]) {
+                    const s = (DB.servicos || []).find(x => x.id === id);
+                    servMap[id] = { nome: s ? s.nome : `Serviço #${id}`, total: 0 };
+                }
+                servMap[id].total += part;
+            });
+        }
+    });
+    
+    const items = Object.values(servMap).filter(x => x.total > 0).sort((a, b) => b.total - a.total);
+    const totalGeral = items.reduce((s, x) => s + x.total, 0);
+    donutTotal.textContent = formatCurrency(totalGeral);
+    
+    if (items.length === 0 || totalGeral === 0) {
+        donutRing.style.background = '#e2e8f0';
+        legendEl.innerHTML = '<span class="leg-vazio">Nenhuma receita registrada por serviço</span>';
+        return;
+    }
+    
+    let accPct = 0;
+    const gradStops = [];
+    const legendHtml = [];
+    
+    items.forEach((item, idx) => {
+        const cor = cores[idx % cores.length];
+        const pct = (item.total / totalGeral) * 100;
+        const nextPct = accPct + pct;
+        gradStops.push(`${cor} ${accPct.toFixed(1)}% ${nextPct.toFixed(1)}%`);
+        accPct = nextPct;
+        
+        legendHtml.push(`
+            <div class="leg-item">
+                <span><i style="background:${cor}"></i> ${item.nome}</span>
+                <strong>${formatCurrency(item.total)} (${pct.toFixed(0)}%)</strong>
+            </div>
+        `);
+    });
+    
+    donutRing.style.background = `conic-gradient(${gradStops.join(', ')})`;
+    legendEl.innerHTML = legendHtml.join('');
+}
+
+function renderizarUltimosPedidosDashboard(pedidos) {
+    const el = document.getElementById('ultimosPedidos');
+    if (!el) return;
+    const ultimos = [...(pedidos || [])].sort((a, b) => (b.id - a.id) || (new Date(b.data) - new Date(a.data))).slice(0, 5);
+    if (ultimos.length === 0) {
+        el.innerHTML = '<p class="empty-state">Nenhum pedido encontrado</p>';
+        return;
+    }
+    el.innerHTML = ultimos.map(p => {
+        const cliente = (DB.clientes || []).find(c => c.id == p.clienteId);
+        const cliNome = cliente ? cliente.nome : 'Cliente Avulso';
+        return `
+            <div class="pedido-item" style="cursor:pointer;" onclick="irParaPagina('adminPedidos')">
+                <div class="pedido-item-info">
+                    <h5>#${p.id} - ${cliNome}</h5>
+                    <p>${formatDate(p.data)} · ${formatCurrency(p.total)}</p>
+                </div>
+                <div>
+                    <span class="status-badge status-${p.status}">${statusLabel(p.status)}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+window.aplicarFiltrosDashboard = function() {
+    const container = document.getElementById('ultimasMovimentacoes');
+    if (!container) return;
+    
+    const periodo = document.getElementById('filtroPeriodoDash')?.value || 'todos';
+    const tipo = document.getElementById('filtroTipoDash')?.value || 'todos';
+    const busca = (document.getElementById('buscaMovDash')?.value || '').toLowerCase().trim();
+    
+    let movs = [...(DB.movimentacoes || [])];
+    
+    const hoje = new Date();
+    if (periodo === '7') {
+        const limite = new Date();
+        limite.setDate(hoje.getDate() - 7);
+        const limStr = limite.toISOString().split('T')[0];
+        movs = movs.filter(m => m.data >= limStr);
+    } else if (periodo === '30') {
+        const limite = new Date();
+        limite.setDate(hoje.getDate() - 30);
+        const limStr = limite.toISOString().split('T')[0];
+        movs = movs.filter(m => m.data >= limStr);
+    } else if (periodo === 'mes') {
+        const mesStr = hoje.toISOString().slice(0, 7);
+        movs = movs.filter(m => m.data && m.data.startsWith(mesStr));
+    } else if (periodo === 'ano') {
+        const anoStr = String(hoje.getFullYear());
+        movs = movs.filter(m => m.data && m.data.startsWith(anoStr));
+    }
+    
+    if (tipo !== 'todos') {
+        movs = movs.filter(m => m.tipo === tipo);
+    }
+    
+    if (busca) {
+        movs = movs.filter(m => (m.descricao || '').toLowerCase().includes(busca) || (m.categoria || '').toLowerCase().includes(busca));
+    }
+    
+    movs.sort((a, b) => (b.data || '').localeCompare(a.data || '') || (b.id - a.id));
+    
+    if (movs.length === 0) {
+        container.innerHTML = '<p class="empty-state">Nenhuma movimentação encontrada</p>';
+        return;
+    }
+    
+    container.innerHTML = movs.slice(0, 5).map(m => {
+        const isEntrada = m.tipo === 'entrada';
+        return `
+            <div class="pedido-item" style="cursor:pointer;" onclick="irParaPagina('adminFinanceiro')">
+                <div class="pedido-item-info">
+                    <h5>${m.descricao || 'Movimentação'}</h5>
+                    <p>${formatDate(m.data)} ${m.hora || ''} · ${capitalize(m.categoria || 'outro')}</p>
+                </div>
+                <div style="text-align:right;">
+                    <strong style="color:${isEntrada ? 'var(--success)' : 'var(--danger)'};">
+                        ${isEntrada ? '+' : '-'} ${formatCurrency(m.valor)}
+                    </strong>
+                    <br><small class="status-badge ${isEntrada ? 'status-concluido' : 'status-cancelado'}">${isEntrada ? 'Entrada' : 'Saída'}</small>
+                </div>
+            </div>
+        `;
+    }).join('');
+};
+
+window.limparFiltrosDashboard = function() {
+    const fPeriodo = document.getElementById('filtroPeriodoDash');
+    const fTipo = document.getElementById('filtroTipoDash');
+    const fBusca = document.getElementById('buscaMovDash');
+    if (fPeriodo) fPeriodo.value = 'todos';
+    if (fTipo) fTipo.value = 'todos';
+    if (fBusca) fBusca.value = '';
+    aplicarFiltrosDashboard();
+};
+
+function atualizarTotaisFinanceiro() {
+    const movs = DB.movimentacoes || [];
+    const entradas = movs.filter(m => m.tipo === 'entrada').reduce((s, m) => s + (parseFloat(m.valor) || 0), 0);
+    const saidas = movs.filter(m => m.tipo === 'saida').reduce((s, m) => s + (parseFloat(m.valor) || 0), 0);
+    const saldo = entradas - saidas;
+    
+    const pendentes = (DB.pedidos || []).filter(p => p.status === 'pendente' || p.status === 'em_andamento').reduce((s, p) => s + (parseFloat(p.total) || 0), 0);
+    
+    const elEntradas = document.getElementById('totalEntradas');
+    if (elEntradas) elEntradas.textContent = formatCurrency(entradas);
+    
+    const elSaidas = document.getElementById('totalSaidas');
+    if (elSaidas) elSaidas.textContent = formatCurrency(saidas);
+    
+    const elAReceber = document.getElementById('totalAReceber');
+    if (elAReceber) elAReceber.textContent = formatCurrency(pendentes);
+    
+    const elSaldo = document.getElementById('saldoGeral');
+    if (elSaldo) elSaldo.textContent = formatCurrency(saldo);
 }
 
 function renderAdminDashboard() {
-    // Stats PRIMEIRO (antes dos sub-renders), para garantir que a soma
-    // aconteça mesmo que algum sub-render lance exceção.
-    try {
-        const movs = DB.movimentacoes.filter(m => dashEmPeriodo(m.data) && (dashFiltros.tipo === 'todos' || m.tipo === dashFiltros.tipo));
-        const totalReceita = movs.filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente').reduce((s, m) => s + (Number(m.valor) || 0), 0);
-        const pedidosAtivos = DB.pedidos.filter(p => p.status !== 'cancelado' && p.status !== 'concluido').length;
-
-        const setStat = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
-        setStat('statReceita', formatCurrency(totalReceita));
-        setStat('statPedidos', pedidosAtivos);
-        setStat('statClientes', DB.clientes.length);
-        setStat('statMateriais', DB.materiais.length);
-        const statPeriodoEl = document.getElementById('statPeriodoReceita');
-        if (statPeriodoEl) statPeriodoEl.textContent = dashPeriodoLabel() ? `(${dashPeriodoLabel()})` : '';
-
-        const ultimosPedidos = [...DB.pedidos].filter(p => dashEmPeriodo(p.data)).sort((a, b) => new Date(b.data) - new Date(a.data)).slice(0, 5);
-        const container = document.getElementById('ultimosPedidos');
-        if (container) {
-            if (ultimosPedidos.length === 0) {
-                container.innerHTML = '<p class="empty-state">Nenhum pedido encontrado neste período</p>';
-            } else {
-                container.innerHTML = ultimosPedidos.map(p => {
-                    const cliente = DB.clientes.find(c => String(c.id) === String(p.clienteId));
-                    return `<div class="pedido-item">
-                        <div class="pedido-item-info">
-                            <h5>Pedido #${p.id} - ${cliente ? cliente.nome : 'N/A'}</h5>
-                            <p>${formatPedidoDataHora(p)}</p>
-                        </div>
-                        <div>
-                            <span class="status-badge status-${p.status}">${statusLabel(p.status)}</span>
-                        </div>
-                    </div>`;
-                }).join('');
-            }
-        }
-
-        let ultimasMovs = [...movs].sort((a, b) => new Date(b.data) - new Date(a.data));
-        if (dashFiltros.busca) {
-            ultimasMovs = ultimasMovs.filter(m => {
-                const cliente = nomeClienteDoPedido(m.pedidoId) || '';
-                return (m.descricao || '').toLowerCase().includes(dashFiltros.busca) || cliente.toLowerCase().includes(dashFiltros.busca);
-            });
-        }
-        const movContainer = document.getElementById('ultimasMovimentacoes');
-        const mostrarMovs = ultimasMovs.slice(0, 8);
-        if (movContainer) {
-            if (mostrarMovs.length === 0) {
-                movContainer.innerHTML = '<p class="empty-state">Nenhuma movimentação encontrada' + (dashFiltros.busca ? ' para a busca acima' : ' neste período') + '</p>';
-            } else {
-                movContainer.innerHTML = mostrarMovs.map(m => {
-                    const cliente = nomeClienteDoPedido(m.pedidoId);
-                    const pendente = m.tipo === 'entrada' && m.pagamento === 'pendente';
-                    return `<div class="mov-item${pendente ? ' mov-pendente' : ''}">
-                        <div class="mov-item-left">
-                            <div class="mov-item-icon ${m.tipo}">
-                                <i class="fas fa-arrow-${m.tipo === 'entrada' ? 'up' : 'down'}"></i>
-                            </div>
-                            <div class="mov-item-info">
-                                <h5>${m.descricao}</h5>
-                                <p>${formatDate(m.data)}${cliente ? ` · ${cliente}` : ''} · ${capitalize(m.categoria)}</p>
-                                <span class="status-badge status-${pendente ? 'pendente' : m.tipo === 'entrada' ? 'concluido' : 'cancelado'}">${pendente ? 'Pendente' : metodoPagamentoRotulo(m.pagamento)}</span>
-                            </div>
-                        </div>
-                        <div class="mov-item-value ${m.tipo}">${m.tipo === 'entrada' ? '+' : '-'}${formatCurrency(m.valor)}</div>
-                    </div>`;
-                }).join('');
-            }
-        }
-
-        desenharGraficoBarras();
-        desenharDonutServicos();
-    } catch (e) {
-        console.error('renderAdminDashboard stats:', e);
-    }
-
-    // Sub-renders em try/catch para não derrubar a soma acima.
-    try { renderServicos(); } catch (e) { console.error(e); }
-    try { renderMateriais(); } catch (e) { console.error(e); }
-    try { renderPedidos(); } catch (e) { console.error(e); }
-    try { renderMovimentacoes(); } catch (e) { console.error(e); }
-    try { renderClientes(); } catch (e) { console.error(e); }
+    renderServicos();
+    renderMateriais();
+    renderPedidos();
+    renderMovimentacoes();
+    renderClientes();
+    
+    const totalClientes = (DB.clientes || []).length;
+    const totalMateriais = (DB.materiais || []).length;
+    
+    const pedidos = DB.pedidos || [];
+    const pedidosAtivos = pedidos.filter(p => p.status !== 'concluido' && p.status !== 'cancelado').length;
+    
+    const movimentacoes = DB.movimentacoes || [];
+    const totalEntradas = movimentacoes.filter(m => m.tipo === 'entrada').reduce((sum, m) => sum + (parseFloat(m.valor) || 0), 0);
+    
+    const statReceita = document.getElementById('statReceita');
+    if (statReceita) statReceita.textContent = formatCurrency(totalEntradas);
+    
+    const statPedidos = document.getElementById('statPedidos');
+    if (statPedidos) statPedidos.textContent = pedidosAtivos;
+    
+    const statClientes = document.getElementById('statClientes');
+    if (statClientes) statClientes.textContent = totalClientes;
+    
+    const statMateriais = document.getElementById('statMateriais');
+    if (statMateriais) statMateriais.textContent = totalMateriais;
+    
+    desenharGraficoBarras(movimentacoes);
+    renderizarDonutServicos(pedidos, movimentacoes);
+    renderizarUltimosPedidosDashboard(pedidos);
+    aplicarFiltrosDashboard();
+    atualizarTotaisFinanceiro();
 }
 
 // ==========================================
@@ -434,137 +815,92 @@ function abrirNovoPedidoModal(ev, clienteId) {
 }
 function abrirNovaMovimentacaoModal() {
     clearForm('movimentacao');
-    const movIdEl = document.getElementById('movId');
-    if (movIdEl) movIdEl.value = '';
+    document.getElementById('movId').value = '';
     document.getElementById('movTipo').value = 'entrada';
     document.getElementById('movData').value = new Date().toISOString().substring(0,10);
     openModal('movimentacaoModal');
 }
 
 function renderServicos() {
-    const list = document.getElementById('listaServicosAdmin');
+    const list = document.getElementById('listaServicosAdmin') || document.getElementById('adminServicosList');
     if (!list) return;
+    if (!DB.servicos || DB.servicos.length === 0) {
+        list.innerHTML = '<div class="empty-state" style="grid-column:1/-1;text-align:center;padding:30px;"><p>Nenhum serviço cadastrado.</p></div>';
+        return;
+    }
     list.innerHTML = DB.servicos.map(s => `
-        <div class="card" data-id="${String(s.id).replace(/"/g, '&quot;')}">
-            ${s.imagem
-                ? `<img src="${s.imagem}" alt="${s.nome}" style="width:100%;height:120px;object-fit:cover;border-radius:4px;margin-bottom:10px;">`
-                : `<div style="width:100%;height:120px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;border-radius:4px;margin-bottom:10px;color:#bbb;"><i class="fas fa-image" style="font-size:28px;"></i></div>`}
-            <h4>${s.nome}</h4>
-            <p style="font-size:12px;color:var(--text-light);height:40px;overflow:hidden;">${s.descricao || ''}</p>
-            <div style="font-weight:bold;margin:10px 0;color:var(--primary-color);">${formatCurrency(s.preco)} ${s.isPorHora ? '/ hora' : ''}</div>
-            <div style="display:flex;gap:5px;">
-                <button class="btn-secondary btn-sm" style="flex:1;" onclick="editarServico('${s.id}')"><i class="fas fa-edit"></i></button>
-                <button class="btn-danger btn-sm" style="flex:1;" onclick="excluirServico('${s.id}')"><i class="fas fa-trash"></i></button>
+        <div class="card item-card">
+            <div class="item-card-image" style="height:140px;position:relative;background:#f1f5f9;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:8px 8px 0 0;">
+                ${s.imagem ? `<img src="${s.imagem}" alt="${s.nome}" style="width:100%;height:100%;object-fit:cover;">` : `<i class="fas ${s.icone || 'fa-music'}" style="font-size:36px;color:#94a3b8;"></i>`}
+            </div>
+            <div class="card-body" style="padding:16px;">
+                <h4 style="margin:0 0 6px 0;font-size:16px;">${s.nome}</h4>
+                <p style="font-size:13px;color:var(--text-light);min-height:38px;line-height:1.4;margin:0 0 10px 0;">${s.descricao || 'Sem descrição'}</p>
+                <div style="font-size:16px;font-weight:700;color:var(--primary);margin-bottom:12px;">${formatCurrency(s.preco)} ${s.duracao ? `<small style="font-size:12px;font-weight:400;color:#64748b;">· ${s.duracao}</small>` : ''}</div>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn-secondary btn-sm" style="flex:1;" onclick="editarServico('${s.id}')"><i class="fas fa-edit"></i> Editar</button>
+                    <button class="btn-danger btn-sm" style="flex:1;" onclick="excluirServico('${s.id}')"><i class="fas fa-trash"></i> Excluir</button>
+                </div>
             </div>
         </div>
     `).join('');
 }
 
 function editarServico(id) {
-    const s = DB.servicos.find(x => String(x.id) === String(id));
+    const s = DB.servicos.find(x => x.id === parseInt(id) || x.id === id);
     if (!s) return;
     clearForm('servico');
     document.getElementById('servicoId').value = s.id;
-    document.getElementById('servicoNome').value = s.nome || '';
-    document.getElementById('servicoDescricao').value = s.descricao || '';
+    document.getElementById('servicoNome').value = s.nome;
+    document.getElementById('servicoDescricao').value = s.descricao;
     
-    let precoFmt = Number(s.preco || 0).toFixed(2).replace('.', ',');
+    let precoFmt = Number(s.preco).toFixed(2).replace('.', ',');
     document.getElementById('servicoPreco').value = precoFmt;
     
     if (document.getElementById('servicoDuracao')) document.getElementById('servicoDuracao').value = s.duracao || '';
     if (document.getElementById('servicoIcone')) document.getElementById('servicoIcone').value = s.icone || 'fa-cog';
     if (document.getElementById('servicoCategoria')) document.getElementById('servicoCategoria').value = s.categoria || 'outro';
     
-    const imgPreview = document.getElementById('servicoImagemPreview');
-    const wrapper = document.getElementById('servicoPreviewWrapper');
-    const ph = document.getElementById('servicoImgPreview');
-    const info = document.getElementById('servicoImgInfo');
-    const input = document.getElementById('servicoImagem');
-
     if (s.imagem) {
-        if (imgPreview) { imgPreview.src = s.imagem; imgPreview.style.display = 'block'; }
-        if (wrapper) wrapper.style.display = 'block';
-        if (ph) ph.style.display = 'none';
-        if (info) info.textContent = 'Imagem atual';
-        if (input) input.dataset.base64 = s.imagem;
-    } else {
-        removerImagemServico();
+        document.getElementById('servicoImagemPreview').src = s.imagem;
+        document.getElementById('servicoImagemPreview').style.display = 'block';
     }
     openModal('servicoModal');
 }
 
-function removerImagemServico(e) {
-    if (e) { e.stopPropagation(); e.preventDefault(); }
-    const img = document.getElementById('servicoImagemPreview');
-    const wrapper = document.getElementById('servicoPreviewWrapper');
-    const ph = document.getElementById('servicoImgPreview');
-    const input = document.getElementById('servicoImagem');
-    if (img) { img.src = ''; img.style.display = 'none'; }
-    if (wrapper) wrapper.style.display = 'none';
-    if (ph) ph.style.display = 'block';
-    if (input) { input.value = ''; delete input.dataset.base64; }
-}
-
-function removerImagemMaterial(e) {
-    if (e) { e.stopPropagation(); e.preventDefault(); }
-    const img = document.getElementById('materialImagemPreview');
-    const wrapper = document.getElementById('materialPreviewWrapper');
-    const ph = document.getElementById('materialImgPreview');
-    const input = document.getElementById('materialImagem');
-    if (img) { img.src = ''; img.style.display = 'none'; }
-    if (wrapper) wrapper.style.display = 'none';
-    if (ph) ph.style.display = 'block';
-    if (input) { input.value = ''; delete input.dataset.base64; }
-}
-
 async function excluirServico(id) {
     if (!confirm('Excluir este serviço?')) return;
-    const s = DB.servicos.find(x => String(x.id) === String(id));
-    DB.servicos = DB.servicos.filter(x => String(x.id) !== String(id));
-    const delId = s?.id || s?.docId;
-    if (DBReady && delId) await DB_SERVICE.deleteServico(delId);
+    const s = DB.servicos.find(x => x.id === id || x.id === parseInt(id));
+    DB.servicos = DB.servicos.filter(x => x.id !== id && x.id !== parseInt(id));
+    if (DBReady && s) await DB_SERVICE.deleteServico(s.docId || s.id);
     renderServicos();
+    renderAdminDashboard();
     showToast('Serviço excluído', 'success');
 }
 
 async function salvarServico() {
     const id = document.getElementById('servicoId').value;
     const imgEl = document.getElementById('servicoImagemPreview');
-    const inputEl = document.getElementById('servicoImagem');
-    const wrapper = document.getElementById('servicoPreviewWrapper');
-    
-    let img = inputEl?.dataset?.base64 || '';
-    if (!img && inputEl?.files && inputEl.files[0]) {
-        img = await processarImagem(inputEl.files[0]).catch(() => '');
-    }
-    if (!img && imgEl && imgEl.src && !imgEl.src.endsWith('/')) {
-        img = imgEl.src;
-    }
+    const img = (imgEl && imgEl.style.display !== 'none' && imgEl.src) ? imgEl.src : null;
     
     let strPreco = document.getElementById('servicoPreco').value || '0';
     const precoFloat = parseFloat(strPreco.replace(/\./g, '').replace(',', '.')) || 0;
 
     const data = {
-        nome: document.getElementById('servicoNome').value.trim(),
-        descricao: document.getElementById('servicoDescricao').value.trim(),
+        nome: document.getElementById('servicoNome').value,
+        descricao: document.getElementById('servicoDescricao').value,
         preco: precoFloat,
         duracao: document.getElementById('servicoDuracao') ? document.getElementById('servicoDuracao').value : '',
         icone: document.getElementById('servicoIcone') ? document.getElementById('servicoIcone').value : 'fa-cog',
         categoria: document.getElementById('servicoCategoria') ? document.getElementById('servicoCategoria').value : 'outro',
-        imagem: img || ''
+        imagem: img
     };
-
-    if (!data.nome) {
-        showToast('Informe o nome do serviço!', 'error');
-        return;
-    }
     
     if (id) {
-        const item = DB.servicos.find(x => String(x.id) === String(id));
+        const item = DB.servicos.find(x => x.id === parseInt(id) || x.id === id);
         if (item) {
             Object.assign(item, data);
-            const updId = item.id || item.docId;
-            if (DBReady && updId) await DB_SERVICE.updateServico(updId, data);
+            if (DBReady) await DB_SERVICE.updateServico(item.docId || item.id, data);
         }
     } else {
         if (DBReady) {
@@ -572,115 +908,97 @@ async function salvarServico() {
             data.id = res.id;
             data.docId = res.id;
         } else {
-            data.id = 'serv_' + Date.now();
+            data.id = Date.now();
+            data.docId = data.id;
         }
         DB.servicos.push(data);
     }
     
     closeAllModals();
     renderServicos();
-    showToast('Serviço salvo com sucesso!', 'success');
+    renderAdminDashboard();
+    showToast('Serviço salvo', 'success');
 }
 
 // ==========================================
 // MATERIAIS
 // ==========================================
 function renderMateriais() {
-    const list = document.getElementById('listaMateriaisAdmin');
+    const list = document.getElementById('listaMateriaisAdmin') || document.getElementById('adminMateriaisList');
     if (!list) return;
+    if (!DB.materiais || DB.materiais.length === 0) {
+        list.innerHTML = '<div class="empty-state" style="grid-column:1/-1;text-align:center;padding:30px;"><p>Nenhum material cadastrado.</p></div>';
+        return;
+    }
     list.innerHTML = DB.materiais.map(m => `
-        <div class="card" data-id="${String(m.id).replace(/"/g, '&quot;')}">
-            ${m.imagem
-                ? `<img src="${m.imagem}" alt="${m.nome}" style="width:100%;height:120px;object-fit:cover;border-radius:4px;margin-bottom:10px;">`
-                : `<div style="width:100%;height:120px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;border-radius:4px;margin-bottom:10px;color:#bbb;"><i class="fas fa-cube" style="font-size:28px;"></i></div>`}
-            <h4>${m.nome}</h4>
-            <p style="font-size:12px;color:var(--text-light);height:40px;overflow:hidden;">${m.descricao || ''}</p>
-            <div style="font-weight:bold;margin:10px 0;color:var(--primary-color);">${formatCurrency(m.preco)}</div>
-            <div style="display:flex;gap:5px;">
-                <button class="btn-secondary btn-sm" style="flex:1;" onclick="editarMaterial('${m.id}')"><i class="fas fa-edit"></i></button>
-                <button class="btn-danger btn-sm" style="flex:1;" onclick="excluirMaterial('${m.id}')"><i class="fas fa-trash"></i></button>
+        <div class="card item-card">
+            <div class="item-card-image" style="height:140px;position:relative;background:#f1f5f9;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:8px 8px 0 0;">
+                ${m.imagem ? `<img src="${m.imagem}" alt="${m.nome}" style="width:100%;height:100%;object-fit:cover;">` : `<i class="fas ${getCategoriaIcon(m.categoria)}" style="font-size:36px;color:#94a3b8;"></i>`}
+            </div>
+            <div class="card-body" style="padding:16px;">
+                <h4 style="margin:0 0 6px 0;font-size:16px;">${m.nome}</h4>
+                <p style="font-size:13px;color:var(--text-light);min-height:38px;line-height:1.4;margin:0 0 10px 0;">${m.descricao || 'Sem descrição'}</p>
+                <div style="font-size:16px;font-weight:700;color:var(--primary);margin-bottom:12px;">${formatCurrency(m.preco)}</div>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn-secondary btn-sm" style="flex:1;" onclick="editarMaterial('${m.id}')"><i class="fas fa-edit"></i> Editar</button>
+                    <button class="btn-danger btn-sm" style="flex:1;" onclick="excluirMaterial('${m.id}')"><i class="fas fa-trash"></i> Excluir</button>
+                </div>
             </div>
         </div>
     `).join('');
 }
 
 function editarMaterial(id) {
-    const m = DB.materiais.find(x => String(x.id) === String(id));
+    const m = DB.materiais.find(x => x.id === parseInt(id) || x.id === id);
     if (!m) return;
     clearForm('material');
     document.getElementById('materialId').value = m.id;
-    document.getElementById('materialNome').value = m.nome || '';
-    document.getElementById('materialDescricao').value = m.descricao || '';
+    document.getElementById('materialNome').value = m.nome;
+    document.getElementById('materialDescricao').value = m.descricao;
     
-    let precoFmt = Number(m.preco || 0).toFixed(2).replace('.', ',');
+    let precoFmt = Number(m.preco).toFixed(2).replace('.', ',');
     document.getElementById('materialPreco').value = precoFmt;
 
     if (document.getElementById('materialCategoria')) document.getElementById('materialCategoria').value = m.categoria || 'outro';
     
-    const imgPreview = document.getElementById('materialImagemPreview');
-    const wrapper = document.getElementById('materialPreviewWrapper');
-    const ph = document.getElementById('materialImgPreview');
-    const info = document.getElementById('materialImgInfo');
-    const input = document.getElementById('materialImagem');
-
     if (m.imagem) {
-        if (imgPreview) { imgPreview.src = m.imagem; imgPreview.style.display = 'block'; }
-        if (wrapper) wrapper.style.display = 'block';
-        if (ph) ph.style.display = 'none';
-        if (info) info.textContent = 'Imagem atual';
-        if (input) input.dataset.base64 = m.imagem;
-    } else {
-        removerImagemMaterial();
+        document.getElementById('materialImagemPreview').src = m.imagem;
+        document.getElementById('materialImagemPreview').style.display = 'block';
     }
     openModal('materialModal');
 }
 
 async function excluirMaterial(id) {
     if (!confirm('Excluir este material?')) return;
-    const m = DB.materiais.find(x => String(x.id) === String(id));
-    DB.materiais = DB.materiais.filter(x => String(x.id) !== String(id));
-    const delId = m?.id || m?.docId;
-    if (DBReady && delId) await DB_SERVICE.deleteMaterial(delId);
+    const m = DB.materiais.find(x => x.id === id || x.id === parseInt(id));
+    DB.materiais = DB.materiais.filter(x => x.id !== id && x.id !== parseInt(id));
+    if (DBReady && m) await DB_SERVICE.deleteMaterial(m.docId || m.id);
     renderMateriais();
+    renderAdminDashboard();
     showToast('Material excluído', 'success');
 }
 
 async function salvarMaterial() {
     const id = document.getElementById('materialId').value;
     const imgEl = document.getElementById('materialImagemPreview');
-    const inputEl = document.getElementById('materialImagem');
-    const wrapper = document.getElementById('materialPreviewWrapper');
-    
-    let img = inputEl?.dataset?.base64 || '';
-    if (!img && inputEl?.files && inputEl.files[0]) {
-        img = await processarImagem(inputEl.files[0]).catch(() => '');
-    }
-    if (!img && imgEl && imgEl.src && !imgEl.src.endsWith('/')) {
-        img = imgEl.src;
-    }
+    const img = (imgEl && imgEl.style.display !== 'none') ? imgEl.src : null;
     
     let strPreco = document.getElementById('materialPreco').value || '0';
     const precoFloat = parseFloat(strPreco.replace(/\./g, '').replace(',', '.')) || 0;
 
     const data = {
-        nome: document.getElementById('materialNome').value.trim(),
-        descricao: document.getElementById('materialDescricao').value.trim(),
+        nome: document.getElementById('materialNome').value,
+        descricao: document.getElementById('materialDescricao').value,
         preco: precoFloat,
         categoria: document.getElementById('materialCategoria') ? document.getElementById('materialCategoria').value : 'outro',
-        imagem: img || ''
+        imagem: img
     };
-
-    if (!data.nome) {
-        showToast('Informe o nome do material!', 'error');
-        return;
-    }
     
     if (id) {
-        const item = DB.materiais.find(x => String(x.id) === String(id));
+        const item = DB.materiais.find(x => x.id === parseInt(id) || x.id === id);
         if (item) {
             Object.assign(item, data);
-            const updId = item.id || item.docId;
-            if (DBReady && updId) await DB_SERVICE.updateMaterial(updId, data);
+            if (DBReady) await DB_SERVICE.updateMaterial(item.docId || item.id, data);
         }
     } else {
         if (DBReady) {
@@ -688,65 +1006,147 @@ async function salvarMaterial() {
             data.id = res.id;
             data.docId = res.id;
         } else {
-            data.id = 'mat_' + Date.now();
+            data.id = Date.now();
+            data.docId = data.id;
         }
         DB.materiais.push(data);
     }
     
     closeAllModals();
     renderMateriais();
-    showToast('Material salvo com sucesso!', 'success');
+    renderAdminDashboard();
+    showToast('Material salvo', 'success');
 }
 
 // ==========================================
 // PEDIDOS
 // ==========================================
-function renderPedidos() {
-    renderPedidosAdmin();
-}
+window.renderPedidosAdmin = function() {
+    renderPedidos();
+};
 
-function renderPedidosBoard() {
-    const cols = {
-        'pendente': document.getElementById('boardPendente'),
-        'em_andamento': document.getElementById('boardAndamento'),
-        'concluido': document.getElementById('boardConcluido')
-    };
-    if(!cols.pendente) return;
-    Object.values(cols).forEach(c => c.innerHTML = '');
+function renderPedidos() {
+    const tableBody = document.getElementById('pedidosAdminBody') || document.getElementById('adminPedidosList');
+    const kanbanEl = document.getElementById('kanbanPedidos');
+    const selectCliente = document.getElementById('filtroClientePedido');
     
-    DB.pedidos.forEach(p => {
-        const c = DB.clientes.find(x => x.id === p.clienteId);
-        const el = document.createElement('div');
-        el.className = 'board-card';
-        el.innerHTML = `
-            <div style="font-weight:bold;margin-bottom:5px;">${c ? c.nome : 'Pedido Avulso'}</div>
-            <div style="font-size:12px;color:var(--text-light);margin-bottom:10px;">${formatDate(p.data)}</div>
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span style="font-weight:bold;color:var(--primary-color);">${formatCurrency(valorEsperadoPedido(p))}</span>
-                <button class="btn-secondary btn-sm" onclick="editarPedido('${p.id}')">Editar</button>
-            </div>
-        `;
-        if(cols[p.status]) cols[p.status].appendChild(el);
-    });
+    if (selectCliente && selectCliente.options.length <= 1) {
+        selectCliente.innerHTML = '<option value="">Todos os clientes</option>' + (DB.clientes || []).map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+    }
+    
+    let pedidos = [...(DB.pedidos || [])];
+    
+    const filtroCli = document.getElementById('filtroClientePedido')?.value;
+    if (filtroCli) {
+        pedidos = pedidos.filter(p => p.clienteId == filtroCli);
+    }
+    
+    const busca = (document.getElementById('buscaPedidoAdmin')?.value || '').toLowerCase().trim();
+    if (busca) {
+        pedidos = pedidos.filter(p => {
+            const c = (DB.clientes || []).find(x => x.id == p.clienteId);
+            return String(p.id).includes(busca) || (c && c.nome.toLowerCase().includes(busca));
+        });
+    }
+    
+    const filtroStatus = document.getElementById('filtroStatusPedido')?.value;
+    if (filtroStatus && filtroStatus !== 'todos') {
+        pedidos = pedidos.filter(p => p.status === filtroStatus);
+    }
+    
+    // Sort recent first
+    pedidos.sort((a, b) => (b.id - a.id) || (new Date(b.data) - new Date(a.data)));
+    
+    // Render Kanban
+    if (kanbanEl) {
+        const statusMap = {
+            'pendente': { title: 'Pendente', icon: 'fa-clock', color: '#f59e0b' },
+            'em_andamento': { title: 'Em Andamento', icon: 'fa-spinner', color: '#3b82f6' },
+            'concluido': { title: 'Concluído', icon: 'fa-check-circle', color: '#10b981' },
+            'cancelado': { title: 'Cancelado', icon: 'fa-times-circle', color: '#ef4444' }
+        };
+        
+        kanbanEl.innerHTML = Object.keys(statusMap).map(statusKey => {
+            const conf = statusMap[statusKey];
+            const colPedidos = pedidos.filter(p => p.status === statusKey);
+            const cardsHtml = colPedidos.map(p => {
+                const c = (DB.clientes || []).find(x => x.id == p.clienteId);
+                const servs = (p.servicos || []).map(id => (DB.servicos || []).find(s => s.id == id)?.nome).filter(Boolean).join(', ') || 'Sem serviços';
+                return `
+                    <div class="kanban-card" onclick="editarPedido('${p.id}')" style="background:#fff;border-radius:8px;padding:12px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,0.1);border-left:4px solid ${conf.color};cursor:pointer;">
+                        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                            <strong style="font-size:13px;">#${p.id}</strong>
+                            <small style="color:#64748b;">${formatDate(p.data)}</small>
+                        </div>
+                        <h5 style="margin:0 0 4px 0;font-size:14px;color:#1e293b;">${c ? c.nome : 'Cliente Avulso'}</h5>
+                        <p style="font-size:12px;color:#64748b;margin:0 0 8px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${servs}</p>
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <span style="font-size:13px;font-weight:700;color:var(--primary);">${formatCurrency(p.total)}</span>
+                            <span style="font-size:11px;color:#64748b;">${(p.audios || []).length} áudio(s)</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            return `
+                <div class="kanban-col" style="background:#f8fafc;border-radius:8px;padding:12px;min-height:300px;">
+                    <div class="kanban-col-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid ${conf.color};">
+                        <span style="font-weight:600;font-size:14px;"><i class="fas ${conf.icon}" style="color:${conf.color};margin-right:6px;"></i>${conf.title}</span>
+                        <span class="badge" style="background:${conf.color};color:#fff;border-radius:12px;padding:2px 8px;font-size:11px;">${colPedidos.length}</span>
+                    </div>
+                    <div class="kanban-cards">
+                        ${cardsHtml || '<div style="text-align:center;color:#94a3b8;font-size:12px;padding:20px;">Vazio</div>'}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+    
+    // Render Table
+    if (tableBody) {
+        if (pedidos.length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding:20px;">Nenhum pedido encontrado.</td></tr>';
+            return;
+        }
+        tableBody.innerHTML = pedidos.map(p => {
+            const c = (DB.clientes || []).find(x => x.id == p.clienteId);
+            const servs = (p.servicos || []).map(id => (DB.servicos || []).find(s => s.id == id)?.nome).filter(Boolean).join(', ') || 'Nenhum';
+            return `
+            <tr>
+                <td><strong>#${p.id}</strong></td>
+                <td>${c ? c.nome : 'Cliente #' + p.clienteId}</td>
+                <td><small>${servs}</small></td>
+                <td><strong>${formatCurrency(p.total)}</strong></td>
+                <td><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></td>
+                <td>${formatDate(p.data)}</td>
+                <td>
+                    <button class="btn-icon" onclick="editarPedido('${p.id}')" title="Editar"><i class="fas fa-edit"></i></button>
+                    <button class="btn-icon text-danger" onclick="excluirPedido('${p.id}')" title="Excluir"><i class="fas fa-trash"></i></button>
+                </td>
+            </tr>
+            `;
+        }).join('');
+    }
 }
 
 function editarPedido(id) {
-    const p = DB.pedidos.find(x => String(x.id) === String(id));
+    const p = DB.pedidos.find(x => x.id == id);
     if (!p) return;
     clearForm('pedido');
     document.getElementById('pedidoId').value = p.id;
-    document.getElementById('pedidoCliente').innerHTML = DB.clientes.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+    document.getElementById('pedidoCliente').innerHTML = (DB.clientes || []).map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
     document.getElementById('pedidoCliente').value = p.clienteId;
     document.getElementById('pedidoStatus').value = p.status;
     
-    // Checkboxes for servicos and materiais
-    const servicosHtml = DB.servicos.map(s => `<label><input type="checkbox" value="${String(s.id).replace(/"/g, '&quot;')}" ${((p.servicos)||[]).some(id => String(id) === String(s.id)) ? 'checked' : ''} onchange="updatePedidoTotal()"> ${s.nome} (${formatCurrency(s.preco)})</label>`).join('');
+    const pServs = p.servicos || [];
+    const pMats = p.materiais || [];
+    const servicosHtml = (DB.servicos || []).map(s => `<label><input type="checkbox" value="${s.id}" ${pServs.includes(s.id) ? 'checked' : ''} onchange="updatePedidoTotal()"> ${s.nome} (${formatCurrency(s.preco)})</label>`).join('');
     document.getElementById('pedidoServicos').innerHTML = servicosHtml;
     
-    const materiaisHtml = DB.materiais.map(m => `<label><input type="checkbox" value="${String(m.id).replace(/"/g, '&quot;')}" ${((p.materiais)||[]).some(id => String(id) === String(m.id)) ? 'checked' : ''} onchange="updatePedidoTotal()"> ${m.nome} (${formatCurrency(m.preco)})</label>`).join('');
+    const materiaisHtml = (DB.materiais || []).map(m => `<label><input type="checkbox" value="${m.id}" ${pMats.includes(m.id) ? 'checked' : ''} onchange="updatePedidoTotal()"> ${m.nome} (${formatCurrency(m.preco)})</label>`).join('');
     document.getElementById('pedidoMateriais').innerHTML = materiaisHtml;
     
-    document.getElementById('pedidoDesconto').value = p.desconto ? fmtValorBR(p.desconto) : '0,00';
+    document.getElementById('pedidoDesconto').value = p.desconto ? fmtCalc(p.desconto) : '0,00';
     document.getElementById('pedidoQtdFaixas').value = p.qtdFaixas || 1;
     if(document.getElementById('pedidoHoraInicial')) document.getElementById('pedidoHoraInicial').value = p.horaInicial || '';
     if(document.getElementById('pedidoHoraFinal')) document.getElementById('pedidoHoraFinal').value = p.horaFinal || '';
@@ -756,48 +1156,27 @@ function editarPedido(id) {
 
 async function excluirPedido(id) {
     if (!confirm('Excluir este pedido?')) return;
-    const p = DB.pedidos.find(x => String(x.id) === String(id));
-    DB.pedidos = DB.pedidos.filter(x => String(x.id) !== String(id));
-    if (DBReady && p?.docId) await DB_SERVICE.deletePedido(p.docId);
-    if (p) {
-        const porId = (DB.movimentacoes || []).filter(m => m.pedidoId != null && String(m.pedidoId) === String(id));
-        const porRef = (DB.movimentacoes || []).filter(m => movRefereAoPedido(m, id));
-        const vistos = new Set();
-        const movsRemover = [...porId, ...porRef].filter(m => {
-            if (vistos.has(m.id)) return false;
-            vistos.add(m.id);
-            return true;
-        });
-        for (const mov of movsRemover) {
-            DB.movimentacoes = DB.movimentacoes.filter(m => m.id !== mov.id);
-            if (DBReady && mov.docId) {
-                try { await DB_SERVICE.deleteMovimentacao(mov.docId); } catch (e) {}
-            }
-        }
-    }
-    try { renderPedidos(); } catch (e) { console.error(e); }
-    try { renderFinanceiro(); } catch (e) { console.error(e); }
-    try { renderAdminDashboard(); } catch (e) { console.error(e); }
+    const p = DB.pedidos.find(x => x.id == id);
+    DB.pedidos = DB.pedidos.filter(x => x.id != id);
+    if (DBReady && p) await DB_SERVICE.deletePedido(p.docId || p.id);
+    renderPedidos();
+    renderAdminDashboard();
     showToast('Pedido excluído', 'success');
 }
 
 window.updatePedidoTotal = function() {
     let t = 0;
-    try {
-        [...document.querySelectorAll('#pedidoServicos input:checked')].forEach(cb => {
-            const s = DB.servicos.find(x => String(x.id) === String(cb.value));
-            if(s) t += Number(s.preco) || 0;
-        });
-        [...document.querySelectorAll('#pedidoMateriais input:checked')].forEach(cb => {
-            const m = DB.materiais.find(x => String(x.id) === String(cb.value));
-            if(m) t += Number(m.preco) || 0;
-        });
-    } catch (e) { console.error('updatePedidoTotal', e); }
-    t = Math.round(t * 100) / 100;
-    const descEl = document.getElementById('pedidoDesconto');
-    const descStr = descEl ? descEl.value : '';
-    const desc = parseFloat(String(descStr || '0').replace(/\./g, '').replace(',', '.')) || 0;
-    t = Math.max(0, Math.round((t - desc) * 100) / 100);
+    [...document.querySelectorAll('#pedidoServicos input:checked')].forEach(cb => {
+        const s = (DB.servicos || []).find(x => x.id == cb.value);
+        if(s) t += s.preco;
+    });
+    [...document.querySelectorAll('#pedidoMateriais input:checked')].forEach(cb => {
+        const m = (DB.materiais || []).find(x => x.id == cb.value);
+        if(m) t += m.preco;
+    });
+    const descStr = document.getElementById('pedidoDesconto')?.value || '0';
+    const desc = parseFloat(descStr.replace(/\./g, '').replace(',', '.')) || 0;
+    t = Math.max(0, t - desc);
     const prev = document.getElementById('pedidoTotalPreview');
     if(prev) prev.textContent = formatCurrency(t);
     return {t, desc};
@@ -811,77 +1190,40 @@ async function salvarPedido() {
     if (horaInicial || horaFinal) {
         if (!validarHorarioEstudio(horaInicial, horaFinal)) return;
     }
-    const servicos = [...document.querySelectorAll('#pedidoServicos input:checked')].map(cb => cb.value);
-    const materiais = [...document.querySelectorAll('#pedidoMateriais input:checked')].map(cb => cb.value);
+    const servicos = [...document.querySelectorAll('#pedidoServicos input:checked')].map(cb => parseInt(cb.value) || cb.value);
+    const materiais = [...document.querySelectorAll('#pedidoMateriais input:checked')].map(cb => parseInt(cb.value) || cb.value);
     
     const data = {
-        clienteId: parseInt(document.getElementById('pedidoCliente').value),
+        clienteId: document.getElementById('pedidoCliente').value,
         status: document.getElementById('pedidoStatus').value,
         servicos, materiais,
         desconto: desc,
         total: t,
+        data: document.getElementById('pedidoData')?.value || new Date().toISOString().split('T')[0],
         qtdFaixas: parseInt(document.getElementById('pedidoQtdFaixas').value) || 1,
         horaInicial, horaFinal
     };
     
-    let salvo = data;
     if (id) {
-        const item = DB.pedidos.find(x => String(x.id) === String(id));
+        const item = DB.pedidos.find(x => x.id == id);
         if (item) {
             Object.assign(item, data);
-            salvo = item;
-            if (DBReady && item.docId) await DB_SERVICE.updatePedido(item.docId, data);
+            if (DBReady) await DB_SERVICE.updatePedido(item.docId || item.id, data);
         }
     } else {
-        data.id = 'ped_' + Date.now();
         if (DBReady) {
-            try {
-                const res = await DB_SERVICE.addPedido(data);
-                if (res && res.id) {
-                    data.docId = res.id;
-                    data.id = res.id;
-                }
-            } catch (e) {
-                console.error('Erro ao criar pedido:', e);
-                showToast(e && e.message ? e.message : 'Erro ao criar pedido no servidor', 'error');
-            }
+            const res = await DB_SERVICE.addPedido(data);
+            data.id = res.id;
+            data.docId = res.id;
+        } else {
+            data.id = Date.now();
+            data.docId = data.id;
         }
         DB.pedidos.push(data);
     }
-    await sincronizarFinanceiroPedido(salvo);
-
-    // Notificar o cliente no chat (pedido criado pelo admin)
-    if (!id && data.clienteId != null) {
-        const chatKey = `admin_${data.clienteId}`;
-        if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
-        const nomesS = (data.servicos || []).map(sid => { const s = DB.servicos.find(x => String(x.id) === String(sid)); return s ? s.nome : ''; }).filter(Boolean);
-        const nomesM = (data.materiais || []).map(mid => { const m = DB.materiais.find(x => String(x.id) === String(mid)); return m ? m.nome : ''; }).filter(Boolean);
-        const msgPedido = {
-            tipo: 'pedido',
-            remetente: 'admin',
-            clienteId: data.clienteId,
-            pedidoId: data.id,
-            mensagem: `Pedido #${data.id} - ${formatCurrency(data.total || 0)}`,
-            descricao: [...nomesS, ...nomesM].join(', ') || 'Pedido registrado pelo estúdio',
-            valor: data.total || 0,
-            data: new Date().toISOString(),
-            lida: false
-        };
-        DB.chats[chatKey].push(msgPedido);
-        if (DBReady) {
-            try {
-                const resMsg = await DB_SERVICE.sendMessage(msgPedido);
-                if (resMsg && resMsg.id) msgPedido.id = resMsg.id;
-            } catch (e) { console.warn('Erro ao notificar pedido no chat:', e); }
-        }
-        updateChatBadge();
-    }
-
     closeAllModals();
     renderPedidos();
-    renderFinanceiro();
     renderAdminDashboard();
-    if (document.getElementById('chatListAdmin')) renderChatList();
     showToast('Pedido salvo', 'success');
 }
 
@@ -889,45 +1231,51 @@ async function salvarPedido() {
 // MOVIMENTAÇÕES
 // ==========================================
 function renderMovimentacoes() {
-    const filtroTipoEl = document.getElementById('filtroTipoMov');
-    const dataInicioEl = document.getElementById('filtroDataInicio');
-    const dataFimEl = document.getElementById('filtroDataFim');
-    const filtroTipo = filtroTipoEl ? filtroTipoEl.value : 'todos';
-    const dataInicio = dataInicioEl ? dataInicioEl.value : '';
-    const dataFim = dataFimEl ? dataFimEl.value : '';
-
+    const list = document.getElementById('movimentacoesBody') || document.getElementById('adminMovimentacoesList');
+    if (!list) return;
+    
     let movs = [...(DB.movimentacoes || [])];
-    if (filtroTipo !== 'todos') movs = movs.filter(m => m.tipo === filtroTipo);
-    if (dataInicio) movs = movs.filter(m => String(m.data || '').slice(0, 10) >= dataInicio);
-    if (dataFim) movs = movs.filter(m => String(m.data || '').slice(0, 10) <= dataFim);
+    
+    const fTipo = document.getElementById('filtroTipoMov')?.value;
+    if (fTipo && fTipo !== 'todos') {
+        movs = movs.filter(m => m.tipo === fTipo);
+    }
+    
+    const dtIni = document.getElementById('filtroDataInicio')?.value;
+    const dtFim = document.getElementById('filtroDataFim')?.value;
+    if (dtIni) movs = movs.filter(m => m.data >= dtIni);
+    if (dtFim) movs = movs.filter(m => m.data <= dtFim);
+    
+    movs.sort((a,b) => (b.data || '').localeCompare(a.data || '') || (b.id - a.id));
+    
+    if (movs.length === 0) {
+        list.innerHTML = '<tr><td colspan="7" class="text-center" style="padding:20px;">Nenhuma movimentação financeira encontrada.</td></tr>';
+        atualizarTotaisFinanceiro();
+        return;
+    }
+    
+    list.innerHTML = movs.map(m => {
+        const isEntrada = m.tipo === 'entrada';
+        return `
+        <tr>
+            <td>${formatDate(m.data)} ${m.hora || ''}</td>
+            <td><strong>${m.descricao || 'Movimentação'}</strong></td>
+            <td><span class="badge" style="background:${isEntrada ? 'var(--success)' : 'var(--danger)'};color:#fff;border-radius:4px;padding:3px 8px;font-size:12px;">${isEntrada ? 'Entrada' : 'Saída'}</span></td>
+            <td>${capitalize(m.categoria || 'outro')}</td>
+            <td style="font-weight:bold;color:${isEntrada ? 'var(--success)' : 'var(--danger)'}">${formatCurrency(m.valor)}</td>
+            <td>${m.metodo || 'PIX'}</td>
+            <td>
+                <button class="btn-icon" onclick="editarMovimentacao('${m.id}')" title="Editar"><i class="fas fa-edit"></i></button>
+                <button class="btn-icon text-danger" onclick="excluirMovimentacao('${m.id}')" title="Excluir"><i class="fas fa-trash"></i></button>
+            </td>
+        </tr>
+    `}).join('');
 
-    movs.sort((a, b) => new Date(b.data) - new Date(a.data));
-
-    const tbody = document.getElementById('movimentacoesBody');
-    if (!tbody) return;
-    tbody.innerHTML = movs.map(m => {
-        const pidMov = m.pedidoId || ((m.descricao || '').match(/Pedido #(\d+)/) ? parseInt((m.descricao || '').match(/Pedido #(\d+)/)[1]) : null);
-        return `<tr class="${m.pagamento === 'pendente' ? 'mov-pendente' : ''}">
-        <td>${formatDataHoraMov(m)}</td>
-        <td>${m.descricao}</td>
-        <td><span class="status-badge status-${m.tipo === 'entrada' ? 'concluido' : 'cancelado'}">${capitalize(m.tipo)}</span></td>
-        <td>${capitalize(m.categoria)}</td>
-        <td class="mov-item-value ${m.tipo}">${m.tipo === 'entrada' ? '+' : '-'}${formatCurrency(m.valor)}</td>
-        <td>${m.pagamento === 'pendente'
-            ? `<span class="status-badge status-pendente">Pendente</span>`
-            : metodoPagamentoRotulo(m.pagamento)}</td>
-        <td>
-            <div class="table-actions">
-                ${m.pagamento === 'pendente' && pidMov ? `<button class="btn-primary btn-sm" onclick="confirmarPagamentoPedidoAdmin('${pidMov}')" title="Confirmar Pagamento"><i class="fas fa-check-circle"></i> Confirmar</button>` : ''}
-                <button class="btn-del" onclick="excluirMovimentacao('${m.id}')" title="Excluir"><i class="fas fa-trash"></i></button>
-            </div>
-        </td>
-    </tr>`;
-    }).join('');
+    atualizarTotaisFinanceiro();
 }
 
 function editarMovimentacao(id) {
-    const m = DB.movimentacoes.find(x => x.id === id);
+    const m = DB.movimentacoes.find(x => x.id == id);
     if (!m) return;
     clearForm('movimentacao');
     document.getElementById('movId').value = m.id;
@@ -939,102 +1287,106 @@ function editarMovimentacao(id) {
 }
 
 async function excluirMovimentacao(id) {
-    if (!confirm('Tem certeza que deseja excluir esta movimentação?')) return;
-    const item = DB.movimentacoes.find(m => String(m.id) === String(id));
-    DB.movimentacoes = DB.movimentacoes.filter(m => String(m.id) !== String(id));
-    if (DBReady && item?.docId) await DB_SERVICE.deleteMovimentacao(item.docId);
-    renderFinanceiro();
+    if (!confirm('Excluir esta movimentação?')) return;
+    const m = DB.movimentacoes.find(x => x.id == id);
+    DB.movimentacoes = DB.movimentacoes.filter(x => x.id != id);
+    if (DBReady && m) await DB_SERVICE.deleteMovimentacao(m.docId || m.id);
+    renderMovimentacoes();
     renderAdminDashboard();
-    showToast('Movimentação excluída!', 'success');
+    showToast('Movimentação excluída', 'success');
 }
 
 async function salvarMovimentacao() {
+    const id = document.getElementById('movId').value;
     const data = {
         tipo: document.getElementById('movTipo').value,
         descricao: document.getElementById('movDescricao').value,
-        valor: parseValorBR(document.getElementById('movValor').value),
-        categoria: document.getElementById('movCategoria').value,
-        pagamento: document.getElementById('movPagamento').value,
+        valor: Number(document.getElementById('movValor').value) || 0,
+        categoria: document.getElementById('movCategoria')?.value || 'outro',
+        metodo: document.getElementById('movMetodo')?.value || 'PIX',
         data: document.getElementById('movData').value || new Date().toISOString().split('T')[0],
-        hora: agoraHora()
+        hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
     };
-
-    if (!data.descricao || !data.valor) {
-        showToast('Preencha descrição e valor!', 'error');
-        return;
-    }
-
-    data.id = DB.nextId.movimentacao++;
-    DB.movimentacoes.push(data);
-    if (DBReady) {
-        try {
-            const resDoc = await DB_SERVICE.addMovimentacao(data);
-            data.docId = resDoc && resDoc.id ? resDoc.id : resDoc;
-        } catch (e) {
-            console.error('Falha ao persistir movimentação:', e);
-            showToast(e && e.message ? e.message : 'Falha ao sincronizar movimentação', 'error');
+    
+    if (id) {
+        const item = DB.movimentacoes.find(x => x.id == id);
+        if (item) {
+            Object.assign(item, data);
+            if (DBReady) await DB_SERVICE.updateMovimentacao(item.docId || item.id, data);
         }
+    } else {
+        if (DBReady) {
+            const res = await DB_SERVICE.addMovimentacao(data);
+            data.id = res.id;
+            data.docId = res.id;
+        } else {
+            data.id = Date.now();
+            data.docId = data.id;
+        }
+        DB.movimentacoes.push(data);
     }
-
     closeAllModals();
-    renderFinanceiro();
+    renderMovimentacoes();
     renderAdminDashboard();
-    if (data.tipo === 'entrada' && data.pagamento !== 'pendente') celebratePayment();
-    showToast('Movimentação registrada!', 'success');
-    clearForm('mov');
+    showToast('Movimentação salva', 'success');
 }
 
 function htmlResumoMovimentacoesCliente(pedidos) {
-    const ativos = pedidos.filter(p => p.status !== 'cancelado');
-    const totalPedidos = ativos.reduce((sum, p) => sum + valorEsperadoPedido(p), 0);
-    const pagos = ativos.reduce((sum, p) => sum + valorPagoPedido(p), 0);
+    let totalPedidos = pedidos.reduce((sum, p) => sum + Number(p.total || 0), 0);
+    let pagos = (DB.movimentacoes || []).filter(m => pedidos.some(p => p.id == m.pedidoId) && m.tipo === 'entrada').reduce((sum, m) => sum + Number(m.valor || 0), 0);
     return `
-        <div style="margin-top:10px;padding:10px;background:var(--bg-lighter);border-radius:4px;border:1px solid var(--border-color);">
-            <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
+        <div style="margin:8px 0;padding:12px;background:#f1f5f9;border-radius:6px;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
                 <span>Total em Pedidos:</span>
                 <strong>${formatCurrency(totalPedidos)}</strong>
             </div>
-            <div style="display:flex;justify-content:space-between;margin-bottom:5px;color:var(--success-color);">
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px;color:var(--success);">
                 <span>Total Pago:</span>
                 <strong>${formatCurrency(pagos)}</strong>
             </div>
-            <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border-color);padding-top:5px;font-weight:bold;color:var(--danger-color);">
-                <span>Em Aberto:</span>
-                <span>${formatCurrency(Math.max(0, Math.round((totalPedidos - pagos) * 100) / 100))}</span>
+            <div style="display:flex;justify-content:space-between;border-top:1px solid #cbd5e1;padding-top:6px;font-weight:bold;color:var(--danger);">
+                <span>Saldo Pendente:</span>
+                <span>${formatCurrency(Math.max(0, totalPedidos - pagos))}</span>
             </div>
         </div>
     `;
 }
 
-
 function renderClientes() {
-    const tbody = document.getElementById('clientesBody');
-    tbody.innerHTML = DB.clientes.map(c => {
-        const pedidos = DB.pedidos.filter(p => String(p.clienteId) === String(c.id));
-        const totalGasto = pedidos.filter(p => p.status !== 'cancelado').reduce((s, p) => s + valorEsperadoPedido(p), 0);
-        const aberto = clientesExpandidos.has(c.id);
-        const tipoBadge = c.tipoPessoa === 'juridica'
-            ? '<span class="cond-badge" style="margin-left:6px;font-size:10px;">PJ</span>'
-            : (c.cpf ? '<span class="cond-badge" style="margin-left:6px;font-size:10px;">PF</span>' : '');
-        return `<tr class="cliente-row" onclick="toggleClienteDetalhe(${c.id})">
-            <td><strong>${c.nome}</strong>${tipoBadge}</td>
-            <td>${c.email}${c.instagram ? `<br><small style="color:var(--text-muted);"><i class="fab fa-instagram"></i> ${c.instagram}</small>` : ''}</td>
-            <td>${c.telefone}</td>
-            <td>${pedidos.length}</td>
+    const list = document.getElementById('clientesBody') || document.getElementById('adminClientesList');
+    if (!list) return;
+    
+    if (!DB.clientes || DB.clientes.length === 0) {
+        list.innerHTML = '<tr><td colspan="6" class="text-center" style="padding:20px;">Nenhum cliente cadastrado.</td></tr>';
+        return;
+    }
+    
+    list.innerHTML = DB.clientes.map(c => {
+        const pedidos = (DB.pedidos || []).filter(p => p.clienteId == c.id);
+        const totalGasto = pedidos.reduce((s, p) => s + (parseFloat(p.total) || 0), 0);
+        return `
+        <tr>
+            <td style="font-weight:bold;">${c.nome}</td>
+            <td>${c.email}</td>
+            <td>${c.telefone || '-'}</td>
+            <td>${pedidos.length} pedido(s)</td>
             <td><strong>${formatCurrency(totalGasto)}</strong></td>
             <td>
-                <div class="table-actions">
-                    <button title="${aberto ? 'Ocultar pedidos' : 'Ver pedidos'}" class="${aberto ? 'btn-ativo' : ''}"><i class="fas ${aberto ? 'fa-chevron-up' : 'fa-chevron-down'}"></i></button>
-                    <button onclick="editarCliente(${c.id});event.stopPropagation()" title="Editar"><i class="fas fa-edit"></i></button>
-                    <button class="btn-del" onclick="excluirCliente(${c.id});event.stopPropagation()" title="Excluir"><i class="fas fa-trash"></i></button>
-                </div>
+                <button class="btn-primary btn-sm" onclick="irParaChatComCliente('${c.id}')" title="Conversar no Chat"><i class="fas fa-comments"></i> Chat</button>
+                <button class="btn-secondary btn-sm" onclick="abrirNovoPedidoModal(null, '${c.id}')" title="Novo Pedido"><i class="fas fa-plus"></i></button>
+                <button class="btn-icon" onclick="editarCliente('${c.id}')" title="Editar"><i class="fas fa-edit"></i></button>
+                <button class="btn-icon text-danger" onclick="excluirCliente('${c.id}')" title="Excluir"><i class="fas fa-trash"></i></button>
             </td>
         </tr>
-        <tr class="cliente-detalhe" id="detalhe_${c.id}" style="${aberto ? '' : 'display:none;'}">
-            <td colspan="6"></td>
-        </tr>`;
-    }).join('');
+    `}).join('');
 }
+
+window.irParaChatComCliente = function(clienteId) {
+    irParaPagina('adminChat');
+    setTimeout(() => {
+        openChatAdmin(clienteId);
+    }, 80);
+};
 
 function toggleDetalhesCliente(id, btn) {
     const row = btn.closest('tr').nextElementSibling;
@@ -1046,7 +1398,7 @@ function toggleDetalhesCliente(id, btn) {
     } else {
         clientesExpandidos.add(id);
         
-        const pedidos = DB.pedidos.filter(p => String(p.clienteId) === String(id));
+        const pedidos = DB.pedidos.filter(p => p.clienteId === id);
         td.innerHTML = htmlResumoMovimentacoesCliente(pedidos);
         row.style.display = '';
     }
@@ -1165,13 +1517,8 @@ async function salvarCliente() {
         data.id = DB.nextId.cliente++;
         DB.clientes.push(data);
         if (DBReady) {
-            try {
-                const resDoc = await DB_SERVICE.addCliente(data);
-                data.docId = resDoc && resDoc.id ? resDoc.id : resDoc;
-            } catch (e) {
-                console.error('Falha ao persistir cliente:', e);
-                showToast(e && e.message ? e.message : 'Falha ao sincronizar cliente', 'error');
-            }
+            const docId = await DB_SERVICE.addCliente(data);
+            DB.clientes[DB.clientes.length - 1].docId = docId;
         }
     }
 
@@ -1292,12 +1639,12 @@ async function salvarPerfilClient() {
 // ============================================
 function renderClientDashboard() {
     if (!currentUser || currentUser.role !== 'client') return;
-    const meusPedidos = DB.pedidos.filter(p => String(p.clienteId) === String(currentUser.id) && p.status !== 'cancelado');
+    const meusPedidos = DB.pedidos.filter(p => p.clienteId === currentUser.id);
 
-    document.getElementById('clientStatPedidos').textContent = DB.pedidos.filter(p => String(p.clienteId) === String(currentUser.id)).length;
+    document.getElementById('clientStatPedidos').textContent = meusPedidos.length;
     document.getElementById('clientStatPendentes').textContent = meusPedidos.filter(p => p.status === 'pendente' || p.status === 'em_andamento').length;
     document.getElementById('clientStatConcluidos').textContent = meusPedidos.filter(p => p.status === 'concluido').length;
-    document.getElementById('clientStatTotal').textContent = formatCurrency(meusPedidos.reduce((s, p) => s + valorEsperadoPedido(p), 0));
+    document.getElementById('clientStatTotal').textContent = formatCurrency(meusPedidos.reduce((s, p) => s + p.total, 0));
 
     // Serviços em destaque
     const destaque = DB.servicos.slice(0, 3);
@@ -1387,12 +1734,12 @@ function renderPedidosClient() {
             <td><strong>#${p.id}</strong></td>
             <td>${servicoNomes || '-'}</td>
             <td>${materialNomes || '-'}</td>
-            <td><strong>${formatCurrency(valorEsperadoPedido(p))}</strong>${condRotulo ? `<small class="cond-badge">${condRotulo}</small>` : ''}</td>
+            <td><strong>${formatCurrency(p.total)}</strong>${condRotulo ? `<small class="cond-badge">${condRotulo}</small>` : ''}</td>
             <td><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></td>
             <td>${formatPedidoDataHora(p)}</td>
             <td>
                 <div class="table-actions">
-                    <button onclick="verDetalhesPedidoClient('${p.id}')" title="Ver Detalhes"><i class="fas fa-eye"></i></button>
+                    <button onclick="verDetalhesPedidoClient(${p.id})" title="Ver Detalhes"><i class="fas fa-eye"></i></button>
                 </div>
             </td>
         </tr>`;
@@ -1400,7 +1747,7 @@ function renderPedidosClient() {
 }
 
 function verDetalhesPedidoClient(id) {
-    const p = DB.pedidos.find(x => String(x.id) === String(id));
+    const p = DB.pedidos.find(x => x.id === id);
     if (!p) return;
     const servicos = p.servicos.map(id => DB.servicos.find(s => s.id === id)).filter(Boolean);
     const materiais = p.materiais.map(id => DB.materiais.find(m => m.id === id)).filter(Boolean);
@@ -1430,47 +1777,17 @@ function verDetalhesPedidoClient(id) {
         html += `</div>`;
     }
 
-    // Seção de Áudios de Pedidos (MP3s anexados)
-    const audios = p.audios || [];
-    html += `<div class="detalhe-section">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <h4><i class="fas fa-music"></i> Áudios / Referências (${audios.length} de ${p.qtdFaixas || 1} faixas)</h4>
-            <button class="btn-primary btn-sm" onclick="clienteUploadAudioPedido('${p.id}')">
-                <i class="fas fa-plus"></i> Enviar MP3
-            </button>
-        </div>`;
-    if (audios.length > 0) {
-        html += `<div style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;">`;
-        audios.forEach((a, idx) => {
-            html += `
-            <div style="display:flex; align-items:center; gap:10px; background:var(--bg-lighter, #f1f2f6); padding:8px 12px; border-radius:6px;">
-                <i class="fas fa-file-audio" style="color:var(--primary-color, #6c5ce7); font-size:20px;"></i>
-                <div style="flex:1; min-width:0;">
-                    <div style="font-weight:600; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;" title="${a.nome}">${a.nome}</div>
-                    <audio controls src="${audioSrc(a)}" style="height:28px; width:100%; margin-top:4px;"></audio>
-                </div>
-                <a href="${audioSrc(a)}" download="${a.nome}" class="btn-icon" title="Baixar áudio"><i class="fas fa-download"></i></a>
-            </div>`;
-        });
-        html += `</div>`;
-    } else {
-        html += `<p style="color:var(--text-muted); font-size:13px; margin-bottom:10px;">Nenhum arquivo MP3 anexado a este pedido ainda.</p>`;
-    }
-    html += `</div>`;
-
-    html += `<div class="pedido-total"><span>Total</span><strong>${formatCurrency(valorEsperadoPedido(p))}</strong></div>`;
+    html += `<div class="pedido-total"><span>Total</span><strong>${formatCurrency(p.total)}</strong></div>`;
 
     html += `<div class="detalhe-section"><h4><i class="fas fa-hand-holding-usd"></i> Condição de Pagamento</h4>`;
     if (p.parcial) {
-        const metade = Math.round((valorEsperadoPedido(p) / 2) * 100) / 100;
         html += `<div class="detalhe-item"><span>Condição</span><strong>Dividido em 2x (50% + 50%)</strong></div>`;
-        html += `<div class="detalhe-item"><span>Entrada agora</span><strong>${formatCurrency(metade)}</strong></div>`;
-        html += `<div class="detalhe-item"><span>Saldo ao finalizar</span><strong>${formatCurrency(metade)}</strong></div>`;
+        html += `<div class="detalhe-item"><span>Entrada agora</span><strong>${formatCurrency(p.total / 2)}</strong></div>`;
+        html += `<div class="detalhe-item"><span>Saldo ao finalizar</span><strong>${formatCurrency(p.total / 2)}</strong></div>`;
         html += `<div class="detalhe-item"><span>Já pago</span><strong>${formatCurrency(valorPagoPedido(p))}</strong></div>`;
     } else if (p.descontoPct) {
         html += `<div class="detalhe-item"><span>Condição</span><strong>À vista com ${p.descontoPct}% de desconto</strong></div>`;
-        html += `<div class="detalhe-item"><span>Total a pagar</span><strong>${formatCurrency(valorEsperadoPedido(p))}</strong></div>`;
-        html += `<div class="detalhe-item"><span>Já pago</span><strong>${formatCurrency(valorPagoPedido(p))}</strong></div>`;
+        html += `<div class="detalhe-item"><span>Total a pagar</span><strong>${formatCurrency(p.total * (1 - p.descontoPct / 100))}</strong></div>`;
     } else {
         html += `<div class="detalhe-item"><span>Condição</span><strong>Pagamento integral</strong></div>`;
         html += `<div class="detalhe-item"><span>Já pago</span><strong>${formatCurrency(valorPagoPedido(p))}</strong></div>`;
@@ -1483,36 +1800,18 @@ function verDetalhesPedidoClient(id) {
 
 function prepareClientPedidoModal() {
     const servicosDiv = document.getElementById('clientPedidoServicos');
-    if (servicosDiv) {
-        servicosDiv.innerHTML = DB.servicos.map(s => `<div class="checkbox-item">
-        <input type="checkbox" id="cps_${s.id}" value="${String(s.id).replace(/"/g, '&quot;')}" onchange="updateClientPedidoTotal()">
+    servicosDiv.innerHTML = DB.servicos.map(s => `<div class="checkbox-item">
+        <input type="checkbox" id="cps_${s.id}" value="${s.id}" onchange="updateClientPedidoTotal()">
         <label for="cps_${s.id}">${s.nome}</label>
         <span class="item-price">${formatCurrency(s.preco)}</span>
     </div>`).join('');
-        servicosDiv.onclick = (e) => {
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'LABEL') return;
-            const item = e.target.closest('.checkbox-item');
-            if (!item) return;
-            const cb = item.querySelector('input');
-            if (cb) { cb.checked = !cb.checked; updateClientPedidoTotal(); }
-        };
-    }
 
     const materiaisDiv = document.getElementById('clientPedidoMateriais');
-    if (materiaisDiv) {
-        materiaisDiv.innerHTML = DB.materiais.map(m => `<div class="checkbox-item">
-        <input type="checkbox" id="cpm_${m.id}" value="${String(m.id).replace(/"/g, '&quot;')}" onchange="updateClientPedidoTotal()">
+    materiaisDiv.innerHTML = DB.materiais.map(m => `<div class="checkbox-item">
+        <input type="checkbox" id="cpm_${m.id}" value="${m.id}" onchange="updateClientPedidoTotal()">
         <label for="cpm_${m.id}">${m.nome}</label>
         ${formatMaterialPrice(m, 'item-price')}
     </div>`).join('');
-        materiaisDiv.onclick = (e) => {
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'LABEL') return;
-            const item = e.target.closest('.checkbox-item');
-            if (!item) return;
-            const cb = item.querySelector('input');
-            if (cb) { cb.checked = !cb.checked; updateClientPedidoTotal(); }
-        };
-    }
 
     const dp = document.getElementById('clientPedidoDataPref');
     const hp = document.getElementById('clientPedidoHoraPref');
@@ -1546,15 +1845,15 @@ function prepareClientPedidoModal() {
 function valoresPedidoClient() {
     let total = 0;
     document.querySelectorAll('#clientPedidoServicos input:checked').forEach(cb => {
-        const s = DB.servicos.find(x => String(x.id) === String(cb.value));
-        if (s) total += Number(s.preco) || 0;
+        const s = DB.servicos.find(x => x.id === parseInt(cb.value));
+        if (s) total += s.preco;
     });
     document.querySelectorAll('#clientPedidoMateriais input:checked').forEach(cb => {
-        const m = DB.materiais.find(x => String(x.id) === String(cb.value));
-        if (m) total += Number(m.preco) || 0;
+        const m = DB.materiais.find(x => x.id === parseInt(cb.value));
+        if (m) total += m.preco;
     });
     const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
-    return { subTotal: Math.round(total * 100) / 100, condicao };
+    return { subTotal: total, condicao };
 }
 
 
@@ -1589,37 +1888,33 @@ function atualizarCondicaoClient() {
 }
 
 function updateClientPedidoTotal() {
-    try {
-        const { subTotal } = valoresPedidoClient();
-        const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
+    const { subTotal } = valoresPedidoClient();
+    const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
 
-        const desconto = condicao === 'vista' ? Math.round(subTotal * 0.10 * 100) / 100 : 0;
-        const totalFinal = Math.round((subTotal - desconto) * 100) / 100;
-        const meia = Math.round((subTotal / 2) * 100) / 100;
-        const entrada = condicao === 'metade' ? meia : totalFinal;
-        const saldo = condicao === 'metade' ? meia : 0;
+    const desconto = condicao === 'vista' ? subTotal * 0.10 : 0;
+    const totalFinal = subTotal - desconto;
+    const entrada = condicao === 'metade' ? subTotal / 2 : totalFinal;
+    const saldo = condicao === 'metade' ? subTotal / 2 : 0;
 
-        const setTxt = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
-        const setDisp = (id, disp) => { const el = document.getElementById(id); if (el) el.style.display = disp; };
+    document.getElementById('clientCondVistaValor').textContent = formatCurrency(subTotal * 0.90);
+    document.getElementById('clientCondMetaValor').textContent = formatCurrency(subTotal / 2);
 
-        setTxt('clientCondVistaValor', formatCurrency(subTotal * 0.90));
-        setTxt('clientCondMetaValor', formatCurrency(meia));
-
-        setTxt('clientResSubtotal', formatCurrency(subTotal));
-        setDisp('clientResVista', condicao === 'vista' ? 'flex' : 'none');
-        setTxt('clientResDesconto', '-' + formatCurrency(desconto));
-        setTxt('clientResTotal', formatCurrency(totalFinal));
-        setTxt('clientResPagarRotulo', condicao === 'metade' ? 'Entrada (50%) agora' : 'Pagar agora (à vista)');
-        setTxt('clientResPagar', formatCurrency(entrada));
-        setDisp('clientResSaldoLinha', condicao === 'metade' ? 'flex' : 'none');
-        setTxt('clientResSaldo', formatCurrency(saldo));
-    } catch (e) { console.error('updateClientPedidoTotal', e); }
+    document.getElementById('clientResSubtotal').textContent = formatCurrency(subTotal);
+    const vistaLinha = document.getElementById('clientResVista');
+    vistaLinha.style.display = condicao === 'vista' ? 'flex' : 'none';
+    document.getElementById('clientResDesconto').textContent = '-' + formatCurrency(desconto);
+    document.getElementById('clientResTotal').textContent = formatCurrency(totalFinal);
+    document.getElementById('clientResPagarRotulo').textContent = condicao === 'metade' ? 'Entrada (50%) agora' : 'Pagar agora (à vista)';
+    document.getElementById('clientResPagar').textContent = formatCurrency(entrada);
+    const saldoLinha = document.getElementById('clientResSaldoLinha');
+    saldoLinha.style.display = condicao === 'metade' ? 'flex' : 'none';
+    document.getElementById('clientResSaldo').textContent = formatCurrency(saldo);
 }
 
 async function salvarPedidoClient() {
     if (!currentUser || currentUser.role !== 'client') return;
-    const servicos = [...document.querySelectorAll('#clientPedidoServicos input:checked')].map(cb => cb.value);
-    const materiais = [...document.querySelectorAll('#clientPedidoMateriais input:checked')].map(cb => cb.value);
+    const servicos = [...document.querySelectorAll('#clientPedidoServicos input:checked')].map(cb => parseInt(cb.value));
+    const materiais = [...document.querySelectorAll('#clientPedidoMateriais input:checked')].map(cb => parseInt(cb.value));
 
     if (servicos.length === 0 && materiais.length === 0) {
         showToast('Selecione pelo menos um serviço ou material!', 'error');
@@ -1627,31 +1922,23 @@ async function salvarPedidoClient() {
     }
 
     let total = 0;
-    servicos.forEach(id => { const s = DB.servicos.find(x => String(x.id) === String(id)); if (s) total += Number(s.preco) || 0; });
-    materiais.forEach(id => { const m = DB.materiais.find(x => String(x.id) === String(id)); if (m) total += Number(m.preco) || 0; });
-    total = Math.round(total * 100) / 100;
+    servicos.forEach(id => { const s = DB.servicos.find(x => x.id === id); if (s) total += s.preco; });
+    materiais.forEach(id => { const m = DB.materiais.find(x => x.id === id); if (m) total += m.preco; });
 
     const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
     const descontoPct = condicao === 'vista' ? 10 : 0;
     const parcial = condicao === 'metade' ? 1 : 0;
-    const dataInicial = document.getElementById('clientPedidoDataInicial')?.value || '';
-    const horaInicial = document.getElementById('clientPedidoHoraInicial')?.value || '';
-    const horaFinal = document.getElementById('clientPedidoHoraFinal')?.value || '';
+    const dataInicial = document.getElementById('clientPedidoDataInicial').value || '';
+    const horaInicial = document.getElementById('clientPedidoHoraInicial').value || '';
+    const horaFinal = document.getElementById('clientPedidoHoraFinal').value || '';
     if (horaInicial || horaFinal) {
         if (!validarHorarioEstudio(horaInicial, horaFinal)) return;
     }
 
-    const qtdFaixas = parseInt(document.getElementById('clientPedidoQtdFaixas')?.value) || 1;
-
-    DB.nextId = DB.nextId || {};
-    const proximoId = DB.nextId.pedido || (DB.pedidos && DB.pedidos.length > 0 ? Math.max(...DB.pedidos.map(p => Number(p.id) || 0)) + 1 : 1);
-    DB.nextId.pedido = proximoId + 1;
-
     const novoPedido = {
-        id: proximoId,
+        id: DB.nextId.pedido++,
         clienteId: currentUser.id,
-        servicos, 
-        materiais,
+        servicos, materiais,
         desconto: 0,
         status: 'pendente',
         data: new Date().toISOString().split('T')[0],
@@ -1661,52 +1948,36 @@ async function salvarPedidoClient() {
         dataInicial,
         horaInicial,
         horaFinal,
-        qtdFaixas,
+        qtdFaixas: parseInt(document.getElementById('clientPedidoQtdFaixas').value) || 1,
         audios: []
     };
     
-    // Anexar áudios MP3
+    // Anexar áudios
     const fileInput = document.getElementById('clientPedidoAudios');
-    if (fileInput && fileInput.files && fileInput.files.length > 0) {
+    if (fileInput && fileInput.files.length > 0) {
         for (let i = 0; i < fileInput.files.length; i++) {
-            const file = fileInput.files[i];
-            if (typeof validateAudioFile === 'function' && !validateAudioFile(file)) continue;
-            try {
-                const prep = await prepararAudioPedido(file);
-                novoPedido.audios.push(prep);
-            } catch (err) {
-                console.error('Falha ao processar áudio', file.name, err);
-                showToast(err && err.message ? err.message : `Falha ao processar ${file.name}`, 'error');
-            }
-        }
-        const payloadApprox = novoPedido.audios.reduce((s, a) => s + ((a.base64 && !a.url) ? a.base64.length : 0), 0);
-        if (payloadApprox > limitePayloadAudio()) {
-            showToast('Os áudios anexados excedem o limite de envio (~4MB no total). Remova alguns arquivos.', 'error');
-            return;
+            const b64 = await fileToBase64(fileInput.files[i]);
+            novoPedido.audios.push({
+                nome: fileInput.files[i].name,
+                base64: b64,
+                data: new Date().toISOString()
+            });
         }
     }
 
     DB.pedidos.push(novoPedido);
     if (DBReady) {
-        try {
-            const res = await DB_SERVICE.addPedido(novoPedido);
-            if (res && res.id) {
-                novoPedido.id = res.id;
-                novoPedido.docId = res.id;
-            }
-        } catch (e) {
-            console.error('Erro ao salvar pedido no backend:', e);
-            showToast(e && e.message ? e.message : 'Erro ao salvar pedido no servidor', 'error');
-        }
+        const docId = await DB_SERVICE.addPedido(novoPedido);
+        novoPedido.docId = docId;
     }
     await sincronizarFinanceiroPedido(novoPedido);
 
-    // Enviar notificação de pedido pelo chat
+    // Enviar pedido pelo chat para o administrador
     const chatKey = `admin_${currentUser.id}`;
     if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
 
-    const nomesServicos = servicos.map(id => { const s = DB.servicos.find(x => String(x.id) === String(id)); return s ? s.nome : ''; }).filter(Boolean);
-    const nomesMateriais = materiais.map(id => { const m = DB.materiais.find(x => String(x.id) === String(id)); return m ? m.nome : ''; }).filter(Boolean);
+    const nomesServicos = servicos.map(id => { const s = DB.servicos.find(x => x.id === id); return s ? s.nome : ''; }).filter(Boolean);
+    const nomesMateriais = materiais.map(id => { const m = DB.materiais.find(x => x.id === id); return m ? m.nome : ''; }).filter(Boolean);
     const detalhes = [...nomesServicos, ...nomesMateriais].join(', ');
     const rotuloCondicao = condicao === 'vista'
         ? `Pagamento à vista (10% de desconto): R$ ${formatCurrency(total * 0.90)}`
@@ -1716,86 +1987,27 @@ async function salvarPedidoClient() {
         ? `Agendamento: ${formatDate(dataInicial)} ${horaInicial}`
         : '';
 
-    const audiosTxt = novoPedido.audios.length > 0 ? ` · ${novoPedido.audios.length} áudio(s) anexado(s)` : '';
-
     const msgData = {
         tipo: 'pedido',
         remetente: 'client',
         clienteId: currentUser.id,
         pedidoId: novoPedido.id,
         mensagem: `Novo pedido #${novoPedido.id} - ${formatCurrency(total)}`,
-        descricao: detalhes + ' · ' + rotuloCondicao + (prefHorario ? ' · ' + prefHorario : '') + audiosTxt,
+        descricao: detalhes + ' · ' + rotuloCondicao + (prefHorario ? ' · ' + prefHorario : ''),
         valor: total,
         data: new Date().toISOString(),
         lida: false
     };
     DB.chats[chatKey].push(msgData);
     if (DBReady) {
-        try {
-            const res = await DB_SERVICE.sendMessage(msgData);
-            if (res && res.id) msgData.id = res.id;
-        } catch (e) {
-            console.warn('Erro ao enviar mensagem chat:', e);
-        }
+        const res = await DB_SERVICE.sendMessage(msgData);
+        if (res && res.id) msgData.id = res.id;
     }
 
     closeAllModals();
     renderPedidosClient();
     renderClientDashboard();
-    renderClientChat();
-    updateChatBadge();
-    if (typeof renderBiblioteca === 'function') renderBiblioteca();
     showToast('Pedido enviado com sucesso!', 'success');
-}
-
-async function clienteUploadAudioPedido(pedidoId) {
-    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
-    if (!p) return;
-
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'audio/mpeg, .mp3';
-    input.multiple = true;
-
-    input.onchange = async (e) => {
-        if (!e.target.files || e.target.files.length === 0) return;
-        const novos = [];
-        for (let i = 0; i < e.target.files.length; i++) {
-            const file = e.target.files[i];
-            if (typeof validateAudioFile === 'function' && !validateAudioFile(file)) continue;
-            try {
-                const prep = await prepararAudioPedido(file);
-                novos.push(prep);
-            } catch (err) {
-                console.error('Falha ao processar áudio', file.name, err);
-                showToast(err && err.message ? err.message : `Falha ao processar ${file.name}`, 'error');
-            }
-        }
-        if (novos.length === 0) return;
-        p.audios = p.audios || [];
-        const candidatos = p.audios.concat(novos);
-        const bytes = candidatos.reduce((s, a) => s + ((a.base64 && !a.url) ? a.base64.length : 0), 0);
-        if (bytes > limitePayloadAudio()) {
-            showToast('Total de áudios do pedido excede o limite de envio (~3,8MB). Exclua alguns arquivos antes de enviar.', 'error');
-            return;
-        }
-        p.audios = candidatos;
-        const updId = p.docId || p.id;
-        let ok = !DBReady;
-        if (DBReady && updId) {
-            try {
-                await DB_SERVICE.updatePedido(updId, { audios: p.audios });
-                ok = true;
-            } catch(err) {
-                console.error(err);
-                showToast(err && err.message ? err.message : 'Falha ao enviar áudios ao servidor', 'error');
-            }
-        }
-        verDetalhesPedidoClient(pedidoId);
-        if (typeof renderBiblioteca === 'function') renderBiblioteca();
-        if (ok) showToast('Áudio(s) anexado(s) com sucesso ao pedido!', 'success');
-    };
-    input.click();
 }
 
 function pixCrc16(str) {
@@ -1826,13 +2038,13 @@ function gerarPixEmv(chave, nome, cidade, valor, txid) {
 
 function abrirPagamento(pedidoId) {
     selectedPedidoId = pedidoId;
-    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
+    const p = DB.pedidos.find(x => x.id === pedidoId);
     if (!p) return;
     if (!currentUser || currentUser.role !== 'client') return;
 
     const chatKey = `admin_${currentUser.id}`;
-    const orc = (DB.chats[chatKey] || []).filter(m => m.tipo === 'orcamento' && m.pedidoId != null && String(m.pedidoId) === String(pedidoId)).pop();
-    const base = Math.max(0, orc ? ((orc.valor || 0) - (orc.desconto || 0)) : (Number(p.total) || 0));
+    const orc = (DB.chats[chatKey] || []).filter(m => m.tipo === 'orcamento' && m.pedidoId === pedidoId).pop();
+    const base = Math.max(0, orc ? ((orc.valor || 0) - (orc.desconto || 0)) : p.total);
 
     let valorPag = base;
     let condRotulo = 'Pagamento integral';
@@ -1845,11 +2057,11 @@ function abrirPagamento(pedidoId) {
             showToast('Este pedido já está totalmente pago!', 'info');
             return;
         }
-        valorPag = Math.min(Math.round((base / 2) * 100) / 100, falta);
-        saldo = Math.max(0, Math.round((base - (jaPago + valorPag)) * 100) / 100);
+        valorPag = Math.min(base / 2, falta);
+        saldo = Math.max(0, base - (jaPago + valorPag));
         condRotulo = jaPago > 0 ? 'Pagamento da 2ª parcela (50%)' : 'Entrada de 50%';
     } else if (p.descontoPct) {
-        valorPag = Math.round(base * (1 - p.descontoPct / 100) * 100) / 100;
+        valorPag = base * (1 - p.descontoPct / 100);
         condRotulo = `Pagamento à vista com ${p.descontoPct}% de desconto`;
     } else {
         valorPag = base;
@@ -1911,7 +2123,7 @@ function copiarPix() {
 async function confirmarPagamento() {
     if (!selectedPedidoId) return;
     const tipo = document.querySelector('input[name="pagamentoTipo"]:checked').value;
-    const p = DB.pedidos.find(x => String(x.id) === String(selectedPedidoId));
+    const p = DB.pedidos.find(x => x.id === selectedPedidoId);
     if (!p) return;
 
     const fileInput = document.getElementById('pagamentoComprovanteImagem');
@@ -1921,18 +2133,16 @@ async function confirmarPagamento() {
     if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
 
     let rotuloCond = 'Pagamento integral';
-    const meiaEsperada = Math.round((valorEsperadoPedido(p) / 2) * 100) / 100;
-    if (p.parcial) rotuloCond = valorPagoPedido(p) > 0 && (selectedPagamentoValor || 0) >= meiaEsperada ? '2ª parcela (50% restante)' : 'Entrada de 50%';
+    if (p.parcial) rotuloCond = valorPagoPedido(p) > 0 && (selectedPagamentoValor || 0) >= (p.total / 2) ? '2ª parcela (50% restante)' : 'Entrada de 50%';
     else if (p.descontoPct) rotuloCond = `À vista com ${p.descontoPct}% de desconto`;
 
-    const valorMsg = selectedPagamentoValor || valorEsperadoPedido(p);
     const msgData = {
         tipo: 'comprovante',
         remetente: 'client',
         clienteId: currentUser.id,
-        mensagem: `Pagamento de ${formatCurrency(valorMsg)} (${rotuloCond}) realizado via ${tipo === 'pix' ? 'PIX' : 'Cartão de Crédito'} para o Pedido #${p.id}`,
+        mensagem: `Pagamento de ${formatCurrency(selectedPagamentoValor || p.total)} (${rotuloCond}) realizado via ${tipo === 'pix' ? 'PIX' : 'Cartão de Crédito'} para o Pedido #${p.id}`,
         descricao: `Pagamento do Pedido #${p.id} - ${rotuloCond}`,
-        valor: valorMsg,
+        valor: selectedPagamentoValor || p.total,
         desconto: 0,
         pedidoId: p.id,
         status: 'aguardando',
@@ -1950,57 +2160,115 @@ async function confirmarPagamento() {
 
     closeAllModals();
     renderPedidosClient();
-    renderClientChat();
-    updateChatBadge();
     showToast('Comprovante enviado! Aguardando confirmação do administrador.', 'success');
 }
 
 // ============================================
 // CHAT - ADMIN
 // ============================================
-function renderChatList() {
+function renderChatList(busca) {
     const chatList = document.getElementById('chatListAdmin');
     if (!chatList) return;
-    DB.chats = DB.chats || {};
-    // Garantir conversa para todo cliente (mesmo sem mensagens)
-    (DB.clientes || []).forEach(c => {
-        const k = `admin_${c.id}`;
-        if (!DB.chats[k]) DB.chats[k] = [];
-    });
-    const chatKeys = Object.keys(DB.chats).filter(k => k.startsWith('admin_'));
 
-    if (chatKeys.length === 0) {
-        chatList.innerHTML = '<div class="empty-state"><p>Nenhuma conversa</p></div>';
+    const termo = (typeof busca === 'string' ? busca : (document.getElementById('buscaChatAdmin')?.value || '')).trim().toLowerCase();
+
+    // Map com todos os clientes cadastrados e quaisquer outros identificados em chats
+    const clientesMap = new Map();
+    (DB.clientes || []).forEach(c => {
+        if (c && c.id !== undefined && c.id !== null) {
+            clientesMap.set(String(c.id), c);
+        }
+    });
+
+    Object.keys(DB.chats || {}).forEach(k => {
+        if (k.startsWith('admin_')) {
+            const cid = k.replace('admin_', '');
+            if (cid && !clientesMap.has(cid)) {
+                clientesMap.set(cid, { id: cid, nome: 'Cliente #' + cid, email: '', telefone: '' });
+            }
+        }
+    });
+
+    let lista = Array.from(clientesMap.values());
+
+    if (termo) {
+        lista = lista.filter(c => {
+            const nome = (c.nome || '').toLowerCase();
+            const email = (c.email || '').toLowerCase();
+            const tel = (c.telefone || '').toLowerCase();
+            const cid = String(c.id);
+            return nome.includes(termo) || email.includes(termo) || tel.includes(termo) || cid.includes(termo);
+        });
+    }
+
+    if (lista.length === 0) {
+        chatList.innerHTML = `<div class="empty-state">
+            <i class="fas fa-users" style="font-size:32px;margin-bottom:8px;opacity:0.5;"></i>
+            <p>${termo ? 'Nenhum cliente encontrado para "' + termo + '"' : 'Nenhum cliente cadastrado ainda'}</p>
+        </div>`;
         return;
     }
 
-    const sorted = chatKeys.sort((a, b) => {
-        const ma = DB.chats[a] || [];
-        const mb = DB.chats[b] || [];
-        const la = ma[ma.length - 1];
-        const lb = mb[mb.length - 1];
-        return new Date(lb && lb.data || 0) - new Date(la && la.data || 0);
+    // Ordenação: 1. Conversas não lidas primeiro; 2. Mais recente; 3. Alfabética
+    lista.sort((a, b) => {
+        const keyA = `admin_${a.id}`;
+        const keyB = `admin_${b.id}`;
+        const msgsA = DB.chats[keyA] || [];
+        const msgsB = DB.chats[keyB] || [];
+        const unreadA = msgsA.filter(m => m.remetente === 'client' && !m.lida).length;
+        const unreadB = msgsB.filter(m => m.remetente === 'client' && !m.lida).length;
+        if (unreadA !== unreadB) return unreadB - unreadA;
+
+        const lastA = msgsA[msgsA.length - 1];
+        const lastB = msgsB[msgsB.length - 1];
+        const timeA = lastA ? new Date(lastA.data).getTime() : 0;
+        const timeB = lastB ? new Date(lastB.data).getTime() : 0;
+        if (timeA !== timeB) return timeB - timeA;
+
+        return (a.nome || '').localeCompare(b.nome || '');
     });
 
-    chatList.innerHTML = sorted.map(key => {
-        const rawId = key.split('_').slice(1).join('_');
-        const cliente = (DB.clientes || []).find(c => String(c.id) === String(rawId));
-        const clienteId = cliente ? cliente.id : rawId;
-        const messages = DB.chats[key] || [];
+    chatList.innerHTML = lista.map(cliente => {
+        const cid = cliente.id;
+        const chatKey = `admin_${cid}`;
+        const messages = DB.chats[chatKey] || [];
+        const unread = messages.filter(m => m.remetente === 'client' && !m.lida).length;
         const lastMsg = messages[messages.length - 1];
-        const preview = lastMsg
-            ? String(lastMsg.mensagem || lastMsg.descricao || lastMsg.tipo || 'Mensagem').substring(0, 40) + '...'
-            : 'Nova conversa';
-        const naoLidas = messages.filter(m => m.remetente === 'client' && !m.lida).length;
-        return `<div class="chat-contact ${currentChatClient != null && String(currentChatClient) === String(clienteId) ? 'active' : ''}" onclick='openChatAdmin(${JSON.stringify(String(clienteId))})'>
+
+        let previewText = 'Toque para conversar';
+        let previewIcon = '<i class="fas fa-comment-dots" style="opacity:0.5;"></i>';
+        if (lastMsg) {
+            if (lastMsg.tipo === 'audio') {
+                previewIcon = '<i class="fas fa-music text-primary"></i>';
+                previewText = lastMsg.arquivoNome ? `Áudio: ${lastMsg.arquivoNome}` : 'Arquivo de áudio';
+            } else if (lastMsg.tipo === 'pedido') {
+                previewIcon = '<i class="fas fa-clipboard-list text-warning"></i>';
+                previewText = lastMsg.mensagem || 'Novo pedido';
+            } else if (lastMsg.tipo === 'orcamento') {
+                previewIcon = '<i class="fas fa-file-invoice-dollar text-success"></i>';
+                previewText = 'Orçamento enviado';
+            } else if (lastMsg.tipo === 'comprovante') {
+                previewIcon = '<i class="fas fa-receipt text-info"></i>';
+                previewText = 'Comprovante recebido';
+            } else {
+                previewIcon = lastMsg.remetente === 'admin' ? '<i class="fas fa-reply text-muted"></i> ' : '';
+                previewText = lastMsg.mensagem || 'Mensagem';
+            }
+        }
+
+        const isActive = String(currentChatClient) === String(cid);
+
+        return `<div class="chat-contact ${isActive ? 'active' : ''} ${unread > 0 ? 'unread' : ''}" onclick="openChatAdmin('${cid}')">
             <div class="avatar"><i class="fas fa-user"></i></div>
             <div class="chat-contact-info">
-                <h4>${cliente ? cliente.nome : 'Cliente ' + rawId}</h4>
-                <p>${preview}</p>
-            </div>
-            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
-                <span class="chat-contact-time">${lastMsg ? timeAgo(lastMsg.data) : ''}</span>
-                ${naoLidas ? `<span class="badge badge-success" style="min-width:18px;">${naoLidas}</span>` : ''}
+                <div class="chat-contact-top">
+                    <h4>${cliente.nome || 'Cliente #' + cid}</h4>
+                    <span class="chat-contact-time">${lastMsg ? timeAgo(lastMsg.data) : ''}</span>
+                </div>
+                <div class="chat-contact-bottom">
+                    <p class="chat-contact-preview">${previewIcon} <span>${previewText}</span></p>
+                    ${unread > 0 ? `<span class="badge-unread">${unread}</span>` : ''}
+                </div>
             </div>
         </div>`;
     }).join('');
@@ -2008,30 +2276,39 @@ function renderChatList() {
 
 function openChatAdmin(clienteId) {
     currentChatClient = clienteId;
-    const cliente = (DB.clientes || []).find(c => String(c.id) === String(clienteId));
+    const cliente = (DB.clientes || []).find(c => String(c.id) === String(clienteId)) || { id: clienteId, nome: 'Cliente #' + clienteId, email: '', telefone: '' };
     const chatKey = `admin_${clienteId}`;
 
-    DB.chats = DB.chats || {};
     if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
 
-    // Marcar mensagens do cliente como lidas ao abrir a conversa
-    const paraLer = DB.chats[chatKey].filter(m => m.remetente === 'client' && !m.lida);
-    if (paraLer.length) {
-        paraLer.forEach(m => { m.lida = true; });
-        if (DBReady) {
-            Promise.all(paraLer.map(m => m.id ? DB_SERVICE.updateMessage(m.id, { lida: true }) : null)).catch(() => {});
+    // Marcar mensagens do cliente como lidas ao abrir o chat
+    let marcouLida = false;
+    DB.chats[chatKey].forEach(m => {
+        if (m.remetente === 'client' && !m.lida) {
+            m.lida = true;
+            marcouLida = true;
         }
+    });
+
+    if (marcouLida && DBReady) {
+        try {
+            DB_SERVICE.updateMessage(null, { lida: 1, clienteId });
+        } catch(e) {}
     }
 
-    document.getElementById('chatHeaderAdmin').innerHTML = `<div class="chat-user-info">
-        <div class="avatar"><i class="fas fa-user"></i></div>
-        <div>
-            <h4>${cliente ? cliente.nome : 'Cliente'}</h4>
-            <span>${cliente ? cliente.email : ''}</span>
-        </div>
-    </div>`;
+    const header = document.getElementById('chatHeaderAdmin');
+    if (header) {
+        header.innerHTML = `<div class="chat-user-info">
+            <div class="avatar"><i class="fas fa-user"></i></div>
+            <div>
+                <h4>${cliente.nome || 'Cliente'}</h4>
+                <span>${cliente.telefone ? `${cliente.telefone} · ` : ''}${cliente.email || 'Conversa com Cliente'}</span>
+            </div>
+        </div>`;
+    }
 
-    document.getElementById('chatInputAreaAdmin').style.display = 'flex';
+    const inputArea = document.getElementById('chatInputAreaAdmin');
+    if (inputArea) inputArea.style.display = 'flex';
 
     renderChatMessagesAdmin(chatKey);
     renderChatList();
@@ -2068,14 +2345,14 @@ function renderChatMessagesAdmin(chatKey) {
         if (m.tipo === 'sistema') {
             return `<div class="chat-message system">${m.mensagem}</div>`;
         } else if (m.tipo === 'pedido') {
-            const pedido = DB.pedidos.find(x => String(x.id) === String(m.pedidoId));
+            const pedido = DB.pedidos.find(x => x.id === m.pedidoId);
             return `<div class="chat-message pedido">
-                <h4><i class="fas fa-clipboard-list"></i> ${m.remetente === 'admin' ? 'Pedido do Estúdio' : 'Pedido do Cliente'}</h4>
+                <h4><i class="fas fa-clipboard-list"></i> Pedido do Cliente</h4>
                 <p><strong>${m.mensagem}</strong></p>
                 ${m.descricao ? `<p>${m.descricao}</p>` : ''}
                 <p>Valor do pedido: <strong>${formatCurrency(m.valor || (pedido ? pedido.total : 0))}</strong></p>
                 <div class="comprovante-acoes">
-                    <button class="btn-primary btn-sm" onclick="abrirOrcamentoParaPedido(${msgIdx})"><i class="fas fa-file-invoice-dollar"></i> Enviar Ordem de Serviço</button>
+                    <button class="btn-primary btn-sm" onclick="abrirOrcamentoParaPedido(${msgIdx})"><i class="fas fa-file-invoice-dollar"></i> Enviar Orçamento</button>
                 </div>
                 <div class="chat-message-time">${formatDateTime(m.data)}</div>
             </div>`;
@@ -2083,7 +2360,7 @@ function renderChatMessagesAdmin(chatKey) {
             const desconto = m.desconto || 0;
             const cond = condicaoOrcamentoDe(m);
             return `<div class="chat-message orcamento">
-                <h4><i class="fas fa-file-invoice-dollar"></i> Ordem de Serviço</h4>
+                <h4><i class="fas fa-file-invoice-dollar"></i> Orçamento</h4>
                 <p><strong>${m.descricao}</strong></p>
                 <p>Valor: <strong>${formatCurrency(m.valor)}</strong></p>
                 ${desconto > 0 ? `<p>Desconto: <strong>-${formatCurrency(desconto)}</strong></p>` : ''}
@@ -2094,10 +2371,10 @@ function renderChatMessagesAdmin(chatKey) {
             </div>`;
         } else if (m.tipo === 'comprovante') {
             const isFromClient = m.remetente === 'client';
-            const pedidoLinked = DB.pedidos.find(x => String(x.id) === String(m.pedidoId || (m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || ''));
-            const valorPedido = m.valor || (pedidoLinked ? valorEsperadoPedido(pedidoLinked) : 0);
+            const pedidoLinked = DB.pedidos.find(x => x.id === (m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0)));
+            const valorPedido = pedidoLinked ? pedidoLinked.total : (m.valor || 0);
             const desconto = m.desconto || 0;
-            const total = Math.max(0, Math.round((valorPedido - desconto) * 100) / 100);
+            const total = Math.max(0, valorPedido - desconto);
             let acoes = '';
             let descontoArea = '';
             if (isFromClient) {
@@ -2200,17 +2477,16 @@ function abrirOrcamentoParaPedido(msgIdx) {
     const m = msgs[msgIdx];
     if (!m) return;
 
-    const pedido = DB.pedidos.find(x => String(x.id) === String(m.pedidoId));
-    orcamentoPedidoId = m.pedidoId || (pedido ? pedido.id : null);
+    const pedido = DB.pedidos.find(x => x.id === m.pedidoId);
+    orcamentoPedidoId = m.pedidoId || null;
     orcamentoCondicao = pedido ? { parcial: !!pedido.parcial, descontoPct: pedido.descontoPct || 0 } : null;
 
-    const nomesServicos = (pedido ? pedido.servicos : []).map(id => { const s = DB.servicos.find(x => String(x.id) === String(id)); return s ? s.nome : ''; }).filter(Boolean);
-    const nomesMateriais = (pedido ? pedido.materiais : []).map(id => { const mm = DB.materiais.find(x => String(x.id) === String(id)); return mm ? mm.nome : ''; }).filter(Boolean);
+    const nomesServicos = (pedido ? pedido.servicos : []).map(id => { const s = DB.servicos.find(x => x.id === id); return s ? s.nome : ''; }).filter(Boolean);
+    const nomesMateriais = (pedido ? pedido.materiais : []).map(id => { const mm = DB.materiais.find(x => x.id === id); return mm ? mm.nome : ''; }).filter(Boolean);
 
-    const orcBase = pedido ? valorEsperadoPedido(pedido) : 0;
-    document.getElementById('orcamentoPedidoInfo').value = pedido ? `#${pedido.id} - ${formatCurrency(orcBase)}` : '';
+    document.getElementById('orcamentoPedidoInfo').value = pedido ? `#${pedido.id} - ${formatCurrency(pedido.total)}` : '';
     document.getElementById('orcamentoDescricao').value = [...nomesServicos, ...nomesMateriais].join(', ');
-    document.getElementById('orcamentoValor').value = pedido ? (Number(orcBase) || 0).toFixed(2) : '';
+    document.getElementById('orcamentoValor').value = pedido ? pedido.total.toFixed(2) : '';
     document.getElementById('orcamentoDesconto').value = '0';
     document.getElementById('orcamentoValidade').value = '15 dias';
 
@@ -2221,9 +2497,9 @@ function abrirOrcamentoParaPedido(msgIdx) {
 function atualizarCondicaoOrcamento() {
     const el = document.getElementById('orcamentoCondicaoInfo');
     if (!el) return;
-    const valor = parseValorBR(document.getElementById('orcamentoValor').value) || 0;
-    const desconto = parseValorBR(document.getElementById('orcamentoDesconto').value) || 0;
-    const base = Math.max(0, Math.round((valor - desconto) * 100) / 100);
+    const valor = parseFloat(document.getElementById('orcamentoValor').value) || 0;
+    const desconto = parseFloat(document.getElementById('orcamentoDesconto').value) || 0;
+    const base = Math.max(0, valor - desconto);
     const c = orcamentoCondicao;
     let html = '';
     if (!c) {
@@ -2241,9 +2517,9 @@ function atualizarCondicaoOrcamento() {
 }
 
 function atualizarTotalOrcamento() {
-    const valor = parseValorBR(document.getElementById('orcamentoValor').value) || 0;
-    const desconto = parseValorBR(document.getElementById('orcamentoDesconto').value) || 0;
-    document.getElementById('orcamentoTotal').textContent = formatCurrency(Math.max(0, Math.round((valor - desconto) * 100) / 100));
+    const valor = parseFloat(document.getElementById('orcamentoValor').value) || 0;
+    const desconto = parseFloat(document.getElementById('orcamentoDesconto').value) || 0;
+    document.getElementById('orcamentoTotal').textContent = formatCurrency(Math.max(0, valor - desconto));
     atualizarCondicaoOrcamento();
 }
 
@@ -2257,38 +2533,26 @@ async function enviarOrcamento() {
         remetente: 'admin',
         clienteId: currentChatClient,
         descricao: document.getElementById('orcamentoDescricao').value,
-        valor: parseValorBR(document.getElementById('orcamentoValor').value) || 0,
-        desconto: parseValorBR(document.getElementById('orcamentoDesconto').value) || 0,
+        valor: parseFloat(document.getElementById('orcamentoValor').value) || 0,
+        desconto: parseFloat(document.getElementById('orcamentoDesconto').value) || 0,
         pedidoId: orcamentoPedidoId,
         validade: document.getElementById('orcamentoValidade').value || '15 dias',
         parcial: orcamentoCondicao ? (orcamentoCondicao.parcial ? 1 : 0) : 0,
         descontoPct: orcamentoCondicao ? (orcamentoCondicao.descontoPct || 0) : 0,
-        data: new Date().toISOString(),
-        lida: false
+        data: new Date().toISOString()
     };
 
     DB.chats[chatKey].push(msgData);
     if (DBReady) {
-        try {
-            const res = await DB_SERVICE.sendMessage(msgData);
-            if (res && res.id) msgData.id = res.id;
-        } catch (e) {
-            console.error('Erro ao enviar ordem de serviço:', e);
-            const idx = DB.chats[chatKey].indexOf(msgData);
-            if (idx > -1) DB.chats[chatKey].splice(idx, 1);
-            showToast('Erro ao enviar a ordem de serviço.', 'error');
-            renderChatMessagesAdmin(chatKey);
-            return;
-        }
+        const res = await DB_SERVICE.sendMessage(msgData);
+        if (res && res.id) msgData.id = res.id;
     }
 
     orcamentoPedidoId = null;
     orcamentoCondicao = null;
     closeAllModals();
     renderChatMessagesAdmin(chatKey);
-    renderChatList();
-    updateChatBadge();
-    showToast('Ordem de serviço enviada para o cliente pagar!', 'success');
+    showToast('Orçamento enviado!', 'success');
     clearForm('orcamento');
 }
 
@@ -2351,10 +2615,10 @@ function atualizarTotalComprovante(msgIdx) {
     if (!m || m.tipo !== 'comprovante') return;
     const input = document.getElementById(`descontoComp_${msgIdx}`);
     const desconto = input ? (parseFloat(input.value) || 0) : (m.desconto || 0);
-    const pedidoLinked = DB.pedidos.find(x => String(x.id) === String(m.pedidoId || (m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || ''));
-    const valorPedido = m.valor || (pedidoLinked ? valorEsperadoPedido(pedidoLinked) : 0);
+    const pedidoLinked = DB.pedidos.find(x => x.id === (m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0)));
+    const valorPedido = pedidoLinked ? pedidoLinked.total : (m.valor || 0);
     const el = document.getElementById(`totalComp_${msgIdx}`);
-    if (el) el.textContent = formatCurrency(Math.max(0, Math.round((valorPedido - desconto) * 100) / 100));
+    if (el) el.textContent = formatCurrency(Math.max(0, valorPedido - desconto));
 }
 
 async function confirmarRecebidoComprovante(msgIdx) {
@@ -2388,14 +2652,14 @@ async function confirmarPagoComprovante(msgIdx) {
     m.lida = true;
     if (DBReady && m.id) await DB_SERVICE.updateMessage(m.id, { status: 'pago', desconto: descontoAdmin });
 
-    const pedidoIdRaw = m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0);
-    const pedido = DB.pedidos.find(x => String(x.id) === String(pedidoIdRaw));
-    const totalPago = Math.max(0, Math.round(((Number(m.valor) || (pedido ? (Number(pedido.total) || 0) : 0)) - descontoAdmin) * 100) / 100);
+    const pedidoId = m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0);
+    const pedido = DB.pedidos.find(x => x.id === pedidoId);
+    const totalPago = Math.max(0, (m.valor || (pedido ? pedido.total : 0)) - descontoAdmin);
     const metodoPag = (m.mensagem || '').includes('Cartão') ? 'cartao_credito' : 'pix';
 
     if (pedido && totalPago > 0) {
-            const jaConfirmado = DB.movimentacoes.find(mm => mm.pedidoId != null && String(mm.pedidoId) === String(pedido.id) && mm.pagamento !== 'pendente');
-            if (pedido.parcial && jaConfirmado) {
+        const jaConfirmado = DB.movimentacoes.find(mm => mm.pedidoId === pedido.id && mm.pagamento !== 'pendente');
+        if (pedido.parcial && jaConfirmado) {
             const nova = {
                 id: DB.nextId.movimentacao++,
                 tipo: 'entrada',
@@ -2409,8 +2673,8 @@ async function confirmarPagoComprovante(msgIdx) {
             DB.movimentacoes.push(nova);
             if (DBReady) DB_SERVICE.addMovimentacao(nova).then(d => { if (d && d.id) nova.docId = d.id; });
         } else {
-                const mov = DB.movimentacoes.find(mm => mm.pagamento === 'pendente' && movRefereAoPedido(mm, pedido.id));
-                if (mov) {
+            const mov = DB.movimentacoes.find(mm => mm.pagamento === 'pendente' && (mm.pedidoId === pedido.id || (mm.descricao || '').includes(`Pedido #${pedido.id}`)));
+            if (mov) {
                 mov.tipo = 'entrada';
                 mov.descricao = `Pagamento Pedido #${pedido.id}`;
                 mov.valor = totalPago;
@@ -2447,10 +2711,10 @@ async function confirmarPagoComprovante(msgIdx) {
 
     // Enviar mensagem de confirmação pro cliente com os detalhes do serviço
     if (pedido) {
-        const nomesServicos = (pedido.servicos || []).map(id2 => { const s = DB.servicos.find(x => String(x.id) === String(id2)); return s ? s.nome : ''; }).filter(Boolean);
-        const nomesMateriais = (pedido.materiais || []).map(id2 => { const mm = DB.materiais.find(x => String(x.id) === String(id2)); return mm ? mm.nome : ''; }).filter(Boolean);
+        const nomesServicos = (pedido.servicos || []).map(id2 => { const s = DB.servicos.find(x => x.id === id2); return s ? s.nome : ''; }).filter(Boolean);
+        const nomesMateriais = (pedido.materiais || []).map(id2 => { const mm = DB.materiais.find(x => x.id === id2); return mm ? mm.nome : ''; }).filter(Boolean);
         const detalhes = [...nomesServicos, ...nomesMateriais].join(', ') || 'Serviço solicitado';
-        const faltante = pedido.parcial ? Math.max(0, (Number(pedido.total) || 0) - valorPagoPedido(pedido)) : 0;
+        const faltante = pedido.parcial ? Math.max(0, (pedido.total || 0) - valorPagoPedido(pedido)) : 0;
         const confMsg = {
             tipo: 'sistema',
             remetente: 'admin',
@@ -2466,9 +2730,7 @@ async function confirmarPagoComprovante(msgIdx) {
     }
 
     renderChatMessagesAdmin(chatKey);
-    renderChatList();
     renderFinanceiro();
-    renderAdminDashboard();
     updateChatBadge();
     celebratePayment();
     showToast('Pagamento confirmado como PAGO!', 'success');
@@ -2476,7 +2738,6 @@ async function confirmarPagoComprovante(msgIdx) {
 
 function updateChatBadge() {
     if (!currentUser) return;
-    DB.chats = DB.chats || {};
     if (currentUser.role === 'admin') {
         let count = 0;
         Object.keys(DB.chats).forEach(key => {
@@ -2506,14 +2767,10 @@ function renderClientChat() {
     const chatKey = `admin_${currentUser.id}`;
     if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
 
-    // Mark admin messages as read (e persistir no backend)
-    const naoLidas = DB.chats[chatKey].filter(m => m.remetente === 'admin' && !m.lida);
-    if (naoLidas.length) {
-        naoLidas.forEach(m => { m.lida = true; });
-        if (DBReady) {
-            Promise.all(naoLidas.map(m => m.id ? DB_SERVICE.updateMessage(m.id, { lida: true }) : null)).catch(() => {});
-        }
-    }
+    // Mark admin messages as read
+    DB.chats[chatKey].forEach(m => {
+        if (m.remetente === 'admin') m.lida = true;
+    });
 
     const container = document.getElementById('chatMessagesClient');
     const messages = DB.chats[chatKey];
@@ -2531,9 +2788,8 @@ function renderClientChat() {
         if (m.tipo === 'sistema') {
             return `<div class="chat-message system">${m.mensagem}</div>`;
         } else if (m.tipo === 'pedido') {
-            const isFromAdmin = m.remetente === 'admin';
             return `<div class="chat-message pedido">
-                <h4><i class="fas fa-clipboard-list"></i> ${isFromAdmin ? 'Pedido do Estúdio' : 'Pedido Enviado'}</h4>
+                <h4><i class="fas fa-clipboard-list"></i> Pedido Enviado</h4>
                 <p><strong>${m.mensagem}</strong></p>
                 ${m.descricao ? `<p>${m.descricao}</p>` : ''}
                 <div class="chat-message-time">${formatDateTime(m.data)}</div>
@@ -2541,16 +2797,15 @@ function renderClientChat() {
         } else if (m.tipo === 'orcamento') {
             const desconto = m.desconto || 0;
             const cond = condicaoOrcamentoDe(m);
-            const temPedido = m.pedidoId != null && m.pedidoId !== '';
             return `<div class="chat-message orcamento">
-                <h4><i class="fas fa-file-invoice-dollar"></i> Ordem de Serviço</h4>
+                <h4><i class="fas fa-file-invoice-dollar"></i> Orçamento Recebido</h4>
                 <p><strong>${m.descricao}</strong></p>
                 <p>Valor: <strong>${formatCurrency(m.valor)}</strong></p>
                 ${desconto > 0 ? `<p>Desconto: <strong>-${formatCurrency(desconto)}</strong></p>` : ''}
                 ${cond.linhas}
                 <p>${cond.rotuloPagar}: <strong>${formatCurrency(cond.totalPagar)}</strong></p>
                 <p>Validade: ${m.validade}</p>
-                ${temPedido ? `<div class="comprovante-acoes">
+                ${m.pedidoId ? `<div class="comprovante-acoes">
                     <button class="btn-primary btn-sm" onclick="pagarOrcamento(${msgIdx})"><i class="fas fa-credit-card"></i> Realizar Pagamento</button>
                 </div>` : ''}
                 <div class="chat-message-time">${formatDateTime(m.data)}</div>
@@ -2588,93 +2843,67 @@ function renderClientChat() {
     updateChatBadge();
 }
 
-window.sendAudioChat = async function(remetente, inputElement) {
+async function sendAudioChat(remetente, inputElement) {
     if (!inputElement.files || inputElement.files.length === 0) return;
-
+    
     let clienteId = null;
     if (remetente === 'client') {
-        clienteId = currentUser && currentUser.id;
+        clienteId = currentUser ? currentUser.id : null;
     } else {
         clienteId = currentChatClient;
     }
-
+    
     if (!clienteId) {
-        showToast(remetente === 'client' ? 'Faça login para enviar o áudio.' : 'Selecione uma conversa para enviar o áudio.', 'error');
+        showToast('Selecione um cliente para enviar o áudio.', 'error');
+        inputElement.value = '';
         return;
     }
     
     for (let i = 0; i < inputElement.files.length; i++) {
         const file = inputElement.files[i];
-        if (!file.type.includes('audio') && !file.name.toLowerCase().endsWith('.mp3') && !file.name.toLowerCase().endsWith('.wav')) {
-            showToast('Apenas arquivos de áudio são permitidos!', 'error');
-            continue;
-        }
+        if (!validateAudioFile(file)) continue;
         
         try {
-            if(!validateAudioFile(file)) continue;
-            let prep;
-            try {
-                prep = await prepararAudioPedido(file);
-            } catch (err) {
-                prep = { base64: await arquivoAudioParaDataUrl(file) };
-            }
-            const audioSrcVal = prep.url || prep.base64;
+            const b64 = await fileToBase64(file);
             const msgAudio = {
                 tipo: 'audio',
                 remetente: remetente,
                 clienteId: clienteId,
-                mensagem: remetente === 'client' ? 'Áudio de referência enviado' : 'Áudio enviado',
-                audio: audioSrcVal,
-                audioUrl: prep.url || '',
+                mensagem: remetente === 'client' ? ('🎵 Áudio enviado: ' + file.name) : ('🎵 Áudio do estúdio: ' + file.name),
+                audio: b64,
                 arquivoNome: file.name,
                 data: new Date().toISOString(),
                 lida: false
             };
-
+            
             const chatKey = `admin_${clienteId}`;
             if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
             DB.chats[chatKey].push(msgAudio);
 
-            if (DBReady) await DB_SERVICE.sendMessage(msgAudio);
-
-            // Cliente: anexar também ao pedido recente para aparecer em Áudios de Pedidos
-            if (remetente === 'client') {
-                const pedidoAtivo = (DB.pedidos || [])
-                    .filter(ped => String(ped.clienteId) === String(clienteId))
-                    .sort((a,b) => (Number(b.id) || 0) - (Number(a.id) || 0))[0];
-                if (pedidoAtivo) {
-                    pedidoAtivo.audios = pedidoAtivo.audios || [];
-                    pedidoAtivo.audios.push({
-                        nome: file.name,
-                        base64: prep.base64 || '',
-                        url: prep.url || '',
-                        tamanho: file.size,
-                        tipo: file.type || 'audio/mp3',
-                        data: new Date().toISOString(),
-                        origem: 'chat'
-                    });
-                    const updId = pedidoAtivo.docId || pedidoAtivo.id;
-                    if (DBReady && updId) {
-                        try { await DB_SERVICE.updatePedido(updId, { audios: pedidoAtivo.audios }); } catch (err) { console.error(err); }
-                    }
-                }
+            if (DBReady) {
+                const res = await DB_SERVICE.sendMessage(msgAudio);
+                if (res && res.id) msgAudio.id = res.id;
             }
         } catch(e) {
-            console.error(e);
+            console.error('Erro ao processar áudio:', e);
             showToast('Erro ao processar áudio.', 'error');
         }
     }
     
-    inputElement.value = ''; // clear
+    inputElement.value = '';
+    const chatKey = `admin_${clienteId}`;
     if (remetente === 'client') {
         renderClientChat();
     } else {
-        try { renderChatMessagesAdmin(`admin_${clienteId}`); } catch (e) { console.error(e); }
+        renderChatMessagesAdmin(chatKey);
+        renderChatList();
     }
-    try { renderChatList(); } catch (e) {}
-    if (typeof renderBiblioteca === 'function') renderBiblioteca();
     showToast('Áudio enviado!', 'success');
 }
+
+window.sendAudioAdmin = function(inputElement) {
+    return sendAudioChat('admin', inputElement);
+};
 
 async function sendMessageClient() {
     if (!currentUser || currentUser.role !== 'client') return;
@@ -2709,17 +2938,15 @@ function pagarOrcamento(msgIdx) {
     if (!currentUser || currentUser.role !== 'client') return;
     const msgs = DB.chats[`admin_${currentUser.id}`] || [];
     const m = msgs[msgIdx];
-    if (!m || m.tipo !== 'orcamento') return;
-    const pid = m.pedidoId || parseInt((m.descricao || m.mensagem || '').match(/#?(\d+)/)?.[1] || 0);
-    if (!pid) { showToast('Ordem de serviço sem pedido vinculado.', 'error'); return; }
-    abrirPagamento(pid);
+    if (!m || m.tipo !== 'orcamento' || !m.pedidoId) return;
+    abrirPagamento(m.pedidoId);
 }
 
 function prepareClientPagamentoModal() {
     if (!currentUser || currentUser.role !== 'client') return;
     const select = document.getElementById('clientPagamentoPedido');
     const meusPedidos = DB.pedidos.filter(p => p.clienteId === currentUser.id && p.status !== 'cancelado');
-    select.innerHTML = meusPedidos.map(p => `<option value="${p.id}">#${p.id} - ${formatCurrency(valorEsperadoPedido(p))}</option>`).join('') || '<option value="">Nenhum pedido</option>';
+    select.innerHTML = meusPedidos.map(p => `<option value="${p.id}">#${p.id} - ${formatCurrency(p.total)}</option>`).join('') || '<option value="">Nenhum pedido</option>';
 
     document.getElementById('clientPagamentoValor').value = '';
     preencherDestinoPagamento();
@@ -2741,12 +2968,12 @@ function preencherDestinoPagamento() {
 }
 
 function preencherValorPedidoClient() {
-    const pedidoId = document.getElementById('clientPagamentoPedido').value;
-    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
-    let valor = p ? valorEsperadoPedido(p) : 0;
-    if (currentUser && p) {
+    const pedidoId = parseInt(document.getElementById('clientPagamentoPedido').value);
+    const p = DB.pedidos.find(x => x.id === pedidoId);
+    let valor = p ? p.total : 0;
+    if (currentUser) {
         const orc = (DB.chats[`admin_${currentUser.id}`] || [])
-            .filter(m => m.tipo === 'orcamento' && m.pedidoId != null && String(m.pedidoId) === String(pedidoId)).pop();
+            .filter(m => m.tipo === 'orcamento' && m.pedidoId === pedidoId).pop();
         if (orc) valor = Math.max(0, (orc.valor || 0) - (orc.desconto || 0));
     }
     document.getElementById('clientPagamentoValor').value = valor ? valor.toFixed(2) : '';
@@ -2760,7 +2987,7 @@ function atualizarTotalPagamentoClient() {
 
 async function enviarPagamentoClient() {
     if (!currentUser || currentUser.role !== 'client') return;
-    const pedidoId = document.getElementById('clientPagamentoPedido').value;
+    const pedidoId = parseInt(document.getElementById('clientPagamentoPedido').value);
     const valor = parseFloat(document.getElementById('clientPagamentoValor').value) || 0;
 
     if (!pedidoId) { showToast('Selecione um pedido!', 'error'); return; }
@@ -2820,7 +3047,7 @@ function openModal(id) {
     if (id === 'comprovanteModal' || id === 'enviarComprovanteModal') {
         const select = document.getElementById('comprovantePedido');
         if (select) {
-            select.innerHTML = DB.pedidos.map(p => `<option value="${p.id}">Pedido #${p.id} - ${formatCurrency(valorEsperadoPedido(p))}</option>`).join('');
+            select.innerHTML = DB.pedidos.map(p => `<option value="${p.id}">Pedido #${p.id} - ${formatCurrency(p.total)}</option>`).join('');
         }
         document.getElementById('comprovanteData').value = new Date().toISOString().split('T')[0];
     }
@@ -2837,256 +3064,33 @@ function closeAllModals() {
     clearForm('mov');
     clearForm('comprovante');
     clearForm('orcamento');
-    removerImagemServico();
-    removerImagemMaterial();
     document.querySelectorAll('.imagem-preview').forEach(img => { img.src = ''; img.style.display = 'none'; });
 }
 
 // ============================================
-// ===== BLOCO RESTAURADO b03a43a (6 finais) =====
-// === aplicarFiltrosDashboard ===
-function aplicarFiltrosDashboard() {
-    dashFiltros.periodo = document.getElementById('filtroPeriodoDash').value;
-    dashFiltros.tipo = document.getElementById('filtroTipoDash').value;
-    dashFiltros.busca = document.getElementById('buscaMovDash').value.trim().toLowerCase();
-    renderAdminDashboard();
+// UTILITIES
+// ============================================
+function previewImagem(input, previewId) {
+    const preview = document.getElementById(previewId);
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = e => { preview.src = e.target.result; preview.style.display = 'block'; };
+        reader.readAsDataURL(input.files[0]);
+    } else if (preview) {
+        preview.style.display = 'none';
+        preview.src = '';
+    }
 }
 
-// === capitalize ===
-function capitalize(str) {
-    if (!str) return '';
-    return str.charAt(0).toUpperCase() + str.slice(1).replace(/_/g, ' ');
-}
-
-// === desenharDonutServicos ===
-function desenharDonutServicos() {
-    const ring = document.getElementById('donutServicosRing');
-    const legendEl = document.getElementById('legendServicos');
-    const totalEl = document.getElementById('donutTotal');
-    if (!ring || !legendEl || !totalEl) return;
-
-    const servicosMap = {};
-    let outros = 0;
-    DB.movimentacoes.forEach(m => {
-        if (m.tipo !== 'entrada' || m.pagamento === 'pendente') return;
-        const pedido = m.pedidoId ? DB.pedidos.find(p => p.id === m.pedidoId) : null;
-        if (!pedido || !pedido.servicos || !pedido.servicos.length) { outros += m.valor; return; }
-        const share = m.valor / pedido.servicos.length;
-        pedido.servicos.forEach(id => {
-            const nome = (DB.servicos.find(s => s.id === id) || {}).nome || 'Serviço';
-            servicosMap[nome] = (servicosMap[nome] || 0) + share;
-        });
+function lerArquivoComoDataURL(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
     });
-    if (outros > 1e-9) servicosMap['Outros'] = outros;
-
-    const entradas = Object.entries(servicosMap).sort((a, b) => b[1] - a[1]);
-    const total = entradas.reduce((s, [, v]) => s + v, 0);
-    totalEl.textContent = formatCurrency(total);
-
-    if (!total) {
-        ring.style.background = 'conic-gradient(#e1e8f0 0 100%)';
-        legendEl.innerHTML = '<span class="leg-vazio">Sem receita confirmada ainda</span>';
-        return;
-    }
-
-    const cores = ['#667eea', '#f093fb', '#43e97b', '#fdcb6e', '#f5576c', '#00b894', '#4facfe', '#e17055', '#6c5ce7', '#00cec9'];
-    let acum = 0;
-    const partes = [];
-    const legend = entradas.map(([nome, valor], i) => {
-        const pct = (valor / total) * 100;
-        const cor = cores[i % cores.length];
-        partes.push(`${cor} ${acum.toFixed(2)}% ${(acum + pct).toFixed(2)}%`);
-        acum += pct;
-        return `<span class="leg-item"><i style="background:${cor}"></i>${nome}<strong>${formatCurrency(valor)}</strong></span>`;
-    }).join('');
-    ring.style.background = `conic-gradient(${partes.join(', ')})`;
-    legendEl.innerHTML = legend;
 }
 
-// === desenharGraficoBarras ===
-function desenharGraficoBarras() {
-    const canvas = document.getElementById('graficoBarras');
-    const legendEl = document.getElementById('legendBarras');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const cores = dashCores();
-    const dpr = window.devicePixelRatio || 1;
-    const wrap = canvas.parentElement;
-    const cssW = wrap.clientWidth || 320;
-    const cssH = 220;
-    canvas.width = cssW * dpr;
-    canvas.height = cssH * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    const agora = new Date();
-    const meses = [];
-    for (let i = 5; i >= 0; i--) {
-        const d = new Date(agora.getFullYear(), agora.getMonth() - i, 1);
-        meses.push({ ano: d.getFullYear(), mes: d.getMonth(), entradas: 0, saidas: 0 });
-    }
-    DB.movimentacoes.forEach(m => {
-        const idx = meses.findIndex(x => `${x.ano}-${String(x.mes + 1).padStart(2, '0')}` === (m.data || '').slice(0, 7));
-        if (idx === -1) return;
-        if (m.tipo === 'entrada' && m.pagamento !== 'pendente') meses[idx].entradas += m.valor;
-        if (m.tipo === 'saida') meses[idx].saidas += m.valor;
-    });
-
-    const maxVal = Math.max(...meses.flatMap(x => [x.entradas, x.saidas]), 1);
-    const padL = 46, padR = 10, padT = 18, padB = 26;
-    const w = cssW - padL - padR;
-    const h = cssH - padT - padB;
-    ctx.clearRect(0, 0, cssW, cssH);
-
-    const linhas = 4;
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = cores.grid;
-    ctx.textBaseline = 'middle';
-    ctx.textAlign = 'right';
-    ctx.font = '10px Inter, sans-serif';
-    ctx.fillStyle = cores.texto;
-    for (let i = 0; i <= linhas; i++) {
-        const y = padT + (h / linhas) * i;
-        ctx.beginPath();
-        ctx.moveTo(padL, y);
-        ctx.lineTo(cssW - padR, y);
-        ctx.stroke();
-        ctx.fillText(compactValor(maxVal - (maxVal / linhas) * i), padL - 6, y);
-    }
-
-    const nomesMesShort = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-    const barW = Math.min(26, (w / meses.length) / 2.6);
-    meses.forEach((m, i) => {
-        const groupW = w / meses.length;
-        const xC = padL + groupW * i + groupW / 2;
-        const hE = (m.entradas / maxVal) * h;
-        const hS = (m.saidas / maxVal) * h;
-        ctx.fillStyle = '#667eea';
-        ctx.fillRect(xC - barW - 2, padT + h - Math.max(hE, 1), barW, Math.max(hE, 1));
-        ctx.fillStyle = '#f5576c';
-        ctx.fillRect(xC + 2, padT + h - Math.max(hS, 1), barW, Math.max(hS, 1));
-        ctx.fillStyle = cores.texto;
-        ctx.font = '9px Inter, sans-serif';
-        if (hE > 0) ctx.fillText(compactValor(m.entradas), xC - barW - 2, padT + h - hE - 6);
-        if (hS > 0) ctx.fillText(compactValor(m.saidas), xC + 2, padT + h - hS - 6);
-        ctx.font = '10px Inter, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(nomesMesShort[m.mes], xC, padT + h + 16);
-        ctx.textAlign = 'right';
-    });
-
-    if (legendEl) legendEl.innerHTML = `<span class="leg-item"><i style="background:#667eea"></i>Entradas</span><span class="leg-item"><i style="background:#f5576c"></i>Saídas</span>`;
-}
-
-// === fecharLightbox ===
-function fecharLightbox() {
-    document.getElementById('lightboxOverlay').classList.remove('active');
-    document.getElementById('lightboxImg').src = '';
-}
-
-// === formatCurrency ===
-function formatCurrency(value) {
-    return 'R$ ' + (Number(value) || 0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-}
-
-// === movRefereAoPedido ===
-// Match seguro: String equality em pedidoId + regex com (?!\d) para
-// 'Pedido #1' NÃO casar com 'Pedido #10' / '#11' / '#100'.
-function movRefereAoPedido(m, pedidoId) {
-    if (!m || pedidoId === null || pedidoId === undefined || pedidoId === '') return false;
-    const id = String(pedidoId);
-    if (m.pedidoId !== null && m.pedidoId !== undefined && String(m.pedidoId) === id) return true;
-    const esc = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp('(?:Pedido\\s*#|#)' + esc + '(?!\\d)');
-    return re.test(String(m.descricao || '')) || re.test(String(m.mensagem || ''));
-}
-
-// === formatDate ===
-function formatDate(dateStr) {
-    if (!dateStr) return '';
-    const [y, m, d] = dateStr.split('-');
-    return `${d}/${m}/${y}`;
-}
-
-// === formatDateTime ===
-function formatDateTime(isoStr) {
-    if (!isoStr) return '';
-    const date = parseDataChat(isoStr);
-    if (!date) return isoStr;
-    return date.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-}
-
-// === formatMaterialPrice ===
-function formatMaterialPrice(m, cls = 'item-card-price') {
-    return m && (Number(m.preco) || 0) <= 0
-        ? '<span class="badge-incluso"><i class="fas fa-gift"></i> INCLUSO</span>'
-        : `<span class="${cls}">${formatCurrency(m.preco)}</span>`;
-}
-
-// === formatPedidoDataHora ===
-function formatPedidoDataHora(p) {
-    const d = p.dataPref || p.data;
-    let txt = formatDate(d);
-    if (p.horarioPref) txt += ` <span class="hora-pedido">${p.horarioPref}</span>`;
-    return txt;
-}
-
-// === getCategoriaIcon ===
-function getCategoriaIcon(cat) {
-    const icons = {
-        microfone: 'fa-microphone',
-        fone: 'fa-headphones',
-        monitor: 'fa-volume-up',
-        interface: 'fa-plug',
-        cabo: 'fa-plug',
-        acessorio: 'fa-cog',
-        outro: 'fa-box'
-    };
-    return icons[cat] || 'fa-box';
-}
-
-// === parcela ===
-                        const parcela = (m.descricao || '').includes('(2\u00aa parcela)') ? ' <span class="pag-cond">2\u00aa parcela</span>' : '';
-                        metodoHtml = `<i class="fas ${icon}"></i> ${isPendente ? '<em>Aguardando</em>' : metodoPagamentoRotulo(m.pagamento)}${parcela}`;
-
-function preparePedidoModal() {
-    const clienteSelect = document.getElementById('pedidoCliente');
-    if (clienteSelect) clienteSelect.innerHTML = DB.clientes.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
-
-    const servicosDiv = document.getElementById('pedidoServicos');
-    if (servicosDiv) {
-        servicosDiv.innerHTML = DB.servicos.map(s => `<div class="checkbox-item">
-        <input type="checkbox" id="ps_${s.id}" value="${String(s.id).replace(/"/g, '&quot;')}" onchange="updatePedidoTotal()">
-        <label for="ps_${s.id}">${s.nome}</label>
-        <span class="item-price">${formatCurrency(s.preco)}</span>
-    </div>`).join('');
-        servicosDiv.onclick = (e) => {
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'LABEL') return;
-            const item = e.target.closest('.checkbox-item');
-            if (!item) return;
-            const cb = item.querySelector('input');
-            if (cb) { cb.checked = !cb.checked; updatePedidoTotal(); }
-        };
-    }
-
-    const materiaisDiv = document.getElementById('pedidoMateriais');
-    if (materiaisDiv) {
-        materiaisDiv.innerHTML = DB.materiais.map(m => `<div class="checkbox-item">
-        <input type="checkbox" id="pm_${m.id}" value="${String(m.id).replace(/"/g, '&quot;')}" onchange="updatePedidoTotal()">
-        <label for="pm_${m.id}">${m.nome}</label>
-        ${formatMaterialPrice(m, 'item-price')}
-    </div>`).join('');
-        materiaisDiv.onclick = (e) => {
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'LABEL') return;
-            const item = e.target.closest('.checkbox-item');
-            if (!item) return;
-            const cb = item.querySelector('input');
-            if (cb) { cb.checked = !cb.checked; updatePedidoTotal(); }
-        };
-    }
-    updatePedidoTotal();
-}
-
-// === processarImagem ===
 async function processarImagem(file) {
     if (!file) return '';
     const dataUrl = await lerArquivoComoDataURL(file);
@@ -3107,216 +3111,56 @@ async function processarImagem(file) {
     return canvas.toDataURL('image/jpeg', 0.7);
 }
 
-// === renderFinanceiro ===
-function renderFinanceiro() {
-    try {
-        const movs = DB.movimentacoes || [];
-        const recebido = movs.filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente').reduce((s, m) => s + (Number(m.valor) || 0), 0);
-        const aReceber = movs.filter(m => m.tipo === 'entrada' && m.pagamento === 'pendente').reduce((s, m) => s + (Number(m.valor) || 0), 0);
-        const saida = movs.filter(m => m.tipo === 'saida').reduce((s, m) => s + (Number(m.valor) || 0), 0);
-
-        const setTxt = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
-        setTxt('totalEntradas', formatCurrency(recebido));
-        setTxt('totalAReceber', formatCurrency(aReceber));
-        setTxt('totalSaidas', formatCurrency(saida));
-        setTxt('saldoGeral', formatCurrency(recebido - saida));
-    } catch (e) {
-        console.error('renderFinanceiro stats:', e);
-    }
-    try { renderMovimentacoes(); } catch (e) { console.error('renderMovimentacoes:', e); }
+function formatCurrency(value) {
+    return 'R$ ' + value.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
 
-// === renderFooterStudio ===
-function renderFooterStudio() {
-    const st = studioDados();
-    const enderecoCompleto = [st.endereco, st.cidade].filter(Boolean).join(', ');
-    ['', 'Client'].forEach(sfx => {
-        const nomeEl = document.getElementById('footerStudioNome' + sfx);
-        if (!nomeEl) return;
-        nomeEl.textContent = st.nome || 'FPS Studio';
-        const linhas = { footerStudioEndereco: st.endereco, footerStudioCidade: st.cidade, footerStudioTelefone: st.telefone, footerStudioEmail: st.email };
-        Object.keys(linhas).forEach(base => {
-            const el = document.getElementById(base + sfx);
-            if (!el) return;
-            const val = linhas[base];
-            if (val) { el.style.display = ''; el.querySelector('span').textContent = val; }
-            else el.style.display = 'none';
-        });
-        const maps = document.getElementById('rotaGoogle' + sfx);
-        const waze = document.getElementById('rotaWaze' + sfx);
-        if (maps) maps.href = 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(enderecoCompleto);
-        if (waze) waze.href = 'https://waze.com/ul?q=' + encodeURIComponent(enderecoCompleto) + '&navigate=yes';
-        const rotas = document.getElementById('footerRotas' + sfx);
-        if (rotas) rotas.style.display = enderecoCompleto ? '' : 'none';
-    });
+function formatDate(dateStr) {
+    if (!dateStr) return '';
+    const [y, m, d] = dateStr.split('-');
+    return `${d}/${m}/${y}`;
 }
 
-// === renderPedidosAdmin ===
-function renderPedidosAdmin() {
-    try {
-    const selCliente = document.getElementById('filtroClientePedido');
-    if (!selCliente) return;
-    const clienteVal = selCliente.value;
-    selCliente.innerHTML = '<option value="">Todos os clientes</option>' +
-        (DB.clientes || []).map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
-    selCliente.value = clienteVal;
-
-    const buscaEl = document.getElementById('buscaPedidoAdmin');
-    const busca = ((buscaEl && buscaEl.value) || '').trim().toLowerCase();
-    let pedidos = (DB.pedidos || []).filter(p => {
-        const cliente = (DB.clientes || []).find(c => String(c.id) === String(p.clienteId));
-        const nome = cliente ? cliente.nome.toLowerCase() : '';
-        if (clienteVal && String(p.clienteId) !== String(clienteVal)) return false;
-        if (busca && !String(p.id).includes(busca.replace('#', '')) && !nome.includes(busca)) return false;
-        return true;
-    });
-
-    renderKanbanPedidos(pedidos);
-
-    const filtroEl = document.getElementById('filtroStatusPedido');
-    const filtro = filtroEl ? filtroEl.value : 'todos';
-    let tabela = pedidos;
-    if (filtro !== 'todos') tabela = tabela.filter(p => p.status === filtro);
-    const tbody = document.getElementById('pedidosAdminBody');
-    if (!tbody) return;
-    tbody.innerHTML = tabela.map(p => {
-        const cliente = DB.clientes.find(c => String(c.id) === String(p.clienteId));
-        const servicoNomes = (p.servicos || []).map(id => DB.servicos.find(s => String(s.id) === String(id))?.nome || '').filter(Boolean).join(', ');
-        const condRotulo = p.parcial ? '50% + 50%' : (p.descontoPct ? `-${p.descontoPct}% à vista` : '');
-        const restoPed = Math.max(0, Math.round((valorEsperadoPedido(p) - valorPagoPedido(p)) * 100) / 100);
-        const qtdAudios = (p.audios || []).length;
-        return `<tr>
-            <td><strong>#${p.id}</strong></td>
-            <td>${cliente ? cliente.nome : 'N/A'}</td>
-            <td>${servicoNomes || '-'}${qtdAudios ? ` <span class="badge badge-info" title="${qtdAudios} MP3(s) recebido(s)"><i class="fas fa-music"></i> ${qtdAudios}</span>` : ''}</td>
-            <td><strong>${formatCurrency(valorEsperadoPedido(p))}</strong>${condRotulo ? `<small class="cond-badge">${condRotulo}</small>` : ''}</td>
-            <td><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></td>
-            <td>${formatPedidoDataHora(p)}</td>
-            <td>
-                <div class="table-actions">
-                    ${qtdAudios ? `<button class="btn-primary btn-sm" onclick="verDetalhesPedido('${p.id}')" title="Ver MP3s recebidos"><i class="fas fa-music"></i></button>` : ''}
-                    ${restoPed > 0 ? `<button class="btn-primary btn-sm" onclick="confirmarPagamentoPedidoAdmin('${p.id}')" title="Confirmar Pagamento"><i class="fas fa-check-circle"></i></button>` : ''}
-                    <button onclick="verDetalhesPedido('${p.id}')" title="Ver Detalhes"><i class="fas fa-eye"></i></button>
-                    <button onclick="editarPedido('${p.id}')" title="Editar"><i class="fas fa-edit"></i></button>
-                    <button class="btn-del" onclick="excluirPedido('${p.id}')" title="Excluir"><i class="fas fa-trash"></i></button>
-                </div>
-            </td>
-        </tr>`;
-    }).join('');
-    } catch (e) {
-        console.error('renderPedidosAdmin:', e);
-    }
+function formatPedidoDataHora(p) {
+    if (!p.dataInicial) return formatDate(p.data);
+    let txt = formatDate(p.dataInicial);
+    if (p.horaInicial) txt += ` <span class="hora-pedido">${p.horaInicial}</span>`;
+    return txt;
 }
 
-// === salvarSessao ===
-function salvarSessao() {
-    if (currentUser) localStorage.setItem('fps_session', JSON.stringify(currentUser));
+function validarDiaFuncionamento() {
+    const dp = document.getElementById('clientPedidoDataPref') || document.getElementById('pedidoDataPref');
+    if (!dp || !dp.value) return;
+    const d = new Date(dp.value + 'T12:00:00');
+    const dia = d.getDay();
+    const nomes = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+    const funciona = dia >= 2 && dia <= 5;
+    document.querySelectorAll('.tarja-funcionamento.tarja-dinamica').forEach(t => t.classList.toggle('tarja-alerta', !funciona));
+    if (!funciona) showToast(`Atenção: o estúdio não funciona em ${nomes[dia]}s — atendemos de terça a sexta.`, 'error');
 }
 
-// === sincronizarFinanceiroPedido ===
-async function sincronizarFinanceiroPedido(p) {
-    if (!p) return null;
-    const doPedido = (DB.movimentacoes || []).filter(m =>
-        (m.pedidoId != null && String(m.pedidoId) === String(p.id)) ||
-        (m.tipo === 'entrada' && movRefereAoPedido(m, p.id))
-    );
-    const pagas = doPedido.filter(m => m.pagamento !== 'pendente');
-    const pendentes = doPedido.filter(m => m.pagamento === 'pendente');
-
-    if (p.status === 'cancelado') {
-        for (const m of doPedido) {
-            DB.movimentacoes = (DB.movimentacoes || []).filter(x => x.id !== m.id);
-            if (DBReady && m.docId) {
-                try { await DB_SERVICE.deleteMovimentacao(m.docId); } catch (e) {}
-            }
-        }
-        return null;
-    }
-
-    // Nunca sobrescrever valor já recebido: paga mantém o valor pago;
-    // pendente recebe apenas o restante (esperado - pago).
-    const pago = pagas.reduce((s, m) => s + (Number(m.valor) || 0), 0);
-    const esperado = valorEsperadoPedido(p);
-    const restante = Math.max(0, Math.round((esperado - pago) * 100) / 100);
-
-    let ref = null;
-    if (pagas.length) {
-        ref = pagas[pagas.length - 1];
-        const mudancas = { descricao: `Pedido #${p.id}`, pedidoId: p.id, categoria: ref.categoria || 'servico' };
-        Object.assign(ref, mudancas);
-        if (DBReady && ref.docId) {
-            try { await DB_SERVICE.updateMovimentacao(ref.docId, mudancas); } catch (e) {}
-        }
-    }
-
-    if (restante > 0) {
-        if (pendentes.length) {
-            const pend = pendentes[pendentes.length - 1];
-            const mudancas = { tipo: 'entrada', descricao: `Pedido #${p.id}`, valor: restante, categoria: 'servico', pagamento: 'pendente', pedidoId: p.id };
-            Object.assign(pend, mudancas);
-            if (DBReady && pend.docId) {
-                try { await DB_SERVICE.updateMovimentacao(pend.docId, mudancas); } catch (e) {}
-            }
-            ref = ref || pend;
-        } else {
-            const nova = {
-                id: DB.nextId.movimentacao++,
-                tipo: 'entrada',
-                descricao: `Pedido #${p.id}`,
-                valor: restante,
-                categoria: 'servico',
-                pagamento: 'pendente',
-                data: new Date().toISOString().split('T')[0],
-                hora: agoraHora(),
-                pedidoId: p.id
-            };
-            DB.movimentacoes.push(nova);
-            if (DBReady) {
-                try {
-                    const resDoc = await DB_SERVICE.addMovimentacao(nova);
-                    nova.docId = resDoc && resDoc.id ? resDoc.id : resDoc;
-                } catch (e) {
-                    console.error('Falha ao persistir movimentação do pedido:', e);
-                }
-            }
-            ref = nova;
-        }
-    } else {
-        // Tudo já pago: remove pendentes órfãs
-        for (const pend of pendentes) {
-            DB.movimentacoes = (DB.movimentacoes || []).filter(x => x.id !== pend.id);
-            if (DBReady && pend.docId) {
-                try { await DB_SERVICE.deleteMovimentacao(pend.docId); } catch (e) {}
-            }
-        }
-    }
-
-    if (!ref && !pagas.length && restante > 0) {
-        // fallback: cria pendente pelo total
-        const nova = {
-            id: DB.nextId.movimentacao++,
-            tipo: 'entrada',
-            descricao: `Pedido #${p.id}`,
-            valor: esperado,
-            categoria: 'servico',
-            pagamento: 'pendente',
-            data: new Date().toISOString().split('T')[0],
-            hora: agoraHora(),
-            pedidoId: p.id
-        };
-        DB.movimentacoes.push(nova);
-        if (DBReady) {
-            try {
-                const resDoc = await DB_SERVICE.addMovimentacao(nova);
-                nova.docId = resDoc && resDoc.id ? resDoc.id : resDoc;
-            } catch (e) {}
-        }
-        ref = nova;
-    }
-    return ref;
+function formatDateTime(isoStr) {
+    if (!isoStr) return '';
+    const date = new Date(isoStr);
+    return date.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
-// === statusLabel ===
+function timeAgo(isoStr) {
+    if (!isoStr) return '';
+    const date = new Date(isoStr);
+    const now = new Date();
+    const diff = Math.floor((now - date) / 1000);
+    if (diff < 60) return 'agora';
+    if (diff < 3600) return `${Math.floor(diff / 60)}min`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+    return `${Math.floor(diff / 86400)}d`;
+}
+
+function capitalize(str) {
+    if (!str) return '';
+    return str.charAt(0).toUpperCase() + str.slice(1).replace(/_/g, ' ');
+}
+
 function statusLabel(status) {
     const labels = {
         pendente: 'Pendente',
@@ -3327,1317 +3171,51 @@ function statusLabel(status) {
     return labels[status] || status;
 }
 
-// === studioDados ===
-function studioDados() {
-    const cfg = APP_CONFIG || CONFIG_DEFAULT;
-    return Object.assign({}, CONFIG_DEFAULT.studio, (cfg.studio && typeof cfg.studio === 'object' ? cfg.studio : {}));
+function formatMaterialPrice(m, cls = 'item-card-price') {
+    return m && m.preco <= 0
+        ? '<span class="badge-incluso"><i class="fas fa-gift"></i> INCLUSO</span>'
+        : `<span class="${cls}">${formatCurrency(m.preco)}</span>`;
 }
 
-// === timeAgo ===
-function timeAgo(isoStr) {
-    if (!isoStr) return '';
-    const date = parseDataChat(isoStr);
-    if (!date) return '';
-    const now = new Date();
-    const diff = Math.floor((now - date) / 1000);
-    if (diff < 60) return 'agora';
-    if (diff < 3600) return `${Math.floor(diff / 60)}min`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-    return `${Math.floor(diff / 86400)}d`;
-}
-
-// === validarDiaFuncionamento ===
-function validarDiaFuncionamento(campoId) {
-    const dp = campoId ? document.getElementById(campoId) : (document.getElementById('clientPedidoDataInicial') || document.getElementById('pedidoDataInicial'));
-    if (!dp || !dp.value) return;
-    const d = new Date(dp.value + 'T12:00:00');
-    const dia = d.getDay();
-    const nomes = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
-    const funciona = dia >= 2 && dia <= 5;
-    document.querySelectorAll('.tarja-funcionamento.tarja-dinamica').forEach(t => t.classList.toggle('tarja-alerta', !funciona));
-    if (!funciona) showToast(`Atenção: o estúdio não funciona em ${nomes[dia]}s — atendemos de terça a sexta.`, 'error');
-}
-
-// === valorPagoPedido ===
-function valorPagoPedido(p) {
-    if (!p) return 0;
-    return DB.movimentacoes
-        .filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente' && movRefereAoPedido(m, p.id))
-        .reduce((s, m) => s + (Number(m.valor) || 0), 0);
-}
-
-
-// ==== RESTORED FROM b03a43a (saude do sistema) ====
-// [restore var b03a43a]
-let currentChatClient = null;
-// [restore var b03a43a]
-let selectedPedidoId = null;
-// [restore var b03a43a]
-let selectedPagamentoValor = 0;
-// [restore var b03a43a]
-const dashFiltros = { periodo: 'todos', tipo: 'todos', busca: '' };
-// [restore var b03a43a]
-const ordemPedidoStage = ['pendente', 'em_andamento', 'concluido'];
-// Limite de base64: removido no caminho IDB (armazenamento local sem
-// limite de payload). No caminho API, o limite do Vercel (~4,5MB) ainda
-// se aplica e é contornado via upload para Blob (guarda só a URL).
-const AUDIO_BASE64_LIMIT = 3500000;
-const PAYLOAD_AUDIO_LIMIT = 4000000;
-
-function limiteAudioBase64() {
-    return usingIDB ? Infinity : AUDIO_BASE64_LIMIT;
-}
-function limitePayloadAudio() {
-    return usingIDB ? Infinity : PAYLOAD_AUDIO_LIMIT;
-}
-// [restore var b03a43a]
-let _chatAudioObjectUrls = [];
-
-// [restore b03a43a] agoraHora
-function agoraHora() {
-    const d = new Date();
-    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-}
-
-// [restore b03a43a] arquivoAudioParaDataUrl
-async function arquivoAudioParaDataUrl(file) {
-    const arrayBuffer = await lerArquivoComoArrayBuffer(file);
-    let dataUrl = '';
-    const estimado = Math.ceil(arrayBuffer.byteLength * 4 / 3) + 30;
-    const limite = limiteAudioBase64();
-    if (estimado <= limite) {
-        dataUrl = arrayBufferToDataUrl(arrayBuffer, file.type || 'audio/mpeg');
-    } else {
-        let kbps = 96;
-        while (kbps >= 32) {
-            const blob = await comprimirAudio(arrayBuffer, kbps);
-            const du = await blobToDataUrl(blob);
-            if (du.length <= limite) { dataUrl = du; break; }
-            kbps = Math.floor(kbps / 2);
-        }
-        if (!dataUrl) throw new Error('Audio maior que o limite de envio (~4MB).');
-    }
-    return dataUrl;
-}
-
-// Prepara áudio para o pedido: base64 no IDB; no caminho API, envia para
-// Vercel Blob e guarda só a URL (evita estourar o body de ~4,5MB).
-async function prepararAudioPedido(file) {
-    const b64 = await arquivoAudioParaDataUrl(file);
-    const base = {
-        nome: file.name,
-        tamanho: file.size,
-        tipo: file.type || 'audio/mp3',
-        data: new Date().toISOString()
+function getCategoriaIcon(cat) {
+    const icons = {
+        microfone: 'fa-microphone',
+        fone: 'fa-headphones',
+        monitor: 'fa-volume-up',
+        interface: 'fa-plug',
+        cabo: 'fa-plug',
+        acessorio: 'fa-cog',
+        outro: 'fa-box'
     };
-    if (usingIDB) return { ...base, base64: b64 };
-    if (!b64 || b64.length < 500000) return { ...base, base64: b64 };
-    try {
-        const up = await DB_SERVICE.uploadAudio({ base64: b64, nome: file.name, tipo: file.type || 'audio/mpeg' });
-        if (up && up.url) return { ...base, url: up.url, origem: 'blob' };
-    } catch (e) {
-        console.warn('upload_audio falhou, mantendo base64:', e);
-    }
-    return { ...base, base64: b64 };
+    return icons[cat] || 'fa-box';
 }
 
-function audioSrc(a) {
-    if (!a) return '';
-    return a.url || a.base64 || a.audio || '';
-}
-
-// [restore b03a43a] arrayBufferToDataUrl
-function arrayBufferToDataUrl(buffer, mime) {
-    const bytes = new Uint8Array(buffer);
-    let bin = '';
-    for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]);
-    return `data:${mime};base64,${btoa(bin)}`;
-}
-
-// [restore b03a43a] avancarStagePedido
-function avancarStagePedido(id) {
-    const p = DB.pedidos.find(x => String(x.id) === String(id));
-    if (!p) return;
-    if (p.status === 'cancelado') { moverPedidoStatus(id, 'pendente'); return; }
-    const idx = ordemPedidoStage.indexOf(p.status);
-    moverPedidoStatus(id, ordemPedidoStage[Math.min(idx + 1, ordemPedidoStage.length - 1)]);
-}
-
-// [restore b03a43a] bindChatAudio
-function bindChatAudio(container, messages) {
-    _chatAudioObjectUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch(e) {} });
-    _chatAudioObjectUrls = [];
-    container.querySelectorAll('audio[data-idx]').forEach(a => {
-        const m = messages[parseInt(a.dataset.idx)];
-        if (m && m.audio) {
-            const objUrl = dataUrlToObjectUrl(m.audio);
-            if (objUrl) {
-                _chatAudioObjectUrls.push(objUrl);
-                a.src = objUrl;
-            } else {
-                a.src = m.audio;
-            }
-            a.load();
-        }
-    });
-    container.querySelectorAll('a.chat-audio-download[data-idx]').forEach(a => {
-        const m = messages[parseInt(a.dataset.idx)];
-        if (m && m.audio) {
-            a.href = m.audio;
-            a.download = m.arquivoNome || 'audio.mp3';
-        } else {
-            a.style.display = 'none';
-        }
-    });
-}
-
-// [restore b03a43a] blobToDataUrl
-function blobToDataUrl(blob) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(blob);
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
-    });
-}
-
-// [restore b03a43a] chatAudioHtml
-function chatAudioHtml(m, msgIdx, isSent) {
-    return `<div class="chat-message audio ${isSent ? 'sent' : 'received'}">
-        <div class="chat-audio-info">
-            <i class="fas fa-file-audio"></i>
-            <span>${m.arquivoNome || (isSent ? 'Áudio enviado' : 'Áudio recebido')}</span>
-            <a class="chat-audio-download" data-idx="${msgIdx}" title="Baixar áudio" onclick="event.stopPropagation()"><i class="fas fa-download"></i></a>
-        </div>
-        <audio controls preload="none" data-idx="${msgIdx}"></audio>
-        <div class="chat-message-time">${formatDateTime(m.data)}</div>
-    </div>`;
-}
-
-// [restore b03a43a] chatsDiferentes
-function chatsDiferentes(fresh, old) {
-    if (fresh.length !== old.length) return true;
-    for (let i = 0; i < fresh.length; i++) {
-        if (msgSig(fresh[i]) !== msgSig(old[i])) return true;
-    }
-    return false;
-}
-
-// [restore b03a43a] clearRegisterForm
-function clearRegisterForm() {
-    document.getElementById('regNome').value = '';
-    document.getElementById('regEmail').value = '';
-    document.getElementById('regTelefone').value = '';
-    document.getElementById('regSenha').value = '';
-    document.querySelectorAll('.reg-pin').forEach(d => { d.value = ''; d.classList.remove('filled'); });
-}
-
-// [restore b03a43a] compactValor
-function compactValor(v) {
-    if (v >= 1000) return (v / 1000).toFixed(1).replace('.', ',') + 'k';
-    return String(Math.round(v));
-}
-
-// [restore b03a43a] comprimirAudio
-async function comprimirAudio(arrayBuffer, kbps) {
-    const ac = new (window.AudioContext || window.webkitAudioContext)();
-    const decoded = await ac.decodeAudioData(arrayBuffer);
-    const sr = decoded.sampleRate;
-    const encoder = new lamejs.Mp3Encoder(1, sr, kbps);
-    const samples = new Int16Array(decoded.length);
-    const f32 = decoded.getChannelData(0);
-    for (let i = 0; i < decoded.length; i++) samples[i] = Math.max(-32768, Math.min(32767, f32[i] * 32768));
-    const chunks = [];
-    for (let i = 0; i < decoded.length; i += 1152) {
-        const buf = encoder.encodeBuffer(samples.subarray(i, Math.min(i + 1152, decoded.length)));
-        if (buf.length) chunks.push(new Uint8Array(buf));
-    }
-    const end = encoder.flush();
-    if (end.length) chunks.push(new Uint8Array(end));
-    return new Blob(chunks, { type: 'audio/mpeg' });
-}
-
-// [restore b03a43a] confirmarPagamentoPedidoAdmin
-async function confirmarPagamentoPedidoAdmin(pedidoId) {
-    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
-    if (!p) return;
-    const clienteId = p.clienteId;
-    const chatKey = `admin_${clienteId}`;
-    const msgs = DB.chats[chatKey] || [];
-
-    const comp = msgs
-        .filter(m => m.tipo === 'comprovante' && m.status !== 'pago' && movRefereAoPedido(m, p.id))
-        .sort((a, b) => (b.id || 0) - (a.id || 0))[0];
-
-    if (comp) {
-        await executarConfirmacaoPagamentoAdmin(comp, chatKey, comp.desconto || 0);
-        return;
-    }
-
-    const pendentes = DB.movimentacoes.filter(m => m.pagamento === 'pendente' && movRefereAoPedido(m, p.id));
-    const restanteAtual = Math.max(0, Math.round((valorEsperadoPedido(p) - valorPagoPedido(p)) * 100) / 100);
-    if (restanteAtual <= 0) {
-        showToast('Este pedido não possui pendência para confirmar.', 'info');
-        return;
-    }
-    if (pendentes.length === 0) {
-        showToast('Nenhum valor pendente registrado para este pedido.', 'info');
-        return;
-    }
-    if (!confirm(`Confirmar recebimento de ${formatCurrency(restanteAtual)} do Pedido #${pedidoId}?`)) return;
-
-    const fake = {
-        id: null,
-        tipo: 'comprovante',
-        remetente: 'client',
-        clienteId,
-        mensagem: `Pagamento de ${formatCurrency(restanteAtual)} via PIX para o Pedido #${pedidoId}`,
-        valor: restanteAtual,
-        desconto: 0,
-        pedidoId,
-        status: 'aguardando',
-        data: new Date().toISOString()
-    };
-    await executarConfirmacaoPagamentoAdmin(fake, chatKey, 0);
-}
-
-// [restore b03a43a] dashCores
-function dashCores() {
-    const cs = getComputedStyle(document.body);
-    const texto = cs.getPropertyValue('--dark').trim() || '#2d3436';
-    const grid = cs.getPropertyValue('--gray-light').trim() || 'rgba(0,0,0,0.12)';
-    return { texto, grid };
-}
-
-// [restore b03a43a] dashEmPeriodo
-function dashEmPeriodo(data) {
-    const f = dashFiltros.periodo;
-    if (f === 'todos' || !data) return true;
-    const hoje = new Date();
-    // Aceita data ISO completa (com T) e data curta (YYYY-MM-DD)
-    const d = String(data).indexOf('T') !== -1 ? new Date(data) : new Date(data + 'T00:00:00');
-    if (isNaN(d.getTime())) return true;
-    if (f === '7') return (hoje - d) / 86400000 <= 7;
-    if (f === '30') return (hoje - d) / 86400000 <= 30;
-    if (f === 'mes') return d.getMonth() === hoje.getMonth() && d.getFullYear() === hoje.getFullYear();
-    if (f === 'ano') return d.getFullYear() === hoje.getFullYear();
-    return true;
-}
-
-// [restore b03a43a] dashPeriodoLabel
-function dashPeriodoLabel() {
-    const map = { '7': '7 dias', '30': '30 dias', 'mes': 'este mês', 'ano': 'este ano', 'todos': '' };
-    return map[dashFiltros.periodo];
-}
-
-// [restore b03a43a] dataUrlToObjectUrl
-function dataUrlToObjectUrl(dataUrl) {
-    try {
-        const comma = dataUrl.indexOf(',');
-        if (comma === -1) return null;
-        const mime = (dataUrl.slice(0, comma).match(/data:([^;]+)/) || [])[1] || 'audio/mpeg';
-        const bin = atob(dataUrl.slice(comma + 1));
-        const bytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        return URL.createObjectURL(new Blob([bytes], { type: mime }));
-    } catch (e) {
-        console.error('Falha ao converter data URL de áudio:', e);
-        return null;
-    }
-}
-
-// [restore b03a43a] dragPedido
-function dragPedido(event, id) {
-    event.dataTransfer.setData('text/plain', String(id));
-    event.dataTransfer.effectAllowed = 'move';
-    event.currentTarget.classList.add('dragging');
-}
-
-// [restore b03a43a] excluirAudioBiblioteca
-async function excluirAudioBiblioteca(id) {
-    if (!confirm('Excluir este áudio da biblioteca?')) return;
-    const item = DB.bibliotecas.find(x => x.id === id);
-    if (!item) return;
-    DB.bibliotecas = DB.bibliotecas.filter(x => x.id !== id);
-    try {
-        if (item.docId || item.id) await DB_SERVICE.deleteBiblioteca(item.docId || item.id);
-        showToast('Áudio excluído!', 'success');
-    } catch (e) {
-        console.error(e);
-        showToast('Erro ao excluir o áudio.', 'error');
-    }
-    renderBibliotecas();
-}
-
-// [restore b03a43a] executarConfirmacaoPagamentoAdmin
-async function executarConfirmacaoPagamentoAdmin(m, chatKey, descontoAdmin) {
-    if (!m || m.tipo !== 'comprovante') return;
-    descontoAdmin = Math.max(0, descontoAdmin || 0);
-
-    m.status = 'pago';
-    m.desconto = descontoAdmin;
-    m.lida = true;
-
-    const pedidoIdRaw = m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0);
-    const pedido = DB.pedidos.find(x => String(x.id) === String(pedidoIdRaw));
-    const totalPago = Math.max(0, Math.round(((Number(m.valor) || (pedido ? (Number(pedido.total) || 0) : 0)) - descontoAdmin) * 100) / 100);
-    const metodoPag = (m.mensagem || '').includes('Cartão') || (m.mensagem || '').includes('cartao') ? 'cartao_credito' : 'pix';
-
-    try {
-        if (m.id) await DB_SERVICE.updateMessage(m.id, { status: 'pago', desconto: descontoAdmin });
-
-        if (pedido && totalPago > 0) {
-            const jaConfirmado = DB.movimentacoes.find(mm => mm.pedidoId != null && String(mm.pedidoId) === String(pedido.id) && mm.pagamento !== 'pendente');
-            if (pedido.parcial && jaConfirmado) {
-                const nova = {
-                    id: DB.nextId.movimentacao++,
-                    tipo: 'entrada',
-                    descricao: `Pagamento Pedido #${pedido.id} (2ª parcela)`,
-                    valor: totalPago,
-                    categoria: 'servico',
-                    pagamento: metodoPag,
-                    data: new Date().toISOString().split('T')[0],
-                    hora: agoraHora(),
-                    pedidoId: pedido.id
-                };
-                DB.movimentacoes.push(nova);
-                const docId = await DB_SERVICE.addMovimentacao(nova);
-                if (docId && docId.id) nova.docId = docId.id;
-            } else {
-                const mov = DB.movimentacoes.find(mm => mm.pagamento === 'pendente' && movRefereAoPedido(mm, pedido.id));
-                if (mov) {
-                    mov.tipo = 'entrada';
-                    mov.descricao = `Pagamento Pedido #${pedido.id}`;
-                    mov.valor = totalPago;
-                    mov.categoria = mov.categoria || 'servico';
-                    mov.pagamento = metodoPag;
-                    mov.pedidoId = pedido.id;
-                    if (mov.docId) await DB_SERVICE.updateMovimentacao(mov.docId, { tipo: mov.tipo, descricao: mov.descricao, valor: mov.valor, categoria: mov.categoria, pagamento: mov.pagamento, data: mov.data, hora: mov.hora || '', pedidoId: mov.pedidoId });
-                } else {
-                    const nova = {
-                        id: DB.nextId.movimentacao++,
-                        tipo: 'entrada',
-                        descricao: `Pagamento Pedido #${pedido.id}`,
-                        valor: totalPago,
-                        categoria: 'servico',
-                        pagamento: metodoPag,
-                        data: new Date().toISOString().split('T')[0],
-                        hora: agoraHora(),
-                        pedidoId: pedido.id
-                    };
-                    DB.movimentacoes.push(nova);
-                    const docId = await DB_SERVICE.addMovimentacao(nova);
-                    if (docId && docId.id) nova.docId = docId.id;
-                }
-            }
-
-            pedido.materiais.forEach(mId => {
-                const mat = DB.materiais.find(x => x.id === mId);
-            });
-
-            // Normaliza o "a receber": mantém apenas o saldo realmente pendente
-            const esperado = valorEsperadoPedido(pedido);
-            const pagoAte = valorPagoPedido(pedido);
-            const restante = Math.max(0, Math.round((esperado - pagoAte) * 100) / 100);
-            const pendentes = DB.movimentacoes.filter(mm => mm.pagamento === 'pendente' && movRefereAoPedido(mm, pedido.id));
-            if (restante > 0) {
-                const pend = pendentes[pendentes.length - 1];
-                if (pend) {
-                    pend.valor = restante;
-                    if (pend.docId) await DB_SERVICE.updateMovimentacao(pend.docId, { tipo: pend.tipo, descricao: pend.descricao, valor: pend.valor, categoria: pend.categoria, pagamento: pend.pagamento, data: pend.data, hora: pend.hora || '', pedidoId: pend.pedidoId });
-                } else {
-                    const nova = {
-                        id: DB.nextId.movimentacao++,
-                        tipo: 'entrada',
-                        descricao: `Pedido #${pedido.id}`,
-                        valor: restante,
-                        categoria: 'servico',
-                        pagamento: 'pendente',
-                        data: new Date().toISOString().split('T')[0],
-                        hora: agoraHora(),
-                        pedidoId: pedido.id
-                    };
-                    DB.movimentacoes.push(nova);
-                    const docId = await DB_SERVICE.addMovimentacao(nova);
-                    if (docId && docId.id) nova.docId = docId.id;
-                }
-            } else {
-                for (const pend of pendentes) {
-                    DB.movimentacoes = DB.movimentacoes.filter(mm => mm.id !== pend.id);
-                    if (pend.docId) await DB_SERVICE.deleteMovimentacao(pend.docId);
-                }
-            }
-
-            if (pedido.status === 'pendente') {
-                pedido.status = 'em_andamento';
-                if (pedido.docId) await DB_SERVICE.updatePedido(pedido.docId, { clienteId: pedido.clienteId, servicos: pedido.servicos, materiais: pedido.materiais, desconto: pedido.desconto, status: pedido.status, total: pedido.total, parcial: pedido.parcial || 0, descontoPct: pedido.descontoPct || 0 });
-            }
-        }
-    } catch (e) {
-        console.error(e);
-        m.status = 'aguardando';
-        try { renderChatMessagesAdmin(chatKey); } catch (e2) {}
-        try { renderChatList(); } catch (e2) {}
-        try { renderFinanceiro(); } catch (e2) {}
-        try { renderAdminDashboard(); } catch (e2) {}
-        try { updateChatBadge(); } catch (e2) {}
-        showToast('Erro ao confirmar pagamento. Verifique sua conexão e tente novamente.', 'error');
-        return;
-    }
-
-    // Enviar mensagem de confirmação pro cliente com os detalhes do serviço
-    if (pedido) {
-        const nomesServicos = (pedido.servicos || []).map(id2 => { const s = DB.servicos.find(x => String(x.id) === String(id2)); return s ? s.nome : ''; }).filter(Boolean);
-        const nomesMateriais = (pedido.materiais || []).map(id2 => { const mm = DB.materiais.find(x => String(x.id) === String(id2)); return mm ? mm.nome : ''; }).filter(Boolean);
-        const detalhes = [...nomesServicos, ...nomesMateriais].join(', ') || 'Serviço solicitado';
-        const faltante = pedido ? Math.max(0, Math.round((valorEsperadoPedido(pedido) - valorPagoPedido(pedido)) * 100) / 100) : 0;
-        const confMsg = {
-            tipo: 'sistema',
-            remetente: 'admin',
-            clienteId: m.clienteId,
-            mensagem: `Pagamento do Pedido #${pedido.id} confirmado! Detalhes do serviço: ${detalhes}. Valor recebido: ${formatCurrency(Math.max(0, totalPago))}.${faltante > 0 ? ` Falta pagar ${formatCurrency(faltante)} (50% restante).` : ' Status: em andamento.'}`,
-            data: new Date().toISOString()
-        };
-        if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
-        DB.chats[chatKey].push(confMsg);
-        try {
-            const res = await DB_SERVICE.sendMessage(confMsg);
-            if (res && res.id) confMsg.id = res.id;
-        } catch (e) {
-            console.error(e);
-            const idx = DB.chats[chatKey].indexOf(confMsg);
-            if (idx > -1) DB.chats[chatKey].splice(idx, 1);
-        }
-    }
-
-    try {
-        if (currentChatClient != null && String(currentChatClient) === String(m.clienteId)) renderChatMessagesAdmin(chatKey);
-        try { renderChatList(); } catch (e) {}
-        try { renderFinanceiro(); } catch (e) {}
-        try { renderAdminDashboard(); } catch (e) {}
-        updateChatBadge();
-        celebratePayment();
-        showToast('Pagamento confirmado como PAGO!', 'success');
-    } catch (e) {
-        console.error('pós-confirmação:', e);
-        try { renderFinanceiro(); } catch (e2) {}
-        try { renderAdminDashboard(); } catch (e2) {}
-        try { renderChatList(); } catch (e2) {}
-        updateChatBadge();
-        celebratePayment();
-        showToast('Pagamento confirmado como PAGO!', 'success');
-    }
-}
-
-// [restore b03a43a] formatDataHoraMov
-function formatDataHoraMov(m) {
-    const d = formatDate(m.data);
-    const h = m.hora || '';
-    return d + (h ? ' <span class="hora-pedido">' + h + '</span>' : '');
-}
-
-// [restore b03a43a] formatValorBR
-function formatValorBR(num) {
-    return (isFinite(num) ? num : parseValorBR(num)).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-}
-
-// [restore b03a43a] htmlResumoServicosCliente
-function htmlResumoServicosCliente(clienteId) {
-    const pedidos = DB.pedidos.filter(p => String(p.clienteId) === String(clienteId) && p.status !== 'cancelado');
-    const itens = new Map();
-    pedidos.forEach(p => {
-        (p.servicos || []).forEach(sId => {
-            const s = DB.servicos.find(x => String(x.id) === String(sId));
-            if (!s || Number(s.preco) <= 0) return;
-            const chave = `s_${sId}`;
-            const item = itens.get(chave) || { tipo: 'Serviço', nome: s.nome, preco: Number(s.preco) || 0, qtd: 0, sub: 0 };
-            item.qtd++;
-            item.sub += Number(s.preco) || 0;
-            itens.set(chave, item);
-        });
-        (p.materiais || []).forEach(mId => {
-            const m = DB.materiais.find(x => String(x.id) === String(mId));
-            if (!m || Number(m.preco) <= 0) return;
-            const chave = `m_${mId}`;
-            const item = itens.get(chave) || { tipo: 'Material', nome: m.nome, preco: Number(m.preco) || 0, qtd: 0, sub: 0 };
-            item.qtd++;
-            item.sub += Number(m.preco) || 0;
-            itens.set(chave, item);
-        });
-    });
-
-    if (itens.size === 0) return '';
-
-    const linhas = [...itens.values()].map(item => `<tr>
-        <td>${item.tipo}</td>
-        <td style="white-space:normal;">${item.nome}</td>
-        <td>${item.qtd}</td>
-        <td>${formatCurrency(item.preco)}</td>
-        <td class="valor-pago"><strong>${formatCurrency(item.sub)}</strong></td>
-    </tr>`).join('');
-
-    const somatoria = [...itens.values()].reduce((s, i) => s + i.sub, 0);
-
-    return `<div class="sub-secao-titulo"><i class="fas fa-chart-pie"></i> Detalhes por Serviço / Material</div>
-        <table class="data-table sub-table">
-            <thead><tr><th>Tipo</th><th>Item</th><th>Qtde</th><th>Valor unit.</th><th>Subtotal</th></tr></thead>
-            <tbody>${linhas}</tbody>
-            <tfoot>
-                <tr>
-                    <td colspan="4"><strong>Somatória</strong></td>
-                    <td class="valor-total"><strong>${formatCurrency(somatoria)}</strong></td>
-                </tr>
-            </tfoot>
-        </table>`;
-}
-
-// [restore b03a43a] initApp
-async function initApp() {
-    try {
-        const ok = await DB_SERVICE.init();
-        if (ok) {
-            // Carrega todos os dados do SQLite via API
-            DB.servicos = await DB_SERVICE.getServicos();
-            DB.materiais = await DB_SERVICE.getMateriais();
-            DB.clientes = await DB_SERVICE.getClientes();
-            DB.pedidos = await DB_SERVICE.getPedidos();
-            DB.movimentacoes = await DB_SERVICE.getMovimentacoes();
-            DB.bibliotecas = await DB_SERVICE.getBiblioteca();
-
-            // Normaliza docId = id (o id do servidor é o mesmo do cliente)
-            ['servicos', 'materiais', 'clientes', 'pedidos', 'movimentacoes', 'biblioteca'].forEach(tabela => {
-                DB[tabela].forEach(r => { r.docId = r.id; });
-            });
-
-            // Calcular nextIds
-            if (DB.servicos.length) DB.nextId.servico = Math.max(...DB.servicos.map(s => s.id)) + 1;
-            if (DB.materiais.length) DB.nextId.material = Math.max(...DB.materiais.map(m => m.id)) + 1;
-            if (DB.clientes.length) DB.nextId.cliente = Math.max(...DB.clientes.map(c => c.id)) + 1;
-            if (DB.pedidos.length) DB.nextId.pedido = Math.max(...DB.pedidos.map(p => p.id)) + 1;
-            if (DB.movimentacoes.length) DB.nextId.movimentacao = Math.max(...DB.movimentacoes.map(m => m.id)) + 1;
-            if (DB.bibliotecas.length) DB.nextId.biblioteca = Math.max(...DB.bibliotecas.map(b => b.id)) + 1;
-
-            // Carregar chats
-            for (const c of DB.clientes) {
-                try {
-                    DB.chats[`admin_${c.id}`] = await DB_SERVICE.getChat(c.id);
-                } catch(e) {}
-            }
-
-            DBReady = true;
-            console.log('SQLite conectado!');
-            setInterval(() => { if (document.visibilityState === 'visible') salvarAutoBackupLocal(); }, 60000);
-            setInterval(refreshChatsLive, 5000);
-            await restaurarAutoBackupLocal();
-        }
-    } catch (err) {
-        console.warn('API SQLite offline. Modo local ativo.', err);
-        DBReady = false;
-    }
-
-    await carregarConfig();
-
-    setupDragDrop();
-    document.getElementById('movData').value = new Date().toISOString().split('T')[0];
-    updateChatBadge();
-    restaurarSessao();
-}
-
-// [restore b03a43a] lerArquivoComoArrayBuffer
-function lerArquivoComoArrayBuffer(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsArrayBuffer(file);
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
-    });
-}
-
-// [restore b03a43a] lerArquivoComoDataURL
-function lerArquivoComoDataURL(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-    });
-}
-
-// [restore b03a43a] limparSessao
-function limparSessao() {
-    localStorage.removeItem('fps_session');
-}
-
-// [restore b03a43a] mergeChats
-function mergeChats(fresh, old) {
-    const byId = new Map();
-    (fresh || []).forEach(m => { if (m.id != null) byId.set(m.id, m); });
-    const merged = (old || []).map(lm => {
-        if (lm.id != null && byId.has(lm.id)) {
-            const fm = byId.get(lm.id);
-            byId.delete(lm.id);
-            return fm;
-        }
-        return lm;
-    });
-    byId.forEach(fm => merged.push(fm));
-    merged.sort((a, b) => {
-        const ta = normChatData(a.data), tb = normChatData(b.data);
-        if (ta !== tb) return ta - tb;
-        return (a.id || 0) - (b.id || 0);
-    });
-    return merged;
-}
-
-// [restore b03a43a] metodoPagamentoRotulo
-function metodoPagamentoRotulo(pagamento) {
-    if (pagamento === 'cartao_credito') return 'Cartão';
-    if (pagamento === 'pix') return 'PIX';
-    if (pagamento === 'pendente') return 'Pendente';
-    return (pagamento || '').charAt(0).toUpperCase() + (pagamento || '').slice(1);
-}
-
-// [restore b03a43a] moverPedidoStatus
-async function moverPedidoStatus(id, novoStatus) {
-    const p = DB.pedidos.find(x => String(x.id) === String(id));
-    if (!p || p.status === novoStatus) return;
-    p.status = novoStatus;
-    if (DBReady) {
-        try {
-            await DB_SERVICE.updatePedido(p.docId, { clienteId: p.clienteId, servicos: p.servicos, materiais: p.materiais, desconto: p.desconto, status: novoStatus, total: p.total, parcial: p.parcial || 0, descontoPct: p.descontoPct || 0 });
-        } catch (e) { console.error('updatePedido status', e); }
-    }
-    const mov = DB.movimentacoes.find(m => m.pedidoId != null && String(m.pedidoId) === String(id) && m.pagamento === 'pendente');
-    if (novoStatus === 'cancelado' && mov) {
-        DB.movimentacoes = DB.movimentacoes.filter(m => m.id !== mov.id);
-        if (DBReady && mov.docId) await DB_SERVICE.deleteMovimentacao(mov.docId);
-    }
-    await sincronizarFinanceiroPedido(p);
-    renderPedidosAdmin();
-    renderAdminDashboard();
-    renderFinanceiro();
-    showToast(`Pedido #${id} movido para ${statusLabel(novoStatus)}`, 'success');
-}
-
-// [restore b03a43a] msgSig
-function msgSig(m) {
-    return m.id + '|' + (m.tipo || '') + '|' + (m.mensagem || '').slice(0, 80) + '|' + (m.status || '') + '|' + (m.lida ? 1 : 0) + '|' + (m.audio ? 1 : 0) + '|' + (m.arquivoNome || '');
-}
-
-// [restore b03a43a] nomeClienteDoPedido
-function nomeClienteDoPedido(pedidoId) {
-    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
-    if (!p) return '';
-    const c = DB.clientes.find(x => x.id === p.clienteId);
-    return c ? c.nome : '';
-}
-
-// [restore b03a43a] normChatData
-function normChatData(d) {
-    if (!d) return 0;
-    const t = Date.parse(d);
-    if (!isNaN(t)) return t;
-    const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
-    if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
-    return 0;
-}
-
-// [restore b03a43a] pagamentosPedidoResumo
-function pagamentosPedidoResumo(p) {
-    const pagamentos = DB.movimentacoes
-        .filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente' && movRefereAoPedido(m, p.id))
-        .sort((a, b) => (a.data || '').localeCompare(b.data || '') || (a.id || 0) - (b.id || 0));
-    if (pagamentos.length === 0) {
-        const temPendente = DB.movimentacoes.some(m => m.pagamento === 'pendente' && movRefereAoPedido(m, p.id));
-        return temPendente
-            ? '<span class="pag-badge pag-pend"><i class="fas fa-hourglass-half"></i> Aguardando pagamento</span>'
-            : '<span class="pag-badge">Sem pagamento</span>';
-    }
-    return pagamentos.map((m, i) => {
-        const icon = m.pagamento === 'cartao_credito' ? 'fa-credit-card' : 'fa-qrcode';
-        const parcela = pagamentos.length > 1 ? ` · ${i + 1}ª parcela` : '';
-        return `<div class="pag-linha"><span class="pag-metodo"><i class="fas ${icon}"></i> ${metodoPagamentoRotulo(m.pagamento)}${parcela}</span> ${formatCurrency(m.valor)} <small>${formatDate(m.data)}</small></div>`;
-    }).join('');
-}
-
-// [restore b03a43a] parseDataChat
-function parseDataChat(isoStr) {
-    if (!isoStr) return null;
-    let s = String(isoStr).trim();
-    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(s)) s = s.replace(' ', 'T') + 'Z';
-    const t = Date.parse(s);
-    return isNaN(t) ? null : new Date(t);
-}
-
-// [restore b03a43a] parseValorBR
-function parseValorBR(str) {
-    if (str === null || str === undefined) return 0;
-    if (typeof str === 'number') return isFinite(str) ? str : 0;
-    const s = String(str).trim().replace(/R\$\s?/gi, '').replace(/\s/g, '');
-    if (!s) return 0;
-    const lastComma = s.lastIndexOf(',');
-    const lastDot = s.lastIndexOf('.');
-    let normalized;
-    if (lastComma > lastDot) {
-        normalized = s.replace(/\./g, '').replace(',', '.');
-    } else if (lastDot > lastComma) {
-        normalized = s.replace(/,/g, '');
-    } else {
-        normalized = s;
-    }
-    const n = parseFloat(normalized);
-    return isNaN(n) ? 0 : n;
-}
-
-// [restore b03a43a] pedidoKanbanCard
-function pedidoKanbanCard(p) {
-    const cliente = DB.clientes.find(c => String(c.id) === String(p.clienteId));
-    const servicoNomes = (p.servicos || []).map(id => DB.servicos.find(s => String(s.id) === String(id))?.nome || '').filter(Boolean);
-    const mostrar = servicoNomes.slice(0, 2);
-    const extra = servicoNomes.length - mostrar.length;
-    const pagos = valorPagoPedido(p) > 0;
-    const pagoTotal = pedidoPagamentoCompleto(p);
-    const restoPed = Math.max(0, Math.round((valorEsperadoPedido(p) - valorPagoPedido(p)) * 100) / 100);
-    const condRotulo = p.parcial ? 'Dividido 50%+50%' : (p.descontoPct ? `À vista -${p.descontoPct}%` : '');
-    const qtdAudios = (p.audios || []).length;
-    return `<div class="kanban-card" draggable="true" ondragstart="dragPedido(event, ${p.id})" ondragend="this.classList.remove('dragging')">
-        <div class="kanban-card-top">
-            <strong>#${p.id}</strong>
-            ${qtdAudios ? `<span class="kanban-chip" title="${qtdAudios} MP3(s)"><i class="fas fa-music"></i> ${qtdAudios}</span>` : ''}
-            ${pagoTotal
-                ? '<span class="kanban-pagamento pag-ok"><i class="fas fa-check-circle"></i> Pago</span>'
-                : pagos
-                    ? '<span class="kanban-pagamento pag-parc"><i class="fas fa-adjust"></i> Parcial</span>'
-                    : '<span class="kanban-pagamento pag-pend"><i class="fas fa-hourglass"></i> Aguardando</span>'}
-        </div>
-        ${condRotulo ? `<span class="kanban-chip chip-cond">${condRotulo}</span>` : ''}
-        <h5 class="kanban-cliente"><i class="fas fa-user-circle"></i> ${cliente ? cliente.nome : 'N/A'}</h5>
-        <div class="kanban-servicos">
-            ${servicoNomes.length === 0 ? '<span class="kanban-chip chip-material">Materiais</span>' : mostrar.map(n => `<span class="kanban-chip">${n}</span>`).join('')}
-            ${extra > 0 ? `<span class="kanban-chip">+${extra}</span>` : ''}
-        </div>
-        <div class="kanban-card-bottom">
-            <strong class="kanban-total">${formatCurrency(valorEsperadoPedido(p))}</strong>
-            <span class="kanban-data">${formatPedidoDataHora(p)}</span>
-        </div>
-        <div class="kanban-card-acoes">
-            ${restoPed > 0 && p.status !== 'cancelado' ? `<button title="Confirmar pagamento" onclick="confirmarPagamentoPedidoAdmin('${p.id}')"><i class="fas fa-check-circle"></i></button>` : ''}
-            <button title="Ver detalhes" onclick="verDetalhesPedido('${p.id}')"><i class="fas fa-eye"></i></button>
-            <button title="Avançar etapa" onclick="avancarStagePedido('${p.id}')"><i class="fas fa-forward"></i></button>
-            <button title="Editar" onclick="editarPedido('${p.id}')"><i class="fas fa-edit"></i></button>
-            <button class="btn-del" title="Excluir" onclick="excluirPedido('${p.id}')"><i class="fas fa-trash"></i></button>
-        </div>
-    </div>`;
-}
-
-// [restore b03a43a] pedidoPagamentoCompleto
-function pedidoPagamentoCompleto(p) {
-    return valorPagoPedido(p) >= valorEsperadoPedido(p);
-}
-
-// [restore b03a43a] refreshChatsLive
-async function refreshChatsLive() {
-    if (!DBReady || !currentUser) return;
-    try {
-        if (currentUser.role === 'admin') {
-            DB.chats = DB.chats || {};
-            (DB.clientes || []).forEach(c => {
-                const k = `admin_${c.id}`;
-                if (!DB.chats[k]) DB.chats[k] = [];
-            });
-            const keys = Object.keys(DB.chats).filter(k => k.startsWith('admin_'));
-            for (const key of keys) {
-                const clienteId = key.replace('admin_', '');
-                if (!clienteId) continue;
-                try {
-                    const fresh = await DB_SERVICE.getChat(clienteId);
-                    const old = DB.chats[key] || [];
-                    const merged = mergeChats(fresh, old);
-                    if (chatsDiferentes(merged, old)) {
-                        DB.chats[key] = merged;
-                        if (currentChatClient != null && String(currentChatClient) === String(clienteId)) renderChatMessagesAdmin(key);
-                    }
-                } catch (e) {}
-            }
-            try { renderChatList(); } catch (e) {}
-            try { updateChatBadge(); } catch (e) {}
-        } else {
-            const key = `admin_${currentUser.id}`;
-            const fresh = await DB_SERVICE.getChat(currentUser.id);
-            const old = DB.chats[key] || [];
-            const merged = mergeChats(fresh, old);
-            if (chatsDiferentes(merged, old)) {
-                DB.chats[key] = merged;
-                renderClientChat();
-            }
-        }
-    } catch (e) {}
-}
-
-// [restore b03a43a] renderCurrentPage
-function renderCurrentPage(page) {
-    switch(page) {
-        case 'adminHome': renderAdminDashboard(); break;
-        case 'adminServicos': renderServicosAdmin(); break;
-        case 'adminMateriais': renderMateriaisAdmin(); break;
-        case 'adminPedidos': renderPedidosAdmin(); break;
-        case 'adminFinanceiro': renderFinanceiro(); break;
-        case 'adminChat': renderChatList(); break;
-        case 'adminBiblioteca': renderBiblioteca(); break;
-        case 'adminBibliotecas': renderBibliotecas(); break;
-        case 'adminClientes': renderClientes(); break;
-        case 'adminConfig': preencherFormConfig(); break;
-        case 'clientHome': renderClientDashboard(); break;
-        case 'clientServicos': renderServicosClient(); break;
-        case 'clientMateriais': renderMateriaisClient(); break;
-        case 'clientPedidos': renderPedidosClient(); break;
-        case 'clientChat': renderClientChat(); break;
-    }
-}
-
-// [restore b03a43a] renderKanbanPedidos
-function renderKanbanPedidos(pedidos) {
-    const cols = [
-        { status: 'pendente', rotulo: 'Pendente', icone: 'fa-hourglass-half', cor: '#fdcb6e' },
-        { status: 'em_andamento', rotulo: 'Em Andamento', icone: 'fa-spinner', cor: '#6c5ce7' },
-        { status: 'concluido', rotulo: 'Concluído', icone: 'fa-check-circle', cor: '#00b894' },
-        { status: 'cancelado', rotulo: 'Cancelado', icone: 'fa-ban', cor: '#d63031' }
-    ];
-    const board = document.getElementById('kanbanPedidos');
-    if (!board) return;
-    board.innerHTML = cols.map(col => {
-        const itens = pedidos.filter(p => p.status === col.status);
-        return `<div class="kanban-col" data-status="${col.status}"
-            ondragover="event.preventDefault(); this.classList.add('kanban-over')"
-            ondragleave="this.classList.remove('kanban-over')"
-            ondrop="soltarPedidoKanban(event, '${col.status}')">
-            <div class="kanban-col-header">
-                <span class="kanban-titulo"><i class="fas ${col.icone}" style="color:${col.cor}"></i> ${col.rotulo}</span>
-                <span class="kanban-count">${itens.length}</span>
-            </div>
-            <div class="kanban-col-body">
-                ${itens.length ? itens.map(p => pedidoKanbanCard(p)).join('') : '<p class="kanban-vazio">Nenhum pedido</p>'}
-            </div>
-        </div>`;
-    }).join('');
-}
-
-// [restore b03a43a] renderMateriaisAdmin
-function renderMateriaisAdmin() {
-    const container = document.getElementById('listaMateriaisAdmin');
-    container.innerHTML = DB.materiais.map(m => `<div class="item-card">
-        <div class="item-card-image">
-            ${m.imagem ? `<img src="${m.imagem}" alt="${m.nome}">` : `<div class="placeholder-icon"><i class="fas ${getCategoriaIcon(m.categoria)}"></i><span>${capitalize(m.categoria)}</span></div>`}
-        </div>
-        <div class="item-card-body">
-            <h4>${m.nome}</h4>
-            <p>${m.descricao}</p>
-            <div class="item-card-meta">
-                ${formatMaterialPrice(m)}
-                <span class="item-card-badge badge-estoque"><i class="fas fa-tag"></i> ${m.categoria || 'outro'}</span>
-            </div>
-        </div>
-        <div class="item-card-actions">
-            <button class="btn-secondary btn-sm" onclick="editarMaterial(${m.id})"><i class="fas fa-edit"></i> Editar</button>
-            <button class="btn-danger btn-sm" onclick="excluirMaterial(${m.id})"><i class="fas fa-trash"></i> Excluir</button>
-        </div>
-    </div>`).join('');
-}
-
-// [restore b03a43a] renderServicosAdmin
-function renderServicosAdmin() {
-    const container = document.getElementById('listaServicosAdmin');
-    container.innerHTML = DB.servicos.map(s => `<div class="item-card">
-        <div class="item-card-image">
-            ${s.imagem ? `<img src="${s.imagem}" alt="${s.nome}">` : `<div class="placeholder-icon"><i class="fas ${s.icone}"></i><span>${s.duracao}</span></div>`}
-        </div>
-        <div class="item-card-body">
-            <h4>${s.nome}</h4>
-            <small class="item-card-categoria"><i class="fas fa-tag"></i> ${s.categoria || 'outro'}</small>
-            <p>${s.descricao}</p>
-            <div class="item-card-meta">
-                <span class="item-card-price">${formatCurrency(s.preco)}</span>
-                <span class="item-card-badge badge-estoque">${s.duracao}</span>
-            </div>
-        </div>
-        <div class="item-card-actions">
-            <button class="btn-secondary btn-sm" onclick="editarServico(${s.id})"><i class="fas fa-edit"></i> Editar</button>
-            <button class="btn-danger btn-sm" onclick="excluirServico(${s.id})"><i class="fas fa-trash"></i> Excluir</button>
-        </div>
-    </div>`).join('');
-}
-
-// [restore b03a43a] restaurarAutoBackupLocal
-async function restaurarAutoBackupLocal() {
-    if (!DBReady) return;
-    try {
-        const raw = localStorage.getItem('fps_autobackup');
-        if (!raw) return;
-        const b = JSON.parse(raw);
-        if (!b || b.tipo !== 'fps-studio-backup') return;
-        const temDados = (b.servicos && b.servicos.length) || (b.clientes && b.clientes.length) || (b.pedidos && b.pedidos.length);
-        const servidorVazio = DB.servicos.length === 0 && DB.clientes.length === 0 && DB.pedidos.length === 0;
-        if (!temDados || !servidorVazio) return;
-        await DB_SERVICE.importBackup(b);
-        location.reload();
-    } catch (e) {}
-}
-
-// [restore b03a43a] restaurarSessao
-function restaurarSessao() {
-    const saved = localStorage.getItem('fps_session');
-    if (!saved) return;
-    try {
-        const user = JSON.parse(saved);
-        if (!user || !user.role) return;
-        if (user.role === 'cliente') user.role = 'client';
-        if (user.role === 'client') {
-            const cliente = DB.clientes.find(c => c.id === user.id);
-            if (!cliente) { limparSessao(); return; }
-            currentUser = { role: 'client', ...cliente };
-            showDashboard('client');
-            document.getElementById('clientNameDisplay').textContent = cliente.nome;
-            atualizarAvisoPerfil();
-        } else {
-            currentUser = { role: 'admin', nome: 'Administrador' };
-            showDashboard('admin');
-        }
-    } catch (e) {
-        limparSessao();
-    }
-}
-
-// [restore b03a43a] salvarAutoBackupLocal
-function salvarAutoBackupLocal() {
-    if (!DBReady) return;
-    DB_SERVICE.exportBackup().then(dados => {
-        try {
-            localStorage.setItem('fps_autobackup', JSON.stringify(Object.assign({}, dados, { salvoEm: new Date().toISOString() })));
-        } catch (e) {}
-    }).catch(() => {});
-}
-
-// [restore b03a43a] showDashboard
-function showDashboard(role) {
-    document.getElementById('loginScreen').classList.remove('active');
-    if (role === 'admin') {
-        document.getElementById('adminDashboard').classList.add('active');
-        renderAdminDashboard();
-    } else {
-        document.getElementById('clientDashboard').classList.add('active');
-        renderClientDashboard();
-    }
-}
-
-// [restore b03a43a] soltarPedidoKanban
-async function soltarPedidoKanban(event, status) {
-    event.preventDefault();
-    event.currentTarget.classList.remove('kanban-over');
-    const id = event.dataTransfer.getData('text/plain');
-    if (id) await moverPedidoStatus(id, status);
-}
-
-// [restore b03a43a] toggleClienteDetalhe
-function toggleClienteDetalhe(id) {
-    const content = document.createElement('div');
-    const cliente = DB.clientes.find(c => c.id === id);
-    const pedidos = DB.pedidos.filter(p => String(p.clienteId) === String(id));
-    const ativos = pedidos.filter(p => p.status !== 'cancelado');
-    const totalGasto = ativos.reduce((s, p) => s + valorEsperadoPedido(p), 0);
-    const totalPago = ativos.reduce((s, p) => s + valorPagoPedido(p), 0);
-    const emAberto = Math.max(0, Math.round((totalGasto - totalPago) * 100) / 100);
-    const abrindo = !clientesExpandidos.has(id);
-
-    content.className = 'cliente-detalhe-content';
-
-    const tipoRot = cliente && cliente.tipoPessoa === 'juridica' ? 'Pessoa Jurídica' : 'Pessoa Física';
-    const docPrincipal = cliente && cliente.tipoPessoa === 'juridica' ? (cliente.cnpj || '') : (cliente && cliente.cpf) || '';
-    const perfilHtml = cliente ? `
-        <div class="cliente-perfil-topo">
-            <div class="cliente-perfil-avatar"><i class="fas ${cliente.tipoPessoa === 'juridica' ? 'fa-building' : 'fa-user'}"></i></div>
-            <div class="cliente-perfil-info">
-                <div class="cliente-perfil-nome">${cliente.nome} ${cliente.tipoPessoa === 'juridica' ? '<span class="cond-badge">PJ</span>' : (cliente.cpf || cliente.cnpj ? '<span class="cond-badge">PF</span>' : '')}</div>
-                <div class="cliente-perfil-linha">
-                    <span><i class="fas fa-tag"></i> ${tipoRot}</span>
-                    ${docPrincipal ? `<span><i class="fas ${cliente.tipoPessoa === 'juridica' ? 'fa-building' : 'fa-id-card'}"></i> ${docPrincipal}</span>` : '<span class="sem-dado"><i class="fas fa-id-card"></i> Sem CPF/CNPJ</span>'}
-                </div>
-                <div class="cliente-perfil-linha">
-                    <span><i class="fas fa-envelope"></i> ${cliente.email || '-'}</span>
-                    ${cliente.telefone ? `<span><i class="fas fa-phone"></i> ${cliente.telefone}</span>` : ''}
-                    ${cliente.instagram ? `<span><i class="fab fa-instagram"></i> ${cliente.instagram}</span>` : ''}
-                </div>
-                ${(cliente.endereco || cliente.cidade) ? `<div class="cliente-perfil-linha"><span><i class="fas fa-map-marker-alt"></i> ${[cliente.endereco, cliente.numero, cliente.complemento, cliente.bairro, cliente.cep, cliente.cidade, cliente.estado].filter(Boolean).join(', ')}</span></div>` : ''}
-            </div>
-        </div>` : '';
-
-    const pedidosHtml = pedidos.length === 0
-        ? '<p class="empty-state">Este cliente ainda n\u00e3o possui pedidos.</p>'
-        : pedidos.map(p => {
-            const itens = [
-                ...p.servicos.map(sid => DB.servicos.find(s => s.id === sid)?.nome).filter(Boolean),
-                ...p.materiais.map(mid => DB.materiais.find(m => m.id === mid)?.nome).filter(Boolean)
-            ];
-            const esperado = valorEsperadoPedido(p);
-            const pago = valorPagoPedido(p);
-            const restante = Math.max(0, Math.round((esperado - pago) * 100) / 100);
-            const cond = p.parcial
-                ? '<span class="pag-cond">50% + 50%</span>'
-                : (p.descontoPct ? `<span class="pag-cond">-${p.descontoPct}% \u00e0 vista</span>` : '<span class="pag-cond">Integral</span>');
-
-            const movs = DB.movimentacoes.filter(m => movRefereAoPedido(m, p.id));
-            const compsPendentes = (DB.chats[`admin_${id}`] || [])
-                .filter(m => m.tipo === 'comprovante' && m.status === 'aguardando' && movRefereAoPedido(m, p.id))
-                .map(m => ({ ...m, orig: 'chat', tipo: 'entrada', valor: m.valor || 0, categoria: m.categoria || 'servico' }));
-            const todos = [...movs, ...compsPendentes].sort((a, b) => {
-                const da = a.data || '', db_ = b.data || '';
-                return da.localeCompare(db_) || String(a.id || 0).localeCompare(String(b.id || 0));
-            });
-
-            const movRows = todos.length === 0
-                ? `<tr><td colspan="5" style="padding:8px 12px;font-size:12px;color:var(--text-muted);text-align:center;">Nenhum movimento registrado</td></tr>`
-                : todos.map(m => {
-                    const isChat = m.orig === 'chat';
-                    const isPendente = isChat || m.pagamento === 'pendente';
-                    const icon = m.pagamento === 'cartao_credito' ? 'fa-credit-card' : m.pagamento === 'pix' ? 'fa-qrcode' : 'fa-hourglass-half';
-                    let metodoHtml;
-                    if (isChat) {
-                        const temCartao = !!(m.mensagem || '').includes('Cart\u00e3o');
-                        metodoHtml = `<i class="fas ${temCartao ? 'fa-credit-card' : 'fa-receipt'}"></i> Comprovante ${temCartao ? '(Cart\u00e3o)' : '(PIX)'}`;
-                    } else {
-                        const parcela = (m.descricao || '').includes('(2\u00aa parcela)') ? ' <span class="pag-cond">2\u00aa parcela</span>' : '';
-                        metodoHtml = `<i class="fas ${icon}"></i> ${isPendente ? '<em>Aguardando</em>' : metodoPagamentoRotulo(m.pagamento)}${parcela}`;
-                    }
-                    const dataHora = isChat ? formatDateTime(m.data) : formatDataHoraMov(m);
-                    return `<tr class="${isPendente ? 'mov-pendente' : ''}">
-                        <td>${dataHora}</td>
-                        <td>${m.descricao || (isChat ? 'Comprovante de pagamento' : '-')}</td>
-                        <td>${metodoHtml}</td>
-                        <td class="${m.tipo === 'entrada' ? 'valor-pago' : 'valor-aberto'}"><strong>${m.tipo === 'entrada' ? '+' : '-'}${formatCurrency(m.valor)}</strong></td>
-                        <td><span class="status-badge status-${isPendente ? 'pendente' : 'concluido'}">${isPendente ? 'Aguardando' : 'Confirmado'}</span></td>
-                    </tr>`;
-                }).join('');
-
-            const somaConfirmado = movs.filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente').reduce((s, m) => s + (Number(m.valor) || 0), 0);
-            const somaPendente = Math.max(0, Math.round((esperado - somaConfirmado) * 100) / 100);
-
-            const horaAgend = p.horaInicial ? `${p.horaInicial}${p.horaFinal ? ' &rarr; ' + p.horaFinal : ''}` : '';
-            const dataAgend = p.dataInicial ? `<span style="font-size:11px;color:var(--text-muted);"><i class="fas fa-calendar-alt"></i> ${formatDate(p.dataInicial)} ${horaAgend}</span>` : '';
-            return `<div class="cliente-pedido-bloco">
-                <div class="cliente-pedido-header">
-                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                        <strong style="font-size:14px;">Pedido #${p.id}</strong>
-                        <span class="status-badge status-${p.status}">${statusLabel(p.status)}</span>
-                        ${cond} ${dataAgend}
-                    </div>
-                    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:13px;">
-                        <span style="color:var(--text-muted);">${itens.join(', ') || '-'}</span>
-                        <span>Total: <strong>${formatCurrency(esperado)}</strong></span>
-                        <span class="valor-pago">Pago: <strong>${formatCurrency(pago)}</strong></span>
-                        ${restante > 0 ? `<span class="valor-aberto">Falta: <strong>${formatCurrency(restante)}</strong></span>` : `<span style="color:#26cc00;"><i class="fas fa-check-circle"></i> Quitado</span>`}
-                        ${restante > 0 && p.status !== 'cancelado' ? `<button class="btn-primary btn-sm" onclick="confirmarPagamentoPedidoAdmin('${p.id}')"><i class="fas fa-check-circle"></i> Confirmar Pagamento</button>` : ''}
-                    </div>
-                </div>
-                <table class="data-table sub-table" style="margin:0;">
-                    <thead><tr>
-                        <th>Data / Hora</th><th>Descri\u00e7\u00e3o</th><th>Pagamento</th><th>Valor</th><th>Situa\u00e7\u00e3o</th>
-                    </tr></thead>
-                    <tbody>${movRows}</tbody>
-                    <tfoot>
-                        <tr>
-                            <td colspan="2"><strong>Totais</strong></td>
-                            <td class="${somaPendente > 0 ? 'valor-aberto' : 'valor-pago'}">${somaPendente > 0 ? `<span>Aguardando: <strong>${formatCurrency(somaPendente)}</strong></span>` : '<span>Sem pend\u00eancia</span>'}</td>
-                            <td class="valor-pago"><strong>Confirmado: ${formatCurrency(somaConfirmado)}</strong></td>
-                            <td class="${restante > 0 ? 'valor-aberto' : 'valor-pago'}"><strong>${restante > 0 ? 'Falta ' + formatCurrency(restante) : 'Quitado'}</strong></td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>`;
-        }).join('');
-
-    content.innerHTML = `
-        ${perfilHtml}
-        <div class="cliente-resumo">
-            <div class="resumo-card"><span>Pedidos</span><strong>${pedidos.length}</strong></div>
-            <div class="resumo-card"><span>Total</span><strong>${formatCurrency(totalGasto)}</strong></div>
-            <div class="resumo-card resumo-pago"><span>Pago</span><strong>${formatCurrency(totalPago)}</strong></div>
-            <div class="resumo-card resumo-aberto"><span>Em aberto</span><strong>${formatCurrency(Math.max(0, emAberto))}</strong></div>
-        </div>
-        ${htmlResumoServicosCliente(id)}
-        ${pedidosHtml}
-    `;
-
-    clientesExpandidos[abrindo ? 'add' : 'delete'](id);
-    renderClientes();
-    const novoRow = document.getElementById(`detalhe_${id}`);
-    if (abrindo && novoRow) {
-        const td = novoRow.firstElementChild;
-        td.innerHTML = '';
-        td.appendChild(content);
-        novoRow.style.display = '';
-    } else if (!abrindo && novoRow) {
-        novoRow.style.display = 'none';
-    }
-}
-
-// [restore b03a43a] valorEsperadoPedido
-function valorEsperadoPedido(p) {
-    if (!p) return 0;
-    const total = Number(p.total) || 0;
-    if (!p.parcial && p.descontoPct) return Math.max(0, Math.round(total * (1 - p.descontoPct / 100) * 100) / 100);
-    return total;
-}
-
-// [restore b03a43a] verDetalhesPedido
-function verDetalhesPedido(id) {
-    const p = DB.pedidos.find(x => String(x.id) === String(id));
-    if (!p) return;
-    const cliente = DB.clientes.find(c => String(c.id) === String(p.clienteId));
-    const servicos = (p.servicos || []).map(id => DB.servicos.find(s => String(s.id) === String(id))).filter(Boolean);
-    const materiais = (p.materiais || []).map(id => DB.materiais.find(m => String(m.id) === String(id))).filter(Boolean);
-
-    let html = `
-        <div class="detalhe-section">
-            <h4><i class="fas fa-user"></i> Cliente</h4>
-            <div class="detalhe-item"><span>${cliente ? cliente.nome : 'N/A'}</span></div>
-        </div>
-        <div class="detalhe-section">
-            <h4><i class="fas fa-info-circle"></i> Informações</h4>
-            <div class="detalhe-item"><span>Pedido</span><strong>#${p.id}</strong></div>
-            <div class="detalhe-item"><span>Criado em</span><span>${formatDate(p.data)}</span></div>
-            ${p.dataInicial ? `<div class="detalhe-item"><span>Início</span><strong>${formatDate(p.dataInicial)} ${p.horaInicial || ''}${p.horaFinal ? ` &rarr; ${p.horaFinal}` : ''}</strong></div>` : ''}
-            <div class="detalhe-item"><span>Status</span><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></div>
-        </div>`;
-
-    // Seção de Áudios / MP3s do pedido (recebidos do cliente)
-    const audios = p.audios || [];
-    const qtdF = Number(p.qtdFaixas) || 1;
-    html += `<div class="detalhe-section">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <h4><i class="fas fa-music"></i> Áudios / MP3s (${audios.length} de ${qtdF} faixas)</h4>
-            <button class="btn-primary btn-sm" onclick="abrirUploadAudioAdmin('${p.id}')">
-                <i class="fas fa-upload"></i> Upload
-            </button>
-        </div>`;
-    if (audios.length > 0) {
-        html += `<div style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;">`;
-        audios.forEach((a, idx) => {
-            const src = audioSrc(a);
-            const nome = a.nome || 'audio.mp3';
-            html += `
-            <div style="display:flex; align-items:center; gap:10px; background:var(--bg-lighter, #f1f2f6); padding:8px 12px; border-radius:6px;">
-                <i class="fas fa-file-audio" style="color:var(--primary-color, #6c5ce7); font-size:20px;"></i>
-                <div style="flex:1; min-width:0;">
-                    <div style="font-weight:600; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;" title="${nome}">${nome}${a.origem === 'chat' ? ' <small style="color:var(--text-muted);">(chat)</small>' : ''}</div>
-                    <audio controls src="${src}" style="height:28px; width:100%; margin-top:4px;"></audio>
-                </div>
-                <a href="${src}" download="${nome}" class="btn-icon" title="Baixar"><i class="fas fa-download"></i></a>
-                <button class="btn-icon text-danger" onclick="excluirAudioPedido('${p.id}', ${idx})" title="Excluir"><i class="fas fa-trash"></i></button>
-            </div>`;
-        });
-        html += `</div>`;
-    } else {
-        html += `<p style="color:var(--text-muted); font-size:13px; margin-bottom:10px;">Nenhum MP3 recebido deste pedido ainda.</p>`;
-    }
-    html += `</div>`;
-
-    if (servicos.length) {
-        html += `<div class="detalhe-section"><h4><i class="fas fa-concierge-bell"></i> Serviços</h4>`;
-        servicos.forEach(s => {
-            html += `<div class="detalhe-item"><span>${s.nome}</span><strong>${formatCurrency(s.preco)}</strong></div>`;
-        });
-        html += `</div>`;
-    }
-
-    if (materiais.length) {
-        html += `<div class="detalhe-section"><h4><i class="fas fa-boxes"></i> Materiais</h4>`;
-        materiais.forEach(m => {
-            html += `<div class="detalhe-item"><span>${m.nome}</span>${m.preco <= 0 ? formatMaterialPrice(m) : `<strong>${formatCurrency(m.preco)}</strong>`}</div>`;
-        });
-        html += `</div>`;
-    }
-
-    if (p.desconto > 0) {
-        html += `<div class="detalhe-section"><div class="detalhe-item"><span>Desconto</span><span style="color:var(--danger)">-${formatCurrency(p.desconto)}</span></div></div>`;
-    }
-
-    html += `<div class="pedido-total"><span>Total do Pedido</span><strong>${formatCurrency(valorEsperadoPedido(p))}</strong></div>`;
-
-    document.getElementById('detalhesPedidoContent').innerHTML = html;
-    openModal('detalhesPedidoModal');
-}
-
-// [restore b03a43a] visualizarImagem
-function visualizarImagem(src) {
-    const img = document.getElementById('lightboxImg');
-    if (img && src) img.src = src;
-    document.getElementById('lightboxOverlay').classList.add('active');
-}
-
-// UTILITIES & UPLOAD DE IMAGENS
 // ============================================
-async function previewImagem(input, previewId) {
-    const file = input.files && input.files[0];
+// UPLOAD DE IMAGENS
+// ============================================
+function previewImagem(input, previewId) {
+    const preview = document.getElementById(previewId);
+    const file = input.files[0];
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
         showToast('Selecione apenas arquivos de imagem!', 'error');
-        input.value = '';
         return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-        showToast('Imagem muito grande! Máximo 10MB.', 'error');
-        input.value = '';
+    if (file.size > 5 * 1024 * 1024) {
+        showToast('Imagem muito grande! Máximo 5MB.', 'error');
         return;
     }
 
-    try {
-        const base64 = await processarImagem(file);
-        input.dataset.base64 = base64;
-
-        if (previewId === 'servicoImagemPreview' || previewId === 'servicoImgPreview' || input.id === 'servicoImagem') {
-            const img = document.getElementById('servicoImagemPreview');
-            const wrapper = document.getElementById('servicoPreviewWrapper');
-            const ph = document.getElementById('servicoImgPreview');
-            const info = document.getElementById('servicoImgInfo');
-            if (img) { img.src = base64; img.style.display = 'block'; }
-            if (wrapper) wrapper.style.display = 'block';
-            if (ph) ph.style.display = 'none';
-            if (info) info.textContent = `${file.name} (${Math.round(file.size / 1024)}KB)`;
-        } else if (previewId === 'materialImagemPreview' || previewId === 'materialImgPreview' || input.id === 'materialImagem') {
-            const img = document.getElementById('materialImagemPreview');
-            const wrapper = document.getElementById('materialPreviewWrapper');
-            const ph = document.getElementById('materialImgPreview');
-            const info = document.getElementById('materialImgInfo');
-            if (img) { img.src = base64; img.style.display = 'block'; }
-            if (wrapper) wrapper.style.display = 'block';
-            if (ph) ph.style.display = 'none';
-            if (info) info.textContent = `${file.name} (${Math.round(file.size / 1024)}KB)`;
-        } else {
-            const el = document.getElementById(previewId);
-            if (el) {
-                if (el.tagName === 'IMG') {
-                    el.src = base64;
-                    el.style.display = 'block';
-                } else {
-                    el.innerHTML = `<img src="${base64}" class="upload-preview" style="max-height:160px; object-fit:contain;">`;
-                    el.style.display = 'block';
-                }
-            }
-        }
-    } catch (e) {
-        console.error('Erro ao processar preview de imagem:', e);
-        const reader = new FileReader();
-        reader.onload = ev => {
-            input.dataset.base64 = ev.target.result;
-            const el = document.getElementById(previewId);
-            if (el && el.tagName === 'IMG') {
-                el.src = ev.target.result;
-                el.style.display = 'block';
-            }
-        };
-        reader.readAsDataURL(file);
-    }
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        input.dataset.base64 = e.target.result;
+        const isServico = previewId === 'servicoImgPreview';
+        const removeFn = isServico ? 'removerImagemServico' : 'removerImagemMaterial';
+        preview.innerHTML = `<img src="${e.target.result}" class="upload-preview"><div class="upload-actions"><span>${file.name} (${(file.size / 1024).toFixed(0)}KB)</span><button onclick="${removeFn}(event)"><i class="fas fa-trash"></i> Remover</button></div>`;
+    };
+    reader.readAsDataURL(file);
 }
 
 function setupDragDrop() {
@@ -4652,16 +3230,15 @@ function setupDragDrop() {
             this.classList.remove('dragover');
         });
 
-        area.addEventListener('drop', async function(e) {
+        area.addEventListener('drop', function(e) {
             e.preventDefault();
             this.classList.remove('dragover');
             const input = this.querySelector('input[type="file"]');
-            if (!input) return;
+            const previewId = input.id === 'servicoImagem' ? 'servicoImgPreview' : 'materialImgPreview';
             const files = e.dataTransfer.files;
-            if (files && files.length) {
+            if (files.length) {
                 input.files = files;
-                const previewId = input.id === 'servicoImagem' ? 'servicoImagemPreview' : (input.id === 'materialImagem' ? 'materialImagemPreview' : 'preview');
-                await previewImagem(input, previewId);
+                previewImagem(input, previewId);
             }
         });
     });
@@ -4690,8 +3267,15 @@ function clearForm(prefix) {
         }
     });
 
-    if (prefix === 'servico') removerImagemServico();
-    if (prefix === 'material') removerImagemMaterial();
+    // Reset upload previews
+    if (prefix === 'servico') {
+        const preview = document.getElementById('servicoImgPreview');
+        if (preview) preview.innerHTML = `<i class="fas fa-cloud-upload-alt"></i><p>Clique para selecionar uma foto</p><span>ou arraste e solte aqui</span>`;
+    }
+    if (prefix === 'material') {
+        const preview = document.getElementById('materialImgPreview');
+        if (preview) preview.innerHTML = `<i class="fas fa-cloud-upload-alt"></i><p>Clique para selecionar uma foto</p><span>ou arraste e solte aqui</span>`;
+    }
 
     // Uncheck checkboxes
     document.querySelectorAll('#pedidoServicos input, #pedidoMateriais input, #clientPedidoServicos input, #clientPedidoMateriais input').forEach(cb => {
@@ -4999,11 +3583,6 @@ function fmtCalc(n) {
     return String(parseFloat(n.toFixed(8)));
 }
 
-// Formato BR para inputs com mascaraMoedaBR (ex: 50.5 -> "50,50")
-function fmtValorBR(n) {
-    return (Number(n) || 0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-}
-
 function calcClick(sfx, key) {
     const st = calcEstado[sfx];
     const displayEl = document.getElementById('calcDisplay' + (sfx === '' ? '' : 'Client'));
@@ -5122,7 +3701,7 @@ function gerarNotificacoes() {
     if (!currentUser) return lista;
     if (currentUser.role === 'admin') {
         DB.pedidos.filter(p => p.status === 'pendente').slice(0, 5).forEach(p => {
-            lista.push({ icone: 'fa-clipboard-list', classe: 'notif-primary', titulo: `Pedido #${p.id} pendente`, texto: `Aguardando orçamento/pagamento - ${formatCurrency(valorEsperadoPedido(p))}`, pagina: 'adminPedidos' });
+            lista.push({ icone: 'fa-clipboard-list', classe: 'notif-primary', titulo: `Pedido #${p.id} pendente`, texto: `Aguardando orçamento/pagamento - ${formatCurrency(p.total)}`, pagina: 'adminPedidos' });
         });
         Object.keys(DB.chats).forEach(key => {
             (DB.chats[key] || []).forEach(m => {
@@ -5138,7 +3717,7 @@ function gerarNotificacoes() {
         const msgs = DB.chats[`admin_${currentUser.id}`] || [];
         msgs.forEach(m => {
             if (m.tipo === 'orcamento' && m.remetente === 'admin' && !m.lida) {
-                lista.push({ icone: 'fa-file-invoice-dollar', classe: 'notif-primary', titulo: 'Nova Ordem de Serviço', texto: `${m.descricao || 'Serviço'} - ${formatCurrency(Math.max(0, (m.valor || 0) - (m.desconto || 0)))}`, pagina: 'clientChat' });
+                lista.push({ icone: 'fa-file-invoice-dollar', classe: 'notif-primary', titulo: 'Novo orçamento', texto: `${m.descricao || 'Orçamento'} - ${formatCurrency(Math.max(0, (m.valor || 0) - (m.desconto || 0)))}`, pagina: 'clientChat' });
             }
             if (m.tipo === 'comprovante' && m.remetente === 'client' && m.status === 'aguardando') {
                 lista.push({ icone: 'fa-hourglass-half', classe: 'notif-warning', titulo: 'Pagamento aguardando', texto: m.mensagem, pagina: 'clientChat' });
@@ -5279,10 +3858,10 @@ window.abrirNovoPedidoModalAdmin = function() {
     document.getElementById('pedidoId').value = '';
     document.getElementById('pedidoCliente').innerHTML = DB.clientes.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
     
-    const servicosHtml = DB.servicos.map(s => `<label><input type="checkbox" value="${String(s.id).replace(/"/g, '&quot;')}" onchange="updatePedidoTotal()" onclick="updatePedidoTotal()"> ${s.nome} (${formatCurrency(s.preco)})</label>`).join('');
+    const servicosHtml = DB.servicos.map(s => `<label><input type="checkbox" value="${s.id}" onchange="updatePedidoTotal()"> ${s.nome} (${formatCurrency(s.preco)})</label>`).join('');
     document.getElementById('pedidoServicos').innerHTML = servicosHtml;
     
-    const materiaisHtml = DB.materiais.map(m => `<label><input type="checkbox" value="${String(m.id).replace(/"/g, '&quot;')}" onchange="updatePedidoTotal()" onclick="updatePedidoTotal()"> ${m.nome} (${formatCurrency(m.preco)})</label>`).join('');
+    const materiaisHtml = DB.materiais.map(m => `<label><input type="checkbox" value="${m.id}" onchange="updatePedidoTotal()"> ${m.nome} (${formatCurrency(m.preco)})</label>`).join('');
     document.getElementById('pedidoMateriais').innerHTML = materiaisHtml;
     
     document.getElementById('pedidoDesconto').value = '0,00';
@@ -5295,111 +3874,44 @@ window.abrirNovoPedidoModalAdmin = function() {
 window.renderBiblioteca = function() {
     const list = document.getElementById('bibliotecaBody');
     if (!list) return;
-
-    // 1) Pedidos com áudios anexados ou faixas previstas
-    const pedidosComAudio = (DB.pedidos || []).filter(p =>
-        (p.audios && p.audios.length > 0) || (Number(p.qtdFaixas) > 0)
-    ).sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0));
-
-    // 2) Áudios do chat (tipo:'audio') e biblioteca que ainda NÃO estão
-    //    vinculados a nenhum pedido → "receber" na tela Áudios de Pedidos.
-    const vinculados = new Set();
-    (DB.pedidos || []).forEach(p => {
-        (p.audios || []).forEach(a => {
-            if (a.url) vinculados.add(a.url);
-            if (a.base64) vinculados.add(a.base64);
-            if (a.nome) vinculados.add('nome:' + p.clienteId + '|' + a.nome);
-        });
-    });
-
-    const avulsos = [];
-    Object.keys(DB.chats || {}).forEach(key => {
-        if (!key.startsWith('admin_')) return;
-        const cid = key.split('_')[1];
-        (DB.chats[key] || []).forEach(m => {
-            if (m.tipo !== 'audio' || !m.audio) return;
-            if (vinculados.has(m.audio)) return;
-            if (m.arquivoNome && vinculados.has('nome:' + cid + '|' + m.arquivoNome)) return;
-            avulsos.push({
-                virtual: true,
-                id: 'chat_' + (m.id || avulsos.length),
-                clienteId: m.clienteId != null ? m.clienteId : cid,
-                qtdFaixas: 0,
-                audios: [{
-                    nome: m.arquivoNome || 'audio.mp3',
-                    base64: m.audioUrl || '',
-                    url: m.audioUrl || '',
-                    // áudio de chat: m.audio pode ser data-URL ou URL do Blob
-                    _chat: m.audio,
-                    data: m.data
-                }],
-                origem: 'chat'
-            });
-        });
-    });
-
-    (DB.bibliotecas || []).forEach(b => {
-        if (!b.audio) return;
-        if (vinculados.has(b.audio)) return;
-        if (b.arquivoNome && b.clienteId != null && vinculados.has('nome:' + b.clienteId + '|' + b.arquivoNome)) return;
-        avulsos.push({
-            virtual: true,
-            id: 'bib_' + (b.id || avulsos.length),
-            clienteId: b.clienteId,
-            qtdFaixas: 0,
-            audios: [{
-                nome: b.arquivoNome || 'audio.mp3',
-                base64: b.audio,
-                url: '',
-                data: b.data
-            }],
-            origem: 'biblioteca'
-        });
-    });
-
-    const rows = pedidosComAudio.concat(avulsos);
-
-    if (rows.length === 0) {
-        list.innerHTML = '<tr><td colspan="6" class="text-center" style="padding:20px; color:var(--text-muted);">Nenhum áudio de pedido encontrado.</td></tr>';
+    
+    // Sort by most recent
+    const pedidosComAudio = DB.pedidos.filter(p => p.audios && p.audios.length > 0 || p.qtdFaixas > 0).sort((a,b) => b.id - a.id);
+    
+    if (pedidosComAudio.length === 0) {
+        list.innerHTML = '<tr><td colspan="6" class="text-center">Nenhum áudio encontrado.</td></tr>';
         return;
     }
-
-    list.innerHTML = rows.map(p => {
-        const cliente = DB.clientes.find(c => String(c.id) === String(p.clienteId));
-        const cliNome = cliente ? cliente.nome : 'Cliente #' + (p.clienteId || '-');
+    
+    list.innerHTML = pedidosComAudio.map(p => {
+        const cliente = DB.clientes.find(c => c.id === p.clienteId);
+        const cliNome = cliente ? cliente.nome : 'Desconhecido';
         const audios = p.audios || [];
-        const qtdF = Number(p.qtdFaixas) || 1;
-        const badgeHtml = p.virtual
-            ? `<span class="badge badge-info">${p.origem === 'chat' ? 'Chat' : 'Biblioteca'}</span>`
-            : `<span class="badge ${audios.length >= qtdF ? 'badge-success' : 'badge-warning'}">${audios.length} / ${qtdF}</span>`;
-
+        
         let arquivosHtml = '';
         if (audios.length > 0) {
-            arquivosHtml = audios.map((a, idx) => {
-                const src = a.url || a.base64 || a._chat || '';
-                const nome = a.nome || 'audio.mp3';
-                return `
-                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;background:var(--bg-lighter, #f1f2f6);padding:6px 10px;border-radius:4px;font-size:12px;">
-                    <i class="fas fa-file-audio text-primary" style="font-size:15px;"></i>
-                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;" title="${nome}">${nome}</span>
-                    <audio controls src="${src}" style="height:26px;width:130px;"></audio>
-                    <a href="${src}" download="${nome}" class="btn-icon" title="Baixar"><i class="fas fa-download"></i></a>
-                    ${p.virtual ? '' : `<button class="btn-icon text-danger" onclick="excluirAudioPedido('${p.id}', ${idx})" title="Excluir"><i class="fas fa-trash"></i></button>`}
-                </div>`;
-            }).join('');
+            arquivosHtml = audios.map((a, idx) => `
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;background:var(--bg-lighter);padding:4px 8px;border-radius:4px;font-size:12px;">
+                    <i class="fas fa-music text-primary"></i>
+                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${a.nome}">${a.nome}</span>
+                    <audio controls src="${a.base64}" style="height:24px;width:120px;"></audio>
+                    <a href="${a.base64}" download="${a.nome}" class="btn-icon" title="Baixar"><i class="fas fa-download"></i></a>
+                    <button class="btn-icon text-danger" onclick="excluirAudioPedido(${p.id}, ${idx})" title="Excluir"><i class="fas fa-trash"></i></button>
+                </div>
+            `).join('');
         } else {
-            arquivosHtml = '<span class="text-muted" style="font-style:italic;">Nenhum áudio enviado</span>';
+            arquivosHtml = '<span class="text-muted">Nenhum áudio enviado</span>';
         }
-
+        
         return `
         <tr>
-            <td><strong>#${p.virtual ? '—' : p.id}</strong></td>
+            <td>#${p.id}</td>
             <td>${cliNome}</td>
-            <td>${p.virtual ? '—' : qtdF}</td>
-            <td>${badgeHtml}</td>
-            <td style="max-width:320px;">${arquivosHtml}</td>
+            <td>${p.qtdFaixas || 1}</td>
+            <td>${audios.length} / ${p.qtdFaixas || 1}</td>
+            <td style="max-width:300px;">${arquivosHtml}</td>
             <td>
-                ${p.virtual ? '' : `<button class="btn-primary btn-sm" onclick="abrirUploadAudioAdmin('${p.id}')" title="Enviar novo áudio para este pedido"><i class="fas fa-upload"></i> Upload</button>`}
+                <button class="btn-primary btn-sm" onclick="abrirUploadAudioAdmin(${p.id})" title="Enviar novo áudio"><i class="fas fa-upload"></i> Upload</button>
             </td>
         </tr>
         `;
@@ -5407,26 +3919,24 @@ window.renderBiblioteca = function() {
 };
 
 window.excluirAudioPedido = async function(pedidoId, audioIdx) {
-    if (!confirm('Excluir este áudio do pedido?')) return;
-    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
+    if (!confirm('Excluir este áudio?')) return;
+    const p = DB.pedidos.find(x => x.id === pedidoId);
     if (p && p.audios) {
         p.audios.splice(audioIdx, 1);
-        const updId = p.docId || p.id;
-        if (DBReady && updId) {
-            try { await DB_SERVICE.updatePedido(updId, { audios: p.audios }); } catch(err) { console.error(err); showToast(err.message || 'Falha ao excluir áudio no servidor', 'error'); }
-        }
+        if (DBReady && p.docId) await DB_SERVICE.updatePedido(p.docId, p);
         renderBiblioteca();
         showToast('Áudio excluído!', 'success');
     }
 };
 
 window.abrirUploadAudioAdmin = function(pedidoId) {
-    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
-    if (!p) return;
+    const p = DB.pedidos.find(x => x.id === pedidoId);
+    if(!p) return;
     
+    // We'll create a hidden file input on the fly
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = 'audio/mpeg, .mp3';
+    input.accept = 'audio/*';
     input.multiple = true;
     
     input.onchange = async (e) => {
@@ -5435,54 +3945,42 @@ window.abrirUploadAudioAdmin = function(pedidoId) {
         const novosAudios = [];
         for (let i = 0; i < e.target.files.length; i++) {
             const file = e.target.files[i];
-            if (typeof validateAudioFile === 'function' && !validateAudioFile(file)) continue;
-            try {
-                const prep = await prepararAudioPedido(file);
-                novosAudios.push(prep);
-            } catch (err) {
-                console.error('Falha ao processar áudio', file.name, err);
-                showToast(err && err.message ? err.message : `Falha ao processar ${file.name}`, 'error');
-            }
+            const b64 = await fileToBase64(file);
+            novosAudios.push({
+                nome: file.name,
+                base64: b64,
+                data: new Date().toISOString()
+            });
         }
         
-        if (novosAudios.length === 0) return;
         p.audios = p.audios || [];
-        const candidatos = p.audios.concat(novosAudios);
-        const bytes = candidatos.reduce((s, a) => s + ((a.base64 && !a.url) ? a.base64.length : 0), 0);
-        if (bytes > limitePayloadAudio()) {
-            showToast('Total de áudios do pedido excede o limite de envio (~3,8MB). Exclua alguns arquivos antes de enviar.', 'error');
-            return;
-        }
-        p.audios = candidatos;
-
-        const updId = p.docId || p.id;
-        let ok = !DBReady;
-        if (DBReady && updId) {
-            try {
-                await DB_SERVICE.updatePedido(updId, { audios: p.audios });
-                ok = true;
-            } catch(err) {
-                console.error(err);
-                showToast(err && err.message ? err.message : 'Falha ao enviar áudios ao servidor', 'error');
-            }
-        }
+        p.audios.push(...novosAudios);
+        
+        if (DBReady && p.docId) await DB_SERVICE.updatePedido(p.docId, p);
         renderBiblioteca();
-        if (ok) showToast('Áudios enviados com sucesso!', 'success');
+        showToast('Áudios enviados com sucesso!', 'success');
     };
     
     input.click();
 };
 
+
 window.validateAudioFile = function(file) {
-    // Apenas MP3
-    if (file.type !== 'audio/mpeg' && !file.name.toLowerCase().endsWith('.mp3')) {
-        showToast('Apenas arquivos .mp3 são permitidos.', 'error');
+    if (!file) return false;
+    const name = (file.name || '').toLowerCase();
+    const isAudio = (file.type && file.type.startsWith('audio/')) ||
+                    name.endsWith('.mp3') ||
+                    name.endsWith('.wav') ||
+                    name.endsWith('.ogg') ||
+                    name.endsWith('.m4a') ||
+                    name.endsWith('.aac');
+    if (!isAudio) {
+        showToast('Apenas arquivos de áudio (.mp3, .wav, .m4a, .ogg) são permitidos.', 'error');
         return false;
     }
-    // Tamanho máximo (15MB)
-    const maxSize = 15 * 1024 * 1024;
+    const maxSize = 25 * 1024 * 1024;
     if (file.size > maxSize) {
-        showToast('O arquivo excede o limite de 15MB.', 'error');
+        showToast('O arquivo excede o limite de 25MB.', 'error');
         return false;
     }
     return true;
@@ -5498,87 +3996,55 @@ window.enviarAudioBiblioteca = async function(input) {
         return;
     }
     
-    let b64;
+    showToast('Enviando áudio...', 'info');
+    
     try {
-        b64 = await arquivoAudioParaDataUrl(file);
-    } catch (err) {
-        console.error('Falha ao processar áudio', err);
-        showToast(err && err.message ? err.message : 'Falha ao processar o áudio.', 'error');
-        input.value = '';
-        return;
-    }
-    let audioValor = b64;
-    if (!usingIDB && b64 && b64.length > 500000) {
-        try {
-            const up = await DB_SERVICE.uploadAudio({ base64: b64, nome: file.name, tipo: file.type || 'audio/mpeg' });
-            if (up && up.url) audioValor = up.url;
-        } catch (e) {
-            console.warn('upload_audio biblioteca falhou, mantendo base64:', e);
-        }
-    }
-    const audioObj = {
-        clienteId: currentUser.id,
-        arquivoNome: file.name,
-        audio: audioValor,
-        descricao: 'Enviado pelo Chat do Cliente',
-        duracao: 0,
-        data: new Date().toISOString().split('T')[0],
-        hora: new Date().toISOString().split('T')[1].slice(0,5)
-    };
-
-    DB.bibliotecas = DB.bibliotecas || [];
-    DB.bibliotecas.push(audioObj);
-
-    if (DBReady) {
-        try {
+        const b64 = await fileToBase64(file);
+        const audioObj = {
+            clienteId: currentUser.id,
+            arquivoNome: file.name,
+            audio: b64,
+            descricao: 'Enviado pelo Chat do Cliente',
+            duracao: 0,
+            data: new Date().toISOString().split('T')[0],
+            hora: new Date().toTimeString().slice(0, 5)
+        };
+        
+        DB.bibliotecas = DB.bibliotecas || [];
+        DB.bibliotecas.push(audioObj);
+        
+        if (DBReady) {
             const docId = await DB_SERVICE.addBiblioteca(audioObj);
-            if (docId && docId.id) audioObj.id = docId.id;
-        } catch(e) {
-            console.error('Erro ao salvar em DB_SERVICE.addBiblioteca:', e);
-            showToast(e && e.message ? e.message : 'Falha ao enviar áudio para a biblioteca', 'error');
+            audioObj.id = (docId && docId.id) ? docId.id : docId;
         }
+        
+        // Mensagem no chat para notificar o admin
+        const chatKey = 'admin_' + currentUser.id;
+        if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
+        
+        const msgData = {
+            tipo: 'audio',
+            remetente: 'client',
+            clienteId: currentUser.id,
+            arquivoNome: file.name,
+            audio: b64,
+            mensagem: '🎵 Enviei um novo arquivo de áudio (' + file.name + ')',
+            data: new Date().toISOString(),
+            lida: false
+        };
+        DB.chats[chatKey].push(msgData);
+        if (DBReady) {
+            const res = await DB_SERVICE.sendMessage(msgData);
+            if (res && res.id) msgData.id = res.id;
+        }
+        if (document.getElementById('chatMessagesClient')) renderClientChat();
+        
+        showToast('Áudio enviado com sucesso para o estúdio!', 'success');
+    } catch (err) {
+        console.error('Erro ao enviar áudio do cliente:', err);
+        showToast('Erro ao processar o áudio. Tente novamente.', 'error');
     }
 
-    // Vincular também ao pedido ativo/recente do cliente para aparecer em Áudios de Pedidos!
-    const pedidoAtivo = (DB.pedidos || [])
-        .filter(p => String(p.clienteId) === String(currentUser.id))
-        .sort((a,b) => (Number(b.id) || 0) - (Number(a.id) || 0))[0];
-
-    if (pedidoAtivo) {
-        pedidoAtivo.audios = pedidoAtivo.audios || [];
-        let prepAudio;
-        try {
-            prepAudio = await prepararAudioPedido(file);
-        } catch (e) {
-            prepAudio = { nome: file.name, base64: b64, tamanho: file.size, tipo: file.type || 'audio/mp3', data: new Date().toISOString(), origem: 'chat' };
-        }
-        pedidoAtivo.audios.push({ ...prepAudio, origem: 'chat' });
-        const updId = pedidoAtivo.docId || pedidoAtivo.id;
-        if (DBReady && updId) {
-            try { await DB_SERVICE.updatePedido(updId, { audios: pedidoAtivo.audios }); } catch(err) { console.error(err); showToast(err.message || 'Falha ao anexar áudio ao pedido', 'error'); }
-        }
-    }
-    
-    // Notificar no chat
-    const chatKey = 'admin_' + currentUser.id;
-    if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
-    
-    const msgData = {
-        tipo: 'mensagem',
-        remetente: 'client',
-        clienteId: currentUser.id,
-        mensagem: '🎵 Enviei um novo arquivo de áudio (' + file.name + ') para o estúdio.',
-        data: new Date().toISOString(),
-        lida: false
-    };
-    DB.chats[chatKey].push(msgData);
-    if (DBReady) {
-        try { await DB_SERVICE.sendMessage(msgData); } catch(e){}
-    }
-    if (document.getElementById('chatMessagesClient')) renderClientChat();
-    if (typeof renderBiblioteca === 'function') renderBiblioteca();
-    
-    showToast('Áudio enviado com sucesso!', 'success');
     input.value = '';
 };
 

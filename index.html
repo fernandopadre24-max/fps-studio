@@ -327,7 +327,7 @@
                 <div class="page" id="adminServicos">
                     <div class="page-header">
                         <h2>Gerenciar Serviços</h2>
-                        <button class="btn-primary" onclick="abrirNovoServicoModal()">
+                        <button class="btn-primary" onclick="openModal('servicoModal')">
                             <i class="fas fa-plus"></i> Novo Serviço
                         </button>
                     </div>
@@ -338,7 +338,7 @@
                 <div class="page" id="adminMateriais">
                     <div class="page-header">
                         <h2>Gerenciar Materiais</h2>
-                        <button class="btn-primary" onclick="abrirNovoMaterialModal()">
+                        <button class="btn-primary" onclick="openModal('materialModal')">
                             <i class="fas fa-plus"></i> Novo Material
                         </button>
                     </div>
@@ -417,7 +417,7 @@
                 <div class="page" id="adminFinanceiro">
                     <div class="page-header">
                         <h2>Controle Financeiro</h2>
-                        <button class="btn-primary" onclick="abrirNovaMovimentacaoModal()">
+                        <button class="btn-primary" onclick="openModal('movimentacaoModal')">
                             <i class="fas fa-plus"></i> Nova Movimentação
                         </button>
                     </div>
@@ -491,7 +491,7 @@
                     <div class="chat-container">
                         <div class="chat-sidebar">
                             <div class="chat-search">
-                                <input type="text" placeholder="Buscar conversas...">
+                                <input type="text" id="buscaChatAdmin" placeholder="Buscar clientes ou conversas..." oninput="renderChatList(this.value)">
                                 <i class="fas fa-search"></i>
                             </div>
                             <div class="chat-list" id="chatListAdmin"></div>
@@ -513,16 +513,16 @@
                                 </div>
                             </div>
                             <div class="chat-input-area" id="chatInputAreaAdmin" style="display:none;">
-                                <button class="btn-icon" onclick="prepararOrcamentoAvulso()" title="Enviar Ordem de Serviço">
+                                <button class="btn-icon" onclick="prepararOrcamentoAvulso()" title="Enviar Orçamento">
                                     <i class="fas fa-file-invoice-dollar"></i>
                                 </button>
                                 <button class="btn-icon" onclick="openModal('enviarComprovanteModal')" title="Enviar Comprovante">
                                     <i class="fas fa-receipt"></i>
                                 </button>
-                                <button class="btn-icon" onclick="document.getElementById('chatAudioAdmin').click()" title="Enviar Áudio / MP3">
+                                <button class="btn-icon" onclick="document.getElementById('chatAudioAdmin').click()" title="Enviar Áudio (MP3 / WAV)">
                                     <i class="fas fa-music"></i>
                                 </button>
-                                <input type="file" id="chatAudioAdmin" accept="audio/mpeg, .mp3" multiple style="display:none;" onchange="sendAudioChat('admin', this)">
+                                <input type="file" id="chatAudioAdmin" accept="audio/*,.mp3,.wav,.ogg,.m4a" style="display:none;" onchange="sendAudioAdmin(this)">
                                 <input type="text" id="chatInputAdmin" placeholder="Digite sua mensagem..." onkeypress="if(event.key==='Enter')sendMessageAdmin()">
                                 <button class="btn-send" onclick="sendMessageAdmin()">
                                     <i class="fas fa-paper-plane"></i>
@@ -976,10 +976,10 @@
                                 <button class="btn-icon" onclick="openModal('enviarPagamentoClientModal')" title="Enviar Pagamento / Comprovante">
                                     <i class="fas fa-file-invoice"></i>
                                 </button>
-                                <button class="btn-icon" onclick="document.getElementById('chatAudioClient').click()" title="Enviar Áudio para a Biblioteca do estúdio">
+                                <button class="btn-icon" onclick="document.getElementById('chatAudioClient').click()" title="Enviar Áudio (MP3 / WAV)">
                                     <i class="fas fa-music"></i>
                                 </button>
-                                <input type="file" id="chatAudioClient" accept="audio/mpeg, .mp3" style="display:none;" onchange="enviarAudioBiblioteca(this)">
+                                <input type="file" id="chatAudioClient" accept="audio/*,.mp3,.wav,.ogg,.m4a" style="display:none;" onchange="enviarAudioBiblioteca(this)">
                                 <input type="text" id="chatInputClient" placeholder="Digite sua mensagem..." onkeypress="if(event.key==='Enter')sendMessageClient()">
                                 <button class="btn-send" onclick="sendMessageClient()">
                                     <i class="fas fa-paper-plane"></i>
@@ -1053,15 +1053,9 @@
                 </div>
                 <div class="form-group">
                     <label>Imagem do Serviço</label>
-                    <div class="upload-area" id="servicoUploadArea" onclick="document.getElementById('servicoImagem').click()">
+                    <div class="upload-area" onclick="document.getElementById('servicoImagem').click()">
                         <input type="file" id="servicoImagem" accept="image/*" style="display:none" onchange="previewImagem(this, 'servicoImagemPreview')">
-                        <div id="servicoPreviewWrapper" style="display:none; position:relative;">
-                            <img id="servicoImagemPreview" class="upload-preview" alt="Preview Serviço">
-                            <div class="upload-actions" onclick="event.stopPropagation()">
-                                <span id="servicoImgInfo">Imagem selecionada</span>
-                                <button type="button" onclick="removerImagemServico(event)"><i class="fas fa-trash"></i> Remover</button>
-                            </div>
-                        </div>
+                        <img id="servicoImagemPreview" style="display:none; width:100%; height:120px; object-fit:cover; border-radius:4px; margin-bottom:10px;">
                         <div class="upload-placeholder" id="servicoImgPreview">
                             <i class="fas fa-cloud-upload-alt"></i>
                             <p>Clique para selecionar uma foto</p>
@@ -1113,15 +1107,9 @@
                 </div>
                 <div class="form-group">
                     <label>Imagem do Material</label>
-                    <div class="upload-area" id="materialUploadArea" onclick="document.getElementById('materialImagem').click()">
+                    <div class="upload-area" onclick="document.getElementById('materialImagem').click()">
                         <input type="file" id="materialImagem" accept="image/*" style="display:none" onchange="previewImagem(this, 'materialImagemPreview')">
-                        <div id="materialPreviewWrapper" style="display:none; position:relative;">
-                            <img id="materialImagemPreview" class="upload-preview" alt="Preview Material">
-                            <div class="upload-actions" onclick="event.stopPropagation()">
-                                <span id="materialImgInfo">Imagem selecionada</span>
-                                <button type="button" onclick="removerImagemMaterial(event)"><i class="fas fa-trash"></i> Remover</button>
-                            </div>
-                        </div>
+                        <img id="materialImagemPreview" style="display:none; width:100%; height:120px; object-fit:cover; border-radius:4px; margin-bottom:10px;">
                         <div class="upload-placeholder" id="materialImgPreview">
                             <i class="fas fa-cloud-upload-alt"></i>
                             <p>Clique para selecionar uma foto</p>
@@ -1489,10 +1477,10 @@
             </div>
         </div>
 
-        <!-- Enviar Ordem de Serviço Modal -->
+        <!-- Enviar Orçamento Modal -->
         <div class="modal" id="enviarOrcamentoModal" onclick="event.stopPropagation()">
             <div class="modal-header">
-                <h3><i class="fas fa-file-invoice-dollar"></i> Enviar Ordem de Serviço</h3>
+                <h3><i class="fas fa-file-invoice-dollar"></i> Enviar Orçamento</h3>
                 <button class="btn-close" onclick="closeAllModals()">&times;</button>
             </div>
             <div class="modal-body">
@@ -1502,8 +1490,8 @@
                 </div>
                 <div class="orcamento-condicao" id="orcamentoCondicaoInfo"></div>
                 <div class="form-group">
-                    <label>Descrição do Serviço</label>
-                    <textarea id="orcamentoDescricao" placeholder="Descreva o serviço..."></textarea>
+                    <label>Descrição do Orçamento</label>
+                    <textarea id="orcamentoDescricao" placeholder="Descreva o orçamento..."></textarea>
                 </div>
                 <div class="form-group">
                     <label>Valor (R$)</label>
@@ -1524,7 +1512,7 @@
                     <input type="text" id="orcamentoValidade" placeholder="Ex: 15 dias">
                 </div>
                 <button class="btn-primary" onclick="enviarOrcamento()">
-                    <i class="fas fa-paper-plane"></i> Enviar Ordem de Serviço para Pagamento
+                    <i class="fas fa-paper-plane"></i> Enviar Orçamento
                 </button>
             </div>
         </div>

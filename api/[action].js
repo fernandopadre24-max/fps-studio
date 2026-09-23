@@ -162,8 +162,12 @@ module.exports = async (req, res) => {
             // CHAT
             case 'chat':
                 if (method === 'GET') {
-                    const clienteId = parseInt(query.clienteId);
-                    result = queryAll(db, 'SELECT * FROM chats WHERE clienteId=? ORDER BY datetime(data), id', [clienteId]);
+                    if (query.clienteId) {
+                        const clienteId = parseInt(query.clienteId);
+                        result = queryAll(db, 'SELECT * FROM chats WHERE clienteId=? ORDER BY datetime(data), id', [clienteId]);
+                    } else {
+                        result = queryAll(db, 'SELECT * FROM chats ORDER BY datetime(data), id');
+                    }
                 } else if (method === 'POST') {
                     const { tipo, remetente, clienteId: cid, mensagem, descricao, valor, validade, desconto, status, pedidoId, imagem, audio, arquivoNome, data, parcial, descontoPct, lida } = req.body;
                     db.run('INSERT INTO chats (tipo, remetente, clienteId, mensagem, descricao, valor, validade, desconto, status, pedidoId, imagem, audio, arquivoNome, data, parcial, descontoPct, lida) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',

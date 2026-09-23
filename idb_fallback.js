@@ -205,11 +205,20 @@ const IDB_SERVICE = {
 
     // ---------- CHAT ----------
     async getChat(clienteId) {
-        const chave = 'bloco_chat_' + (clienteId || 'geral');
+        const chave = 'chat_' + (clienteId || 'geral');
         return idbCarregarBloco(chave, []);
     },
+    async getAllChats() {
+        const nomes = (await idbListarBlocos()).filter(n => n.startsWith('bloco_chat_'));
+        let todos = [];
+        for (const nome of nomes) {
+            const arr = (await idbGet(nome)) || [];
+            if (Array.isArray(arr)) todos = todos.concat(arr);
+        }
+        return todos;
+    },
     async sendMessage(d) {
-        const chave = 'bloco_chat_' + (d.clienteId || 'geral');
+        const chave = 'chat_' + (d.clienteId || 'geral');
         d.id = d.id || 'msg_' + Date.now();
         const arr = await idbCarregarBloco(chave, []);
         arr.push(d);
@@ -219,9 +228,18 @@ const IDB_SERVICE = {
     async updateMessage(id, d) {
         const nomes = (await idbListarBlocos()).filter(n => n.startsWith('bloco_chat_'));
         for (const nome of nomes) {
-            const arr = await idbCarregarBloco(nome, []);
-            const i = arr.findIndex(x => (String(x.id) === String(id)));
-            if (i >= 0) { arr[i] = { ...arr[i], ...d }; await idbSalvarBloco(nome, arr); return { ok: true }; }
+            const arr = (await idbGet(nome)) || [];
+            let alterado = false;
+            for (let i = 0; i < arr.length; i++) {
+                if (id && String(arr[i].id) === String(id)) {
+                    arr[i] = { ...arr[i], ...d };
+                    alterado = true;
+                } else if (!id && d.clienteId && String(arr[i].clienteId) === String(d.clienteId)) {
+                    arr[i] = { ...arr[i], ...d };
+                    alterado = true;
+                }
+            }
+            if (alterado) await idbSet(nome, arr);
         }
         return { ok: true };
     },
