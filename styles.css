@@ -4057,6 +4057,48 @@ body.dark .chat-message.audio.received {
     color: #6b5a36;
 }
 
+/* Financeiro: cards de stats mais compactos */
+#adminFinanceiro .stats-grid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+#adminFinanceiro .stats-grid .stat-card {
+    padding: 10px 12px;
+    gap: 10px;
+    border-radius: var(--radius-sm);
+}
+
+#adminFinanceiro .stats-grid .stat-card:hover {
+    transform: none;
+}
+
+#adminFinanceiro .stats-grid .stat-icon {
+    width: 36px;
+    height: 36px;
+    font-size: 15px;
+    border-radius: 8px;
+}
+
+#adminFinanceiro .stats-grid .stat-info h3 {
+    font-size: 16px;
+    line-height: 1.2;
+}
+
+#adminFinanceiro .stats-grid .stat-info p {
+    font-size: 11px;
+    margin-top: 1px;
+}
+
+#adminFinanceiro .page-header {
+    margin-bottom: 14px;
+}
+
+#adminFinanceiro .filter-bar {
+    margin-bottom: 12px;
+}
+
 #adminPedidos .kanban-col,
 #adminFinanceiro .kanban-col {
     background: rgba(255, 253, 245, 0.65);
