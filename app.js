@@ -884,7 +884,7 @@ function renderServicos() {
             <div class="card-body" style="padding:16px;">
                 <h4 style="margin:0 0 6px 0;font-size:16px;">${s.nome}</h4>
                 <p style="font-size:13px;color:var(--text-light);min-height:38px;line-height:1.4;margin:0 0 10px 0;">${s.descricao || 'Sem descrição'}</p>
-                <div style="font-size:16px;font-weight:700;color:var(--primary);margin-bottom:12px;">${formatCurrency(s.preco)} ${s.duracao ? `<small style="font-size:12px;font-weight:400;color:#64748b;">· ${s.duracao}</small>` : ''}</div>
+                <div style="font-size:16px;font-weight:700;color:var(--primary);margin-bottom:12px;">${Number(s.preco) <= 0 ? formatMaterialPrice(s, 'item-price') : formatCurrency(s.preco)} ${s.duracao ? `<small style="font-size:12px;font-weight:400;color:#64748b;">· ${s.duracao}</small>` : ''}</div>
                 <div style="display:flex;gap:8px;">
                     <button class="btn-secondary btn-sm" style="flex:1;" onclick="editarServico('${s.id}')"><i class="fas fa-edit"></i> Editar</button>
                     <button class="btn-danger btn-sm" style="flex:1;" onclick="excluirServico('${s.id}')"><i class="fas fa-trash"></i> Excluir</button>
@@ -1204,7 +1204,7 @@ function renderPedidos() {
                 <td><strong>#${p.id}</strong></td>
                 <td>${c ? c.nome : 'Cliente #' + p.clienteId}</td>
                 <td><small>${servs}</small></td>
-                <td><strong>${formatCurrency(p.total)}</strong></td>
+                <td><strong>${formatCurrency(valorEsperadoPedido(p))}</strong></td>
                 <td><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></td>
                 <td>${formatDate(p.data)}</td>
                 <td>
@@ -1228,10 +1228,10 @@ function editarPedido(id) {
     
     const pServs = p.servicos || [];
     const pMats = p.materiais || [];
-    const servicosHtml = (DB.servicos || []).map(s => `<label><input type="checkbox" value="${s.id}" ${pServs.includes(s.id) ? 'checked' : ''} onchange="updatePedidoTotal()"> ${s.nome} (${formatCurrency(s.preco)})</label>`).join('');
+    const servicosHtml = (DB.servicos || []).map(s => `<label><input type="checkbox" value="${s.id}" ${pServs.includes(s.id) ? 'checked' : ''} onchange="updatePedidoTotal()"> ${s.nome} (${Number(s.preco) <= 0 ? 'INCLUSO' : formatCurrency(s.preco)})</label>`).join('');
     document.getElementById('pedidoServicos').innerHTML = servicosHtml;
     
-    const materiaisHtml = (DB.materiais || []).map(m => `<label><input type="checkbox" value="${m.id}" ${pMats.includes(m.id) ? 'checked' : ''} onchange="updatePedidoTotal()"> ${m.nome} (${formatCurrency(m.preco)})</label>`).join('');
+    const materiaisHtml = (DB.materiais || []).map(m => `<label><input type="checkbox" value="${m.id}" ${pMats.includes(m.id) ? 'checked' : ''} onchange="updatePedidoTotal()"> ${m.nome} (${Number(m.preco) <= 0 ? 'INCLUSO' : formatCurrency(m.preco)})</label>`).join('');
     document.getElementById('pedidoMateriais').innerHTML = materiaisHtml;
     
     document.getElementById('pedidoDesconto').value = p.desconto ? fmtCalc(p.desconto) : '0,00';
@@ -1287,6 +1287,7 @@ async function salvarPedido() {
         servicos, materiais,
         desconto: desc,
         total: t,
+        descontoPct: 0,
         data: document.getElementById('pedidoData')?.value || new Date().toISOString().split('T')[0],
         qtdFaixas: parseInt(document.getElementById('pedidoQtdFaixas').value) || 1,
         horaInicial, horaFinal
@@ -1758,7 +1759,7 @@ function renderClientDashboard() {
             <p>${s.descricao.substring(0, 80)}...</p>
         </div>
         <div>
-            <strong style="color:var(--primary)">${formatCurrency(s.preco)}</strong>
+            <strong style="color:var(--primary)">${Number(s.preco) <= 0 ? formatMaterialPrice(s, 'item-price') : formatCurrency(s.preco)}</strong>
         </div>
     </div>`).join('');
 
@@ -1793,7 +1794,7 @@ function renderServicosClient() {
             <h4>${s.nome}</h4>
             <p>${s.descricao}</p>
             <div class="item-card-meta">
-                <span class="item-card-price">${formatCurrency(s.preco)}</span>
+                <span class="item-card-price">${Number(s.preco) <= 0 ? formatMaterialPrice(s) : formatCurrency(s.preco)}</span>
                 <span class="item-card-badge badge-estoque">${s.duracao}</span>
             </div>
         </div>
@@ -1834,11 +1835,12 @@ function renderPedidosClient() {
         const servicoNomes = p.servicos.map(id => DB.servicos.find(s => s.id === id)?.nome || '').filter(Boolean).join(', ');
         const materialNomes = p.materiais.map(id => DB.materiais.find(m => m.id === id)?.nome || '').filter(Boolean).join(', ');
         const condRotulo = p.parcial ? '50% + 50%' : (p.descontoPct ? `-${p.descontoPct}% à vista` : '');
+        const totalExibir = valorEsperadoPedido(p);
         return `<tr>
             <td><strong>#${p.id}</strong></td>
             <td>${servicoNomes || '-'}</td>
             <td>${materialNomes || '-'}</td>
-            <td><strong>${formatCurrency(p.total)}</strong>${condRotulo ? `<small class="cond-badge">${condRotulo}</small>` : ''}</td>
+            <td><strong>${formatCurrency(totalExibir)}</strong>${condRotulo ? `<small class="cond-badge">${condRotulo}</small>` : ''}</td>
             <td><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></td>
             <td>${formatPedidoDataHora(p)}</td>
             <td>
@@ -1868,7 +1870,7 @@ function verDetalhesPedidoClient(id) {
     if (servicos.length) {
         html += `<div class="detalhe-section"><h4><i class="fas fa-concierge-bell"></i> Serviços</h4>`;
         servicos.forEach(s => {
-            html += `<div class="detalhe-item"><span>${s.nome}</span><strong>${formatCurrency(s.preco)}</strong></div>`;
+            html += `<div class="detalhe-item"><span>${s.nome}</span>${Number(s.preco) <= 0 ? formatMaterialPrice(s, 'item-price') : `<strong>${formatCurrency(s.preco)}</strong>`}</div>`;
         });
         html += `</div>`;
     }
@@ -1881,17 +1883,28 @@ function verDetalhesPedidoClient(id) {
         html += `</div>`;
     }
 
-    html += `<div class="pedido-total"><span>Total</span><strong>${formatCurrency(p.total)}</strong></div>`;
+    const esperadoCli = valorEsperadoPedido(p);
+    html += `<div class="pedido-total"><span>Total a pagar</span><strong>${formatCurrency(esperadoCli)}</strong></div>`;
+    if ((Number(p.desconto) || 0) > 0 || (Number(p.descontoPct) || 0) > 0) {
+        html += `<div class="detalhe-section"><h4><i class="fas fa-percent"></i> Descontos</h4>`;
+        if ((Number(p.descontoPct) || 0) > 0 && !p.parcial) {
+            html += `<div class="detalhe-item"><span>À vista (-${p.descontoPct}%)</span><strong style="color:var(--danger);">-${formatCurrency(Math.round((Number(p.total) || 0) * p.descontoPct) / 100)}</strong></div>`;
+        } else if ((Number(p.desconto) || 0) > 0) {
+            html += `<div class="detalhe-item"><span>Desconto</span><strong style="color:var(--danger);">-${formatCurrency(p.desconto)}</strong></div>`;
+        }
+        html += `</div>`;
+    }
 
     html += `<div class="detalhe-section"><h4><i class="fas fa-hand-holding-usd"></i> Condição de Pagamento</h4>`;
     if (p.parcial) {
         html += `<div class="detalhe-item"><span>Condição</span><strong>Dividido em 2x (50% + 50%)</strong></div>`;
-        html += `<div class="detalhe-item"><span>Entrada agora</span><strong>${formatCurrency(p.total / 2)}</strong></div>`;
-        html += `<div class="detalhe-item"><span>Saldo ao finalizar</span><strong>${formatCurrency(p.total / 2)}</strong></div>`;
+        html += `<div class="detalhe-item"><span>Entrada agora</span><strong>${formatCurrency(esperadoCli / 2)}</strong></div>`;
+        html += `<div class="detalhe-item"><span>Saldo ao finalizar</span><strong>${formatCurrency(esperadoCli / 2)}</strong></div>`;
         html += `<div class="detalhe-item"><span>Já pago</span><strong>${formatCurrency(valorPagoPedido(p))}</strong></div>`;
     } else if (p.descontoPct) {
         html += `<div class="detalhe-item"><span>Condição</span><strong>À vista com ${p.descontoPct}% de desconto</strong></div>`;
-        html += `<div class="detalhe-item"><span>Total a pagar</span><strong>${formatCurrency(p.total * (1 - p.descontoPct / 100))}</strong></div>`;
+        html += `<div class="detalhe-item"><span>Total a pagar</span><strong>${formatCurrency(esperadoCli)}</strong></div>`;
+        html += `<div class="detalhe-item"><span>Já pago</span><strong>${formatCurrency(valorPagoPedido(p))}</strong></div>`;
     } else {
         html += `<div class="detalhe-item"><span>Condição</span><strong>Pagamento integral</strong></div>`;
         html += `<div class="detalhe-item"><span>Já pago</span><strong>${formatCurrency(valorPagoPedido(p))}</strong></div>`;
@@ -1908,7 +1921,7 @@ function prepareClientPedidoModal() {
         servicosDiv.innerHTML = (DB.servicos || []).map(s => `<div class="checkbox-item">
             <input type="checkbox" id="cps_${s.id}" value="${s.id}" onchange="updateClientPedidoTotal()">
             <label for="cps_${s.id}">${s.nome}</label>
-            <span class="item-price">${formatCurrency(s.preco)}</span>
+            ${Number(s.preco) <= 0 ? formatMaterialPrice(s, 'item-price') : `<span class="item-price">${formatCurrency(s.preco)}</span>`}
         </div>`).join('') || '<p class="empty-state">Nenhum serviço disponível no momento.</p>';
     }
 
@@ -2246,20 +2259,19 @@ function gerarPixEmv(chave, nome, cidade, valor, txid) {
 
 function abrirPagamento(pedidoId) {
     selectedPedidoId = pedidoId;
-    const p = DB.pedidos.find(x => x.id === pedidoId);
+    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
     if (!p) return;
     if (!currentUser || currentUser.role !== 'client') return;
 
-    const chatKey = `admin_${currentUser.id}`;
-    const orc = (DB.chats[chatKey] || []).filter(m => m.tipo === 'orcamento' && m.pedidoId === pedidoId).pop();
-    const base = Math.max(0, orc ? ((orc.valor || 0) - (orc.desconto || 0)) : p.total);
+    const c = condicaoPagamentoPedido(p);
+    const base = c.base;
+    const jaPago = valorPagoPedido(p);
 
     let valorPag = base;
     let condRotulo = 'Pagamento integral';
     let saldo = 0;
-    const jaPago = valorPagoPedido(p);
 
-    if (p.parcial) {
+    if (c.parcial) {
         const falta = Math.max(0, base - jaPago);
         if (falta <= 0) {
             showToast('Este pedido já está totalmente pago!', 'info');
@@ -2268,9 +2280,9 @@ function abrirPagamento(pedidoId) {
         valorPag = Math.min(base / 2, falta);
         saldo = Math.max(0, base - (jaPago + valorPag));
         condRotulo = jaPago > 0 ? 'Pagamento da 2ª parcela (50%)' : 'Entrada de 50%';
-    } else if (p.descontoPct) {
-        valorPag = base * (1 - p.descontoPct / 100);
-        condRotulo = `Pagamento à vista com ${p.descontoPct}% de desconto`;
+    } else if (c.pct) {
+        valorPag = base * (1 - c.pct / 100);
+        condRotulo = `Pagamento à vista com ${c.pct}% de desconto`;
     } else {
         valorPag = base;
         condRotulo = 'Pagamento integral';
@@ -2283,11 +2295,19 @@ function abrirPagamento(pedidoId) {
             <span>Pedido #${p.id}</span>
             <strong>${formatCurrency(selectedPagamentoValor)}</strong>
         </div>`;
-    if (orc) {
-        infoHtml += `<div class="pagamento-linha"><span>Valor orçado (com desconto do admin)</span><strong>${formatCurrency(base)}</strong></div>`;
+    if (c.orc) {
+        infoHtml += `<div class="pagamento-linha"><span>Valor orçado</span><strong>${formatCurrency(c.orc.valor || 0)}</strong></div>`;
+        if ((Number(c.orc.desconto) || 0) > 0) {
+            infoHtml += `<div class="pagamento-linha"><span>Desconto do orçamento</span><strong style="color:var(--danger);">-${formatCurrency(c.orc.desconto)}</strong></div>`;
+        }
+    } else if ((Number(p.desconto) || 0) > 0 && !c.pct) {
+        infoHtml += `<div class="pagamento-linha"><span>Desconto já aplicado</span><strong style="color:var(--danger);">-${formatCurrency(p.desconto)}</strong></div>`;
+    }
+    if (c.pct) {
+        infoHtml += `<div class="pagamento-linha"><span>Desconto à vista (${c.pct}%)</span><strong style="color:var(--danger);">-${formatCurrency(Math.round(base * c.pct) / 100)}</strong></div>`;
     }
     infoHtml += `<div class="pagamento-linha"><span>Condição</span><strong>${condRotulo}</strong></div>`;
-    if (p.parcial && jaPago > 0) infoHtml += `<div class="pagamento-linha"><span>Já pago</span><strong>${formatCurrency(jaPago)}</strong></div>`;
+    if (c.parcial && jaPago > 0) infoHtml += `<div class="pagamento-linha"><span>Já pago</span><strong>${formatCurrency(jaPago)}</strong></div>`;
     if (saldo > 0) infoHtml += `<div class="pagamento-linha"><span>Saldo a pagar depois</span><strong>${formatCurrency(saldo)}</strong></div>`;
     infoHtml += `<p class="field-hint">Envie o comprovante para o administrador confirmar o recebimento.</p>`;
     document.getElementById('pagamentoInfo').innerHTML = infoHtml;
@@ -2341,16 +2361,18 @@ async function confirmarPagamento() {
     if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
 
     let rotuloCond = 'Pagamento integral';
-    if (p.parcial) rotuloCond = valorPagoPedido(p) > 0 && (selectedPagamentoValor || 0) >= (p.total / 2) ? '2ª parcela (50% restante)' : 'Entrada de 50%';
-    else if (p.descontoPct) rotuloCond = `À vista com ${p.descontoPct}% de desconto`;
+    const cc = condicaoPagamentoPedido(p);
+    if (cc.parcial) rotuloCond = valorPagoPedido(p) > 0 && (selectedPagamentoValor || 0) >= (cc.base / 2 - 0.01) ? '2ª parcela (50% restante)' : 'Entrada de 50%';
+    else if (cc.pct) rotuloCond = `À vista com ${cc.pct}% de desconto`;
 
+    const valorEnvio = selectedPagamentoValor || valorPagamentoSugerido(p) || cc.base;
     const msgData = {
         tipo: 'comprovante',
         remetente: 'client',
         clienteId: currentUser.id,
-        mensagem: `Pagamento de ${formatCurrency(selectedPagamentoValor || p.total)} (${rotuloCond}) realizado via ${tipo === 'pix' ? 'PIX' : 'Cartão de Crédito'} para o Pedido #${p.id}`,
+        mensagem: `Pagamento de ${formatCurrency(valorEnvio)} (${rotuloCond}) realizado via ${tipo === 'pix' ? 'PIX' : 'Cartão de Crédito'} para o Pedido #${p.id}`,
         descricao: `Pagamento do Pedido #${p.id} - ${rotuloCond}`,
-        valor: selectedPagamentoValor || p.total,
+        valor: valorEnvio,
         desconto: 0,
         pedidoId: p.id,
         status: 'aguardando',
@@ -2579,10 +2601,11 @@ function renderChatMessagesAdmin(chatKey) {
             </div>`;
         } else if (m.tipo === 'comprovante') {
             const isFromClient = m.remetente === 'client';
-            const pedidoLinked = DB.pedidos.find(x => x.id === (m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0)));
-            const valorPedido = pedidoLinked ? pedidoLinked.total : (m.valor || 0);
+            const pedidoLinked = DB.pedidos.find(x => String(x.id) === String(m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0)));
+            const esperado = pedidoLinked ? valorEsperadoPedido(pedidoLinked) : 0;
+            const valorEnvio = (Number(m.valor) > 0) ? Number(m.valor) : (esperado || (pedidoLinked ? pedidoLinked.total : 0));
             const desconto = m.desconto || 0;
-            const total = Math.max(0, valorPedido - desconto);
+            const total = Math.max(0, valorEnvio - desconto);
             let acoes = '';
             let descontoArea = '';
             if (isFromClient) {
@@ -2597,13 +2620,16 @@ function renderChatMessagesAdmin(chatKey) {
                     </div>`;
                 }
             }
+            const descontoJa = pedidoLinked ? Math.max(0, (Number(pedidoLinked.total) || 0) - esperado) : 0;
             return `<div class="chat-message comprovante">
                 <h4><i class="fas fa-receipt"></i> ${isFromClient ? 'Comprovante de Pagamento (Cliente)' : 'Comprovante de Pagamento'}</h4>
                 <p>${m.mensagem}</p>
-                <p>Valor do Pedido: <strong>${formatCurrency(valorPedido)}</strong></p>
+                ${esperado > 0 ? `<p>Valor do Pedido (com desconto): <strong>${formatCurrency(esperado)}</strong></p>` : ''}
+                ${descontoJa > 0 ? `<p>Desconto aplicado: <strong style="color:var(--danger);">-${formatCurrency(descontoJa)}</strong></p>` : ''}
+                <p>Valor enviado: <strong>${formatCurrency(valorEnvio)}</strong></p>
                 ${descontoArea}
-                ${desconto > 0 ? `<p>Desconto: <strong>-${formatCurrency(desconto)}</strong></p>` : ''}
-                ${isFromClient ? `<p>Total a pagar: <strong id="totalComp_${msgIdx}">${formatCurrency(total)}</strong></p>` : ''}
+                ${desconto > 0 ? `<p>Desconto na confirmação: <strong>-${formatCurrency(desconto)}</strong></p>` : ''}
+                ${isFromClient ? `<p>Total a registrar: <strong id="totalComp_${msgIdx}">${formatCurrency(total)}</strong></p>` : ''}
                 <p>Status: ${comprovanteStatusBadge(m.status || 'aguardando')}</p>
                 ${chatImagemHtml(m.imagem)}
                 ${acoes}
@@ -2823,10 +2849,11 @@ function atualizarTotalComprovante(msgIdx) {
     if (!m || m.tipo !== 'comprovante') return;
     const input = document.getElementById(`descontoComp_${msgIdx}`);
     const desconto = input ? (parseFloat(input.value) || 0) : (m.desconto || 0);
-    const pedidoLinked = DB.pedidos.find(x => x.id === (m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0)));
-    const valorPedido = pedidoLinked ? pedidoLinked.total : (m.valor || 0);
+    const pedidoLinked = DB.pedidos.find(x => String(x.id) === String(m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0)));
+    const esperado = pedidoLinked ? valorEsperadoPedido(pedidoLinked) : 0;
+    const valorEnvio = (Number(m.valor) > 0) ? Number(m.valor) : (esperado || (pedidoLinked ? pedidoLinked.total : 0));
     const el = document.getElementById(`totalComp_${msgIdx}`);
-    if (el) el.textContent = formatCurrency(Math.max(0, valorPedido - desconto));
+    if (el) el.textContent = formatCurrency(Math.max(0, valorEnvio - desconto));
 }
 
 async function confirmarRecebidoComprovante(msgIdx) {
@@ -2861,8 +2888,9 @@ async function confirmarPagoComprovante(msgIdx) {
     if (DBReady && m.id) await DB_SERVICE.updateMessage(m.id, { status: 'pago', desconto: descontoAdmin });
 
     const pedidoId = m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0);
-    const pedido = DB.pedidos.find(x => x.id === pedidoId);
-    const totalPago = Math.max(0, (m.valor || (pedido ? pedido.total : 0)) - descontoAdmin);
+    const pedido = DB.pedidos.find(x => String(x.id) === String(pedidoId));
+    const baseComp = (Number(m.valor) > 0) ? Number(m.valor) : (pedido ? valorEsperadoPedido(pedido) : 0);
+    const totalPago = Math.max(0, Math.round((baseComp - descontoAdmin) * 100) / 100);
     const metodoPag = (m.mensagem || '').includes('Cartão') ? 'cartao_credito' : 'pix';
 
     if (pedido && totalPago > 0) {
@@ -3207,13 +3235,8 @@ function preencherDestinoPagamento() {
 
 function preencherValorPedidoClient() {
     const pedidoId = parseInt(document.getElementById('clientPagamentoPedido').value);
-    const p = DB.pedidos.find(x => x.id === pedidoId);
-    let valor = p ? p.total : 0;
-    if (currentUser) {
-        const orc = (DB.chats[`admin_${currentUser.id}`] || [])
-            .filter(m => m.tipo === 'orcamento' && m.pedidoId === pedidoId).pop();
-        if (orc) valor = Math.max(0, (orc.valor || 0) - (orc.desconto || 0));
-    }
+    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
+    const valor = p ? (valorPagamentoSugerido(p) || valorEsperadoPedido(p)) : 0;
     document.getElementById('clientPagamentoValor').value = valor ? valor.toFixed(2) : '';
     atualizarTotalPagamentoClient();
 }
@@ -3780,7 +3803,8 @@ async function executarConfirmacaoPagamentoAdmin(m, chatKey, descontoAdmin) {
 
     const pedidoIdRaw = m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0);
     const pedido = DB.pedidos.find(x => String(x.id) === String(pedidoIdRaw));
-    const totalPago = Math.max(0, Math.round(((Number(m.valor) || (pedido ? (Number(pedido.total) || 0) : 0)) - descontoAdmin) * 100) / 100);
+    const baseComp = (Number(m.valor) > 0) ? Number(m.valor) : (pedido ? valorEsperadoPedido(pedido) : 0);
+    const totalPago = Math.max(0, Math.round((baseComp - descontoAdmin) * 100) / 100);
     const metodoPag = (m.mensagem || '').includes('Cartão') || (m.mensagem || '').includes('cartao') ? 'cartao_credito' : 'pix';
 
     try {
@@ -4355,7 +4379,7 @@ function renderServicosAdmin() {
             <small class="item-card-categoria"><i class="fas fa-tag"></i> ${s.categoria || 'outro'}</small>
             <p>${s.descricao}</p>
             <div class="item-card-meta">
-                <span class="item-card-price">${formatCurrency(s.preco)}</span>
+                <span class="item-card-price">${Number(s.preco) <= 0 ? formatMaterialPrice(s) : formatCurrency(s.preco)}</span>
                 <span class="item-card-badge badge-estoque">${s.duracao}</span>
             </div>
         </div>
@@ -4734,12 +4758,54 @@ function htmlDetalheCliente(c) {
     </div>`;
 }
 
+// [restore b03a43a] orcamentoDoPedido
+function orcamentoDoPedido(p) {
+    if (!p || !DB.chats) return null;
+    const msgs = DB.chats[`admin_${p.clienteId}`] || [];
+    return msgs.filter(m => m && m.tipo === 'orcamento' && m.pedidoId != null && String(m.pedidoId) === String(p.id)).pop() || null;
+}
+
+// [restore b03a43a] condicaoPagamentoPedido
+function condicaoPagamentoPedido(p) {
+    if (!p) return { base: 0, pct: 0, parcial: false, orc: null };
+    const orc = orcamentoDoPedido(p);
+    if (orc) {
+        return {
+            base: Math.max(0, (Number(orc.valor) || 0) - (Number(orc.desconto) || 0)),
+            pct: Number(orc.descontoPct) || 0,
+            parcial: !!orc.parcial,
+            orc
+        };
+    }
+    return {
+        base: Number(p.total) || 0,
+        pct: Number(p.descontoPct) || 0,
+        parcial: !!p.parcial,
+        orc: null
+    };
+}
+
 // [restore b03a43a] valorEsperadoPedido
 function valorEsperadoPedido(p) {
     if (!p) return 0;
-    const total = Number(p.total) || 0;
-    if (!p.parcial && p.descontoPct) return Math.max(0, Math.round(total * (1 - p.descontoPct / 100) * 100) / 100);
-    return total;
+    const c = condicaoPagamentoPedido(p);
+    let base = c.base;
+    if (c.pct && !c.parcial) base = base * (1 - c.pct / 100);
+    return Math.max(0, Math.round(base * 100) / 100);
+}
+
+// [restore b03a43a] valorPagamentoSugerido
+function valorPagamentoSugerido(p) {
+    if (!p) return 0;
+    const c = condicaoPagamentoPedido(p);
+    const jaPago = valorPagoPedido(p);
+    if (c.parcial) {
+        const falta = Math.max(0, Math.round((c.base - jaPago) * 100) / 100);
+        if (falta <= 0) return 0;
+        return Math.min(Math.round((c.base / 2) * 100) / 100, falta);
+    }
+    if (c.pct) return Math.max(0, Math.round(c.base * (1 - c.pct / 100) * 100) / 100);
+    return Math.max(0, Math.round(c.base * 100) / 100);
 }
 
 // [restore b03a43a] verDetalhesPedido
@@ -4761,7 +4827,7 @@ function verDetalhesPedido(id) {
                     <div style="font-weight:600;">${s.nome}</div>
                     ${s.descricao ? `<small style="color:var(--text-muted); display:block; white-space:normal;">${s.descricao}</small>` : ''}
                 </div>
-                <strong>${formatCurrency(s.preco)}</strong>
+                ${Number(s.preco) <= 0 ? formatMaterialPrice(s, 'item-price') : `<strong>${formatCurrency(s.preco)}</strong>`}
             </div>`;
         });
     }
@@ -4988,7 +5054,7 @@ function preparePedidoModal() {
         servicosDiv.innerHTML = DB.servicos.map(s => `<div class="checkbox-item">
         <input type="checkbox" id="ps_${s.id}" value="${String(s.id).replace(/"/g, '&quot;')}" onchange="updatePedidoTotal()">
         <label for="ps_${s.id}">${s.nome}</label>
-        <span class="item-price">${formatCurrency(s.preco)}</span>
+        ${Number(s.preco) <= 0 ? formatMaterialPrice(s, 'item-price') : `<span class="item-price">${formatCurrency(s.preco)}</span>`}
     </div>`).join('');
         servicosDiv.onclick = (e) => {
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'LABEL') return;
@@ -5711,10 +5777,10 @@ window.abrirNovoPedidoModalAdmin = function() {
     document.getElementById('pedidoId').value = '';
     document.getElementById('pedidoCliente').innerHTML = DB.clientes.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
     
-    const servicosHtml = DB.servicos.map(s => `<label><input type="checkbox" value="${s.id}" onchange="updatePedidoTotal()"> ${s.nome} (${formatCurrency(s.preco)})</label>`).join('');
+    const servicosHtml = DB.servicos.map(s => `<label><input type="checkbox" value="${s.id}" onchange="updatePedidoTotal()"> ${s.nome} (${Number(s.preco) <= 0 ? 'INCLUSO' : formatCurrency(s.preco)})</label>`).join('');
     document.getElementById('pedidoServicos').innerHTML = servicosHtml;
     
-    const materiaisHtml = DB.materiais.map(m => `<label><input type="checkbox" value="${m.id}" onchange="updatePedidoTotal()"> ${m.nome} (${formatCurrency(m.preco)})</label>`).join('');
+    const materiaisHtml = DB.materiais.map(m => `<label><input type="checkbox" value="${m.id}" onchange="updatePedidoTotal()"> ${m.nome} (${Number(m.preco) <= 0 ? 'INCLUSO' : formatCurrency(m.preco)})</label>`).join('');
     document.getElementById('pedidoMateriais').innerHTML = materiaisHtml;
     
     document.getElementById('pedidoDesconto').value = '0,00';
