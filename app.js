@@ -4570,10 +4570,17 @@ function htmlDetalheCliente(c) {
     });
 
     const movConsolidadaRows = movTodas.length === 0
-        ? `<tr><td colspan="7" style="padding:10px;text-align:center;color:var(--text-muted);font-size:12px;">Nenhuma movimentação registrada para este cliente.</td></tr>`
+        ? `<tr><td colspan="9" style="padding:10px;text-align:center;color:var(--text-muted);font-size:12px;">Nenhuma movimentação registrada para este cliente.</td></tr>`
         : movTodas.map(m => {
             const isChat = m.orig === 'chat';
             const isPendente = isChat || m.pagamento === 'pendente';
+            const tipo = m.tipo === 'saida' ? 'saida' : 'entrada';
+            const tipoHtml = tipo === 'saida'
+                ? '<i class="fas fa-arrow-down" style="color:var(--danger);"></i> Saída'
+                : '<i class="fas fa-arrow-up" style="color:var(--success);"></i> Entrada';
+            const origemHtml = isChat
+                ? '<span class="badge badge-info" title="Comprovante enviado no chat"><i class="fas fa-comments"></i> Chat</span>'
+                : '<span class="badge" title="Lançamento no financeiro"><i class="fas fa-wallet"></i> Financeiro</span>';
             const icon = m.pagamento === 'cartao_credito' ? 'fa-credit-card' : m.pagamento === 'pix' ? 'fa-qrcode' : 'fa-hourglass-half';
             let metodoHtml;
             if (isChat) {
@@ -4586,14 +4593,22 @@ function htmlDetalheCliente(c) {
             const dataHora = isChat ? formatDateTime(m.data) : formatDataHoraMov(m);
             const pid = m.pedidoId != null ? m.pedidoId : (m._pedidoRef != null ? m._pedidoRef : ((m.descricao || '').match(/Pedido #(\d+)/) || [])[1]);
             const descricao = m.descricao || (isChat ? 'Comprovante de pagamento' : '-');
+            const hora = m.hora || (isChat && m.data ? formatDateTime(m.data).split(' ')[1] || '' : '');
+            const statusRot = isChat
+                ? (m.status === 'pago' ? 'Pago' : m.status === 'recebido' ? 'Recebido' : 'Aguardando')
+                : (isPendente ? 'Aguardando' : 'Confirmado');
+            const statusCls = (isChat && m.status === 'pago') || !isPendente ? 'concluido' : (isChat && m.status === 'recebido' ? 'em_andamento' : 'pendente');
+            const desconto = Number(m.desconto) || 0;
             return `<tr class="${isPendente ? 'mov-pendente' : ''}">
-                <td>${dataHora}</td>
+                <td>${dataHora}${hora ? ` <span class="hora-pedido">${hora}</span>` : ''}</td>
                 <td>${pid != null ? `<strong>#${pid}</strong>` : '-'}</td>
-                <td style="white-space:normal;">${descricao}</td>
+                <td>${tipoHtml}</td>
+                <td style="white-space:normal;">${descricao}${desconto > 0 ? `<br><small class="pag-cond">-desconto ${formatCurrency(desconto)}</small>` : ''}</td>
                 <td>${metodoHtml}</td>
-                <td class="${m.tipo === 'saida' ? 'valor-aberto' : 'valor-pago'}"><strong>${m.tipo === 'saida' ? '-' : '+'}${formatCurrency(m.valor)}</strong></td>
-                <td><span class="status-badge status-${isPendente ? 'pendente' : 'concluido'}">${isPendente ? 'Aguardando' : 'Confirmado'}</span></td>
+                <td class="${tipo === 'saida' ? 'valor-aberto' : 'valor-pago'}"><strong>${tipo === 'saida' ? '-' : '+'}${formatCurrency(m.valor)}</strong></td>
+                <td><span class="status-badge status-${statusCls}">${statusRot}</span></td>
                 <td>${capitalize(m.categoria || 'servico')}</td>
+                <td>${origemHtml}</td>
             </tr>`;
         }).join('');
 
@@ -4603,28 +4618,28 @@ function htmlDetalheCliente(c) {
     const compsAguardando = compsChat.reduce((s, m) => s + (Number(m.valor) || 0), 0);
 
     const movConsolidadaHtml = `
-        <div class="sub-secao-titulo"><i class="fas fa-exchange-alt"></i> Movimentações do Cliente</div>
+        <div class="sub-secao-titulo"><i class="fas fa-exchange-alt"></i> Movimentações do Cliente <small style="font-weight:400;text-transform:none;letter-spacing:0;">(${movTodas.length} registro${movTodas.length === 1 ? '' : 's'})</small></div>
         <table class="data-table sub-table" style="margin-top:6px;">
             <thead><tr>
-                <th>Data / Hora</th><th>Pedido</th><th>Descrição</th><th>Pagamento</th><th>Valor</th><th>Situação</th><th>Categoria</th>
+                <th>Data / Hora</th><th>Pedido</th><th>Tipo</th><th>Descrição</th><th>Pagamento</th><th>Valor</th><th>Situação</th><th>Categoria</th><th>Origem</th>
             </tr></thead>
             <tbody>${movConsolidadaRows}</tbody>
             <tfoot>
                 <tr>
-                    <td colspan="4"><strong>Entradas confirmadas</strong></td>
-                    <td class="valor-pago" colspan="3"><strong>${formatCurrency(entradasConf)}</strong></td>
+                    <td colspan="5"><strong>Entradas confirmadas</strong></td>
+                    <td class="valor-pago" colspan="4"><strong>${formatCurrency(entradasConf)}</strong></td>
                 </tr>
                 <tr>
-                    <td colspan="4">Entradas pendentes${compsAguardando > 0 ? ` (+ ${formatCurrency(compsAguardando)} em comprovantes)` : ''}</td>
-                    <td class="valor-aberto" colspan="3">${formatCurrency(Math.round((entradasPend + compsAguardando) * 100) / 100)}</td>
+                    <td colspan="5">Entradas pendentes${compsAguardando > 0 ? ` (+ ${formatCurrency(compsAguardando)} em comprovantes)` : ''}</td>
+                    <td class="valor-aberto" colspan="4">${formatCurrency(Math.round((entradasPend + compsAguardando) * 100) / 100)}</td>
                 </tr>
                 <tr>
-                    <td colspan="4">Saídas</td>
-                    <td class="valor-aberto" colspan="3">-${formatCurrency(saidasConf)}</td>
+                    <td colspan="5">Saídas</td>
+                    <td class="valor-aberto" colspan="4">-${formatCurrency(saidasConf)}</td>
                 </tr>
                 <tr>
-                    <td colspan="4"><strong>Saldo líquido (confirmado)</strong></td>
-                    <td class="valor-total" colspan="3"><strong>${formatCurrency(Math.round((entradasConf - saidasConf) * 100) / 100)}</strong></td>
+                    <td colspan="5"><strong>Saldo líquido (confirmado)</strong></td>
+                    <td class="valor-total" colspan="4"><strong>${formatCurrency(Math.round((entradasConf - saidasConf) * 100) / 100)}</strong></td>
                 </tr>
             </tfoot>
         </table>`;
@@ -4654,10 +4669,17 @@ function htmlDetalheCliente(c) {
             });
 
             const movRows = todos.length === 0
-                ? `<tr><td colspan="5" style="padding:8px 12px;font-size:12px;color:var(--text-muted);text-align:center;">Nenhum movimento registrado</td></tr>`
+                ? `<tr><td colspan="7" style="padding:8px 12px;font-size:12px;color:var(--text-muted);text-align:center;">Nenhum movimento registrado</td></tr>`
                 : todos.map(m => {
                     const isChat = m.orig === 'chat';
                     const isPendente = isChat || m.pagamento === 'pendente';
+                    const tipo = m.tipo === 'saida' ? 'saida' : 'entrada';
+                    const tipoHtml = tipo === 'saida'
+                        ? '<i class="fas fa-arrow-down" style="color:var(--danger);"></i> Saída'
+                        : '<i class="fas fa-arrow-up" style="color:var(--success);"></i> Entrada';
+                    const origemHtml = isChat
+                        ? '<span class="badge badge-info"><i class="fas fa-comments"></i> Chat</span>'
+                        : '<span class="badge"><i class="fas fa-wallet"></i> Financeiro</span>';
                     const icon = m.pagamento === 'cartao_credito' ? 'fa-credit-card' : m.pagamento === 'pix' ? 'fa-qrcode' : 'fa-hourglass-half';
                     let metodoHtml;
                     if (isChat) {
@@ -4668,12 +4690,18 @@ function htmlDetalheCliente(c) {
                         metodoHtml = `<i class="fas ${icon}"></i> ${isPendente ? '<em>Aguardando</em>' : metodoPagamentoRotulo(m.pagamento)}${parcela}`;
                     }
                     const dataHora = isChat ? formatDateTime(m.data) : formatDataHoraMov(m);
+                    const statusRot = isChat
+                        ? (m.status === 'pago' ? 'Pago' : m.status === 'recebido' ? 'Recebido' : 'Aguardando')
+                        : (isPendente ? 'Aguardando' : 'Confirmado');
+                    const statusCls = (isChat && m.status === 'pago') || !isPendente ? 'concluido' : (isChat && m.status === 'recebido' ? 'em_andamento' : 'pendente');
                     return `<tr class="${isPendente ? 'mov-pendente' : ''}">
                         <td>${dataHora}</td>
-                        <td>${m.descricao || (isChat ? 'Comprovante de pagamento' : '-')}</td>
+                        <td>${tipoHtml}</td>
+                        <td style="white-space:normal;">${m.descricao || (isChat ? 'Comprovante de pagamento' : '-')}</td>
                         <td>${metodoHtml}</td>
-                        <td class="${m.tipo === 'entrada' ? 'valor-pago' : 'valor-aberto'}"><strong>${m.tipo === 'entrada' ? '+' : '-'}${formatCurrency(m.valor)}</strong></td>
-                        <td><span class="status-badge status-${isPendente ? 'pendente' : 'concluido'}">${isPendente ? 'Aguardando' : 'Confirmado'}</span></td>
+                        <td class="${tipo === 'entrada' ? 'valor-pago' : 'valor-aberto'}"><strong>${tipo === 'entrada' ? '+' : '-'}${formatCurrency(m.valor)}</strong></td>
+                        <td><span class="status-badge status-${statusCls}">${statusRot}</span></td>
+                        <td>${origemHtml}</td>
                     </tr>`;
                 }).join('');
 
@@ -4702,15 +4730,16 @@ function htmlDetalheCliente(c) {
                 </div>
                 <table class="data-table sub-table" style="margin:0;">
                     <thead><tr>
-                        <th>Data / Hora</th><th>Descrição</th><th>Pagamento</th><th>Valor</th><th>Situação</th>
+                        <th>Data / Hora</th><th>Tipo</th><th>Descrição</th><th>Pagamento</th><th>Valor</th><th>Situação</th><th>Origem</th>
                     </tr></thead>
                     <tbody>${movRows}</tbody>
                     <tfoot>
                         <tr>
-                            <td colspan="2"><strong>Totais</strong></td>
+                            <td colspan="3"><strong>Totais</strong></td>
                             <td class="${somaPendente > 0 ? 'valor-aberto' : 'valor-pago'}">${somaPendente > 0 ? `<span>Aguardando: <strong>${formatCurrency(somaPendente)}</strong></span>` : '<span>Sem pendência</span>'}</td>
                             <td class="valor-pago"><strong>Confirmado: ${formatCurrency(somaConfirmado)}</strong></td>
                             <td class="${restante > 0 ? 'valor-aberto' : 'valor-pago'}"><strong>${restante > 0 ? 'Falta ' + formatCurrency(restante) : 'Quitado'}</strong></td>
+                            <td></td>
                         </tr>
                     </tfoot>
                 </table>
