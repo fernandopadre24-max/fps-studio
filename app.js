@@ -1414,32 +1414,51 @@ function htmlResumoMovimentacoesCliente(pedidos) {
 }
 
 function renderClientes() {
-    const list = document.getElementById('clientesBody') || document.getElementById('adminClientesList');
-    if (!list) return;
-    
-    if (!DB.clientes || DB.clientes.length === 0) {
-        list.innerHTML = '<tr><td colspan="6" class="text-center" style="padding:20px;">Nenhum cliente cadastrado.</td></tr>';
+    const tbody = document.getElementById('clientesBody');
+    if (!tbody) return;
+    const clientes = DB.clientes || [];
+    if (!clientes.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding:20px;">Nenhum cliente cadastrado.</td></tr>';
         return;
     }
-    
-    list.innerHTML = DB.clientes.map(c => {
-        const pedidos = (DB.pedidos || []).filter(p => p.clienteId == c.id);
-        const totalGasto = pedidos.reduce((s, p) => s + (parseFloat(p.total) || 0), 0);
-        return `
-        <tr>
-            <td style="font-weight:bold;">${c.nome}</td>
-            <td>${c.email}</td>
+    tbody.innerHTML = clientes.map(c => {
+        const pedidos = DB.pedidos.filter(p => String(p.clienteId) === String(c.id));
+        const ativos = pedidos.filter(p => p.status !== 'cancelado');
+        const totalGasto = ativos.reduce((s, p) => s + valorEsperadoPedido(p), 0);
+        const totalPago = ativos.reduce((s, p) => s + valorPagoPedido(p), 0);
+        const aberto = Math.max(0, Math.round((totalGasto - totalPago) * 100) / 100);
+        const abertoDet = clientesExpandidos.has(String(c.id)) || clientesExpandidos.has(c.id);
+        const tipoBadge = c.tipoPessoa === 'juridica'
+            ? '<span class="cond-badge" style="margin-left:6px;font-size:10px;">PJ</span>'
+            : (c.cpf ? '<span class="cond-badge" style="margin-left:6px;font-size:10px;">PF</span>' : '');
+        const idJs = JSON.stringify(String(c.id));
+        const idAttr = String(c.id).replace(/'/g, '&#39;');
+        return `<tr class="cliente-row" onclick="toggleClienteDetalhe(${idJs})">
+            <td><strong>${c.nome}</strong>${tipoBadge}</td>
+            <td>${c.email || '-'}${c.instagram ? `<br><small style="color:var(--text-muted);"><i class="fab fa-instagram"></i> ${c.instagram}</small>` : ''}</td>
             <td>${c.telefone || '-'}</td>
-            <td>${pedidos.length} pedido(s)</td>
-            <td><strong>${formatCurrency(totalGasto)}</strong></td>
+            <td title="${ativos.length} ativo(s) / ${pedidos.length} total">
+                ${pedidos.length}
+                ${ativos.length !== pedidos.length ? `<small style="color:var(--text-muted);"> (${ativos.length} ativos)</small>` : ''}
+            </td>
             <td>
-                <button class="btn-primary btn-sm" onclick="irParaChatComCliente('${c.id}')" title="Conversar no Chat"><i class="fas fa-comments"></i> Chat</button>
-                <button class="btn-secondary btn-sm" onclick="abrirNovoPedidoModal(null, '${c.id}')" title="Novo Pedido"><i class="fas fa-plus"></i></button>
-                <button class="btn-icon" onclick="editarCliente('${c.id}')" title="Editar"><i class="fas fa-edit"></i></button>
-                <button class="btn-icon text-danger" onclick="excluirCliente('${c.id}')" title="Excluir"><i class="fas fa-trash"></i></button>
+                <strong>${formatCurrency(totalGasto)}</strong>
+                ${aberto > 0 ? `<br><small class="valor-aberto">aberto ${formatCurrency(aberto)}</small>` : `<br><small style="color:var(--success);">quitado</small>`}
+            </td>
+            <td>
+                <div class="table-actions">
+                    <button title="${abertoDet ? 'Ocultar detalhes' : 'Ver movimentações e somatório'}" class="${abertoDet ? 'btn-ativo' : ''}" onclick="event.stopPropagation();toggleClienteDetalhe(${idJs})"><i class="fas ${abertoDet ? 'fa-chevron-up' : 'fa-chevron-down'}"></i></button>
+                    <button class="btn-primary btn-sm" onclick="event.stopPropagation();irParaChatComCliente('${idAttr}')" title="Conversar no Chat"><i class="fas fa-comments"></i> Chat</button>
+                    <button class="btn-secondary btn-sm" onclick="event.stopPropagation();abrirNovoPedidoModal(null, '${idAttr}')" title="Novo Pedido"><i class="fas fa-plus"></i></button>
+                    <button onclick="editarCliente(${idJs});event.stopPropagation()" title="Editar"><i class="fas fa-edit"></i></button>
+                    <button class="btn-del" onclick="excluirCliente(${idJs});event.stopPropagation()" title="Excluir"><i class="fas fa-trash"></i></button>
+                </div>
             </td>
         </tr>
-    `}).join('');
+        <tr class="cliente-detalhe" id="detalhe_${String(c.id).replace(/[^\w-]/g, '_')}" data-cliente="${String(c.id).replace(/"/g, '&quot;')}" style="${abertoDet ? '' : 'display:none;'}">
+            <td colspan="6">${abertoDet ? htmlDetalheCliente(c) : ''}</td>
+        </tr>`;
+    }).join('');
 }
 
 window.irParaChatComCliente = function(clienteId) {
@@ -1448,22 +1467,6 @@ window.irParaChatComCliente = function(clienteId) {
         openChatAdmin(clienteId);
     }, 80);
 };
-
-function toggleDetalhesCliente(id, btn) {
-    const row = btn.closest('tr').nextElementSibling;
-    const td = row.firstElementChild;
-    if (clientesExpandidos.has(id)) {
-        clientesExpandidos.delete(id);
-        row.style.display = 'none';
-        td.innerHTML = '';
-    } else {
-        clientesExpandidos.add(id);
-        
-        const pedidos = DB.pedidos.filter(p => p.clienteId === id);
-        td.innerHTML = htmlResumoMovimentacoesCliente(pedidos);
-        row.style.display = '';
-    }
-}
 
 
 
@@ -1492,7 +1495,7 @@ function toggleTipoPessoaPerfil() {
 }
 
 function editarCliente(id) {
-    const c = DB.clientes.find(x => x.id === id);
+    const c = DB.clientes.find(x => String(x.id) === String(id));
     if (!c) return;
     document.getElementById('clienteId').value = c.id;
     document.getElementById('clienteNome').value = c.nome;
@@ -1513,9 +1516,10 @@ function editarCliente(id) {
 
 async function excluirCliente(id) {
     if (!confirm('Tem certeza que deseja excluir este cliente?')) return;
-    const item = DB.clientes.find(c => c.id === id);
-    DB.clientes = DB.clientes.filter(c => c.id !== id);
+    const item = DB.clientes.find(c => String(c.id) === String(id));
+    DB.clientes = DB.clientes.filter(c => String(c.id) !== String(id));
     if (DBReady && item?.docId) await DB_SERVICE.deleteCliente(item.docId);
+    clientesExpandidos.delete(String(id));
     renderClientes();
     renderAdminDashboard();
     showToast('Cliente excluído!', 'success');
@@ -3443,6 +3447,1266 @@ function getCategoriaIcon(cat) {
     return icons[cat] || 'fa-box';
 }
 
+function audioSrc(a) {
+    if (!a) return '';
+    return a.url || a.base64 || a.audio || '';
+}
+
+// [restore b03a43a] arrayBufferToDataUrl
+function arrayBufferToDataUrl(buffer, mime) {
+    const bytes = new Uint8Array(buffer);
+    let bin = '';
+    for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]);
+    return `data:${mime};base64,${btoa(bin)}`;
+}
+
+// [restore b03a43a] avancarStagePedido
+function avancarStagePedido(id) {
+    const p = DB.pedidos.find(x => String(x.id) === String(id));
+    if (!p) return;
+    if (p.status === 'cancelado') { moverPedidoStatus(id, 'pendente'); return; }
+    const idx = ordemPedidoStage.indexOf(p.status);
+    moverPedidoStatus(id, ordemPedidoStage[Math.min(idx + 1, ordemPedidoStage.length - 1)]);
+}
+
+// [restore b03a43a] bindChatAudio
+function bindChatAudio(container, messages) {
+    _chatAudioObjectUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch(e) {} });
+    _chatAudioObjectUrls = [];
+    container.querySelectorAll('audio[data-idx]').forEach(a => {
+        const m = messages[parseInt(a.dataset.idx)];
+        if (m && m.audio) {
+            const objUrl = dataUrlToObjectUrl(m.audio);
+            if (objUrl) {
+                _chatAudioObjectUrls.push(objUrl);
+                a.src = objUrl;
+            } else {
+                a.src = m.audio;
+            }
+            a.load();
+        }
+    });
+    container.querySelectorAll('a.chat-audio-download[data-idx]').forEach(a => {
+        const m = messages[parseInt(a.dataset.idx)];
+        if (m && m.audio) {
+            a.href = m.audio;
+            a.download = m.arquivoNome || 'audio.mp3';
+        } else {
+            a.style.display = 'none';
+        }
+    });
+}
+
+// [restore b03a43a] blobToDataUrl
+function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(blob);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+    });
+}
+
+// [restore b03a43a] chatAudioHtml
+function chatAudioHtml(m, msgIdx, isSent) {
+    return `<div class="chat-message audio ${isSent ? 'sent' : 'received'}">
+        <div class="chat-audio-info">
+            <i class="fas fa-file-audio"></i>
+            <span>${m.arquivoNome || (isSent ? 'Áudio enviado' : 'Áudio recebido')}</span>
+            <a class="chat-audio-download" data-idx="${msgIdx}" title="Baixar áudio" onclick="event.stopPropagation()"><i class="fas fa-download"></i></a>
+        </div>
+        <audio controls preload="none" data-idx="${msgIdx}"></audio>
+        <div class="chat-message-time">${formatDateTime(m.data)}</div>
+    </div>`;
+}
+
+// [restore b03a43a] chatsDiferentes
+function chatsDiferentes(fresh, old) {
+    if (fresh.length !== old.length) return true;
+    for (let i = 0; i < fresh.length; i++) {
+        if (msgSig(fresh[i]) !== msgSig(old[i])) return true;
+    }
+    return false;
+}
+
+// [restore b03a43a] clearRegisterForm
+function clearRegisterForm() {
+    document.getElementById('regNome').value = '';
+    document.getElementById('regEmail').value = '';
+    document.getElementById('regTelefone').value = '';
+    document.getElementById('regSenha').value = '';
+    document.querySelectorAll('.reg-pin').forEach(d => { d.value = ''; d.classList.remove('filled'); });
+}
+
+// [restore b03a43a] compactValor
+function compactValor(v) {
+    if (v >= 1000) return (v / 1000).toFixed(1).replace('.', ',') + 'k';
+    return String(Math.round(v));
+}
+
+// [restore b03a43a] comprimirAudio
+async function comprimirAudio(arrayBuffer, kbps) {
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const decoded = await ac.decodeAudioData(arrayBuffer);
+    const sr = decoded.sampleRate;
+    const encoder = new lamejs.Mp3Encoder(1, sr, kbps);
+    const samples = new Int16Array(decoded.length);
+    const f32 = decoded.getChannelData(0);
+    for (let i = 0; i < decoded.length; i++) samples[i] = Math.max(-32768, Math.min(32767, f32[i] * 32768));
+    const chunks = [];
+    for (let i = 0; i < decoded.length; i += 1152) {
+        const buf = encoder.encodeBuffer(samples.subarray(i, Math.min(i + 1152, decoded.length)));
+        if (buf.length) chunks.push(new Uint8Array(buf));
+    }
+    const end = encoder.flush();
+    if (end.length) chunks.push(new Uint8Array(end));
+    return new Blob(chunks, { type: 'audio/mpeg' });
+}
+
+// [restore b03a43a] confirmarPagamentoPedidoAdmin
+async function confirmarPagamentoPedidoAdmin(pedidoId) {
+    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
+    if (!p) return;
+    const clienteId = p.clienteId;
+    const chatKey = `admin_${clienteId}`;
+    const msgs = DB.chats[chatKey] || [];
+
+    const comp = msgs
+        .filter(m => m.tipo === 'comprovante' && m.status !== 'pago' && movRefereAoPedido(m, p.id))
+        .sort((a, b) => (b.id || 0) - (a.id || 0))[0];
+
+    if (comp) {
+        await executarConfirmacaoPagamentoAdmin(comp, chatKey, comp.desconto || 0);
+        return;
+    }
+
+    const pendentes = DB.movimentacoes.filter(m => m.pagamento === 'pendente' && movRefereAoPedido(m, p.id));
+    const restanteAtual = Math.max(0, Math.round((valorEsperadoPedido(p) - valorPagoPedido(p)) * 100) / 100);
+    if (restanteAtual <= 0) {
+        showToast('Este pedido não possui pendência para confirmar.', 'info');
+        return;
+    }
+    if (pendentes.length === 0) {
+        showToast('Nenhum valor pendente registrado para este pedido.', 'info');
+        return;
+    }
+    if (!confirm(`Confirmar recebimento de ${formatCurrency(restanteAtual)} do Pedido #${pedidoId}?`)) return;
+
+    const fake = {
+        id: null,
+        tipo: 'comprovante',
+        remetente: 'client',
+        clienteId,
+        mensagem: `Pagamento de ${formatCurrency(restanteAtual)} via PIX para o Pedido #${pedidoId}`,
+        valor: restanteAtual,
+        desconto: 0,
+        pedidoId,
+        status: 'aguardando',
+        data: new Date().toISOString()
+    };
+    await executarConfirmacaoPagamentoAdmin(fake, chatKey, 0);
+}
+
+// [restore b03a43a] dashCores
+function dashCores() {
+    const cs = getComputedStyle(document.body);
+    const texto = cs.getPropertyValue('--dark').trim() || '#2d3436';
+    const grid = cs.getPropertyValue('--gray-light').trim() || 'rgba(0,0,0,0.12)';
+    return { texto, grid };
+}
+
+// [restore b03a43a] dashEmPeriodo
+function dashEmPeriodo(data) {
+    const f = dashFiltros.periodo;
+    if (f === 'todos' || !data) return true;
+    const hoje = new Date();
+    // Aceita data ISO completa (com T) e data curta (YYYY-MM-DD)
+    const d = String(data).indexOf('T') !== -1 ? new Date(data) : new Date(data + 'T00:00:00');
+    if (isNaN(d.getTime())) return true;
+    if (f === '7') return (hoje - d) / 86400000 <= 7;
+    if (f === '30') return (hoje - d) / 86400000 <= 30;
+    if (f === 'mes') return d.getMonth() === hoje.getMonth() && d.getFullYear() === hoje.getFullYear();
+    if (f === 'ano') return d.getFullYear() === hoje.getFullYear();
+    return true;
+}
+
+// [restore b03a43a] dashPeriodoLabel
+function dashPeriodoLabel() {
+    const map = { '7': '7 dias', '30': '30 dias', 'mes': 'este mês', 'ano': 'este ano', 'todos': '' };
+    return map[dashFiltros.periodo];
+}
+
+// [restore b03a43a] dataUrlToObjectUrl
+function dataUrlToObjectUrl(dataUrl) {
+    try {
+        const comma = dataUrl.indexOf(',');
+        if (comma === -1) return null;
+        const mime = (dataUrl.slice(0, comma).match(/data:([^;]+)/) || [])[1] || 'audio/mpeg';
+        const bin = atob(dataUrl.slice(comma + 1));
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return URL.createObjectURL(new Blob([bytes], { type: mime }));
+    } catch (e) {
+        console.error('Falha ao converter data URL de áudio:', e);
+        return null;
+    }
+}
+
+// [restore b03a43a] dragPedido
+function dragPedido(event, id) {
+    event.dataTransfer.setData('text/plain', String(id));
+    event.dataTransfer.effectAllowed = 'move';
+    event.currentTarget.classList.add('dragging');
+}
+
+// [restore b03a43a] excluirAudioBiblioteca
+async function excluirAudioBiblioteca(id) {
+    if (!confirm('Excluir este áudio da biblioteca?')) return;
+    const item = DB.bibliotecas.find(x => x.id === id);
+    if (!item) return;
+    DB.bibliotecas = DB.bibliotecas.filter(x => x.id !== id);
+    try {
+        if (item.docId || item.id) await DB_SERVICE.deleteBiblioteca(item.docId || item.id);
+        showToast('Áudio excluído!', 'success');
+    } catch (e) {
+        console.error(e);
+        showToast('Erro ao excluir o áudio.', 'error');
+    }
+    renderBibliotecas();
+}
+
+// [restore b03a43a] executarConfirmacaoPagamentoAdmin
+async function executarConfirmacaoPagamentoAdmin(m, chatKey, descontoAdmin) {
+    if (!m || m.tipo !== 'comprovante') return;
+    descontoAdmin = Math.max(0, descontoAdmin || 0);
+
+    m.status = 'pago';
+    m.desconto = descontoAdmin;
+    m.lida = true;
+
+    const pedidoIdRaw = m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0);
+    const pedido = DB.pedidos.find(x => String(x.id) === String(pedidoIdRaw));
+    const totalPago = Math.max(0, Math.round(((Number(m.valor) || (pedido ? (Number(pedido.total) || 0) : 0)) - descontoAdmin) * 100) / 100);
+    const metodoPag = (m.mensagem || '').includes('Cartão') || (m.mensagem || '').includes('cartao') ? 'cartao_credito' : 'pix';
+
+    try {
+        if (m.id) await DB_SERVICE.updateMessage(m.id, { status: 'pago', desconto: descontoAdmin });
+
+        if (pedido && totalPago > 0) {
+            const jaConfirmado = DB.movimentacoes.find(mm => mm.pedidoId != null && String(mm.pedidoId) === String(pedido.id) && mm.pagamento !== 'pendente');
+            if (pedido.parcial && jaConfirmado) {
+                const nova = {
+                    id: DB.nextId.movimentacao++,
+                    tipo: 'entrada',
+                    descricao: `Pagamento Pedido #${pedido.id} (2ª parcela)`,
+                    valor: totalPago,
+                    categoria: 'servico',
+                    pagamento: metodoPag,
+                    data: new Date().toISOString().split('T')[0],
+                    hora: agoraHora(),
+                    pedidoId: pedido.id
+                };
+                DB.movimentacoes.push(nova);
+                const docId = await DB_SERVICE.addMovimentacao(nova);
+                if (docId && docId.id) nova.docId = docId.id;
+            } else {
+                const mov = DB.movimentacoes.find(mm => mm.pagamento === 'pendente' && movRefereAoPedido(mm, pedido.id));
+                if (mov) {
+                    mov.tipo = 'entrada';
+                    mov.descricao = `Pagamento Pedido #${pedido.id}`;
+                    mov.valor = totalPago;
+                    mov.categoria = mov.categoria || 'servico';
+                    mov.pagamento = metodoPag;
+                    mov.pedidoId = pedido.id;
+                    if (mov.docId) await DB_SERVICE.updateMovimentacao(mov.docId, { tipo: mov.tipo, descricao: mov.descricao, valor: mov.valor, categoria: mov.categoria, pagamento: mov.pagamento, data: mov.data, hora: mov.hora || '', pedidoId: mov.pedidoId });
+                } else {
+                    const nova = {
+                        id: DB.nextId.movimentacao++,
+                        tipo: 'entrada',
+                        descricao: `Pagamento Pedido #${pedido.id}`,
+                        valor: totalPago,
+                        categoria: 'servico',
+                        pagamento: metodoPag,
+                        data: new Date().toISOString().split('T')[0],
+                        hora: agoraHora(),
+                        pedidoId: pedido.id
+                    };
+                    DB.movimentacoes.push(nova);
+                    const docId = await DB_SERVICE.addMovimentacao(nova);
+                    if (docId && docId.id) nova.docId = docId.id;
+                }
+            }
+
+            pedido.materiais.forEach(mId => {
+                const mat = DB.materiais.find(x => x.id === mId);
+            });
+
+            // Normaliza o "a receber": mantém apenas o saldo realmente pendente
+            const esperado = valorEsperadoPedido(pedido);
+            const pagoAte = valorPagoPedido(pedido);
+            const restante = Math.max(0, Math.round((esperado - pagoAte) * 100) / 100);
+            const pendentes = DB.movimentacoes.filter(mm => mm.pagamento === 'pendente' && movRefereAoPedido(mm, pedido.id));
+            if (restante > 0) {
+                const pend = pendentes[pendentes.length - 1];
+                if (pend) {
+                    pend.valor = restante;
+                    if (pend.docId) await DB_SERVICE.updateMovimentacao(pend.docId, { tipo: pend.tipo, descricao: pend.descricao, valor: pend.valor, categoria: pend.categoria, pagamento: pend.pagamento, data: pend.data, hora: pend.hora || '', pedidoId: pend.pedidoId });
+                } else {
+                    const nova = {
+                        id: DB.nextId.movimentacao++,
+                        tipo: 'entrada',
+                        descricao: `Pedido #${pedido.id}`,
+                        valor: restante,
+                        categoria: 'servico',
+                        pagamento: 'pendente',
+                        data: new Date().toISOString().split('T')[0],
+                        hora: agoraHora(),
+                        pedidoId: pedido.id
+                    };
+                    DB.movimentacoes.push(nova);
+                    const docId = await DB_SERVICE.addMovimentacao(nova);
+                    if (docId && docId.id) nova.docId = docId.id;
+                }
+            } else {
+                for (const pend of pendentes) {
+                    DB.movimentacoes = DB.movimentacoes.filter(mm => mm.id !== pend.id);
+                    if (pend.docId) await DB_SERVICE.deleteMovimentacao(pend.docId);
+                }
+            }
+
+            if (pedido.status === 'pendente') {
+                pedido.status = 'em_andamento';
+                if (pedido.docId) await DB_SERVICE.updatePedido(pedido.docId, { clienteId: pedido.clienteId, servicos: pedido.servicos, materiais: pedido.materiais, desconto: pedido.desconto, status: pedido.status, total: pedido.total, parcial: pedido.parcial || 0, descontoPct: pedido.descontoPct || 0 });
+            }
+        }
+    } catch (e) {
+        console.error(e);
+        m.status = 'aguardando';
+        try { renderChatMessagesAdmin(chatKey); } catch (e2) {}
+        try { renderChatList(); } catch (e2) {}
+        try { renderFinanceiro(); } catch (e2) {}
+        try { renderAdminDashboard(); } catch (e2) {}
+        try { updateChatBadge(); } catch (e2) {}
+        showToast('Erro ao confirmar pagamento. Verifique sua conexão e tente novamente.', 'error');
+        return;
+    }
+
+    // Enviar mensagem de confirmação pro cliente com os detalhes do serviço
+    if (pedido) {
+        const nomesServicos = (pedido.servicos || []).map(id2 => { const s = DB.servicos.find(x => String(x.id) === String(id2)); return s ? s.nome : ''; }).filter(Boolean);
+        const nomesMateriais = (pedido.materiais || []).map(id2 => { const mm = DB.materiais.find(x => String(x.id) === String(id2)); return mm ? mm.nome : ''; }).filter(Boolean);
+        const detalhes = [...nomesServicos, ...nomesMateriais].join(', ') || 'Serviço solicitado';
+        const faltante = pedido ? Math.max(0, Math.round((valorEsperadoPedido(pedido) - valorPagoPedido(pedido)) * 100) / 100) : 0;
+        const confMsg = {
+            tipo: 'sistema',
+            remetente: 'admin',
+            clienteId: m.clienteId,
+            mensagem: `Pagamento do Pedido #${pedido.id} confirmado! Detalhes do serviço: ${detalhes}. Valor recebido: ${formatCurrency(Math.max(0, totalPago))}.${faltante > 0 ? ` Falta pagar ${formatCurrency(faltante)} (50% restante).` : ' Status: em andamento.'}`,
+            data: new Date().toISOString()
+        };
+        if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
+        DB.chats[chatKey].push(confMsg);
+        try {
+            const res = await DB_SERVICE.sendMessage(confMsg);
+            if (res && res.id) confMsg.id = res.id;
+        } catch (e) {
+            console.error(e);
+            const idx = DB.chats[chatKey].indexOf(confMsg);
+            if (idx > -1) DB.chats[chatKey].splice(idx, 1);
+        }
+    }
+
+    try {
+        if (currentChatClient != null && String(currentChatClient) === String(m.clienteId)) renderChatMessagesAdmin(chatKey);
+        try { renderChatList(); } catch (e) {}
+        try { renderFinanceiro(); } catch (e) {}
+        try { renderAdminDashboard(); } catch (e) {}
+        updateChatBadge();
+        celebratePayment();
+        showToast('Pagamento confirmado como PAGO!', 'success');
+    } catch (e) {
+        console.error('pós-confirmação:', e);
+        try { renderFinanceiro(); } catch (e2) {}
+        try { renderAdminDashboard(); } catch (e2) {}
+        try { renderChatList(); } catch (e2) {}
+        updateChatBadge();
+        celebratePayment();
+        showToast('Pagamento confirmado como PAGO!', 'success');
+    }
+}
+
+// [restore b03a43a] formatDataHoraMov
+function formatDataHoraMov(m) {
+    const d = formatDate(m.data);
+    const h = m.hora || '';
+    return d + (h ? ' <span class="hora-pedido">' + h + '</span>' : '');
+}
+
+// [restore b03a43a] formatValorBR
+function formatValorBR(num) {
+    return (isFinite(num) ? num : parseValorBR(num)).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+// [restore b03a43a] htmlResumoServicosCliente
+function htmlResumoServicosCliente(clienteId) {
+    const pedidos = DB.pedidos.filter(p => String(p.clienteId) === String(clienteId) && p.status !== 'cancelado');
+    const itens = new Map();
+    pedidos.forEach(p => {
+        (p.servicos || []).forEach(sId => {
+            const s = DB.servicos.find(x => String(x.id) === String(sId));
+            if (!s || Number(s.preco) <= 0) return;
+            const chave = `s_${sId}`;
+            const item = itens.get(chave) || { tipo: 'Serviço', nome: s.nome, preco: Number(s.preco) || 0, qtd: 0, sub: 0 };
+            item.qtd++;
+            item.sub += Number(s.preco) || 0;
+            itens.set(chave, item);
+        });
+        (p.materiais || []).forEach(mId => {
+            const m = DB.materiais.find(x => String(x.id) === String(mId));
+            if (!m || Number(m.preco) <= 0) return;
+            const chave = `m_${mId}`;
+            const item = itens.get(chave) || { tipo: 'Material', nome: m.nome, preco: Number(m.preco) || 0, qtd: 0, sub: 0 };
+            item.qtd++;
+            item.sub += Number(m.preco) || 0;
+            itens.set(chave, item);
+        });
+    });
+
+    if (itens.size === 0) return '';
+
+    const linhas = [...itens.values()].map(item => `<tr>
+        <td>${item.tipo}</td>
+        <td style="white-space:normal;">${item.nome}</td>
+        <td>${item.qtd}</td>
+        <td>${formatCurrency(item.preco)}</td>
+        <td class="valor-pago"><strong>${formatCurrency(item.sub)}</strong></td>
+    </tr>`).join('');
+
+    const somatoria = [...itens.values()].reduce((s, i) => s + i.sub, 0);
+
+    return `<div class="sub-secao-titulo"><i class="fas fa-chart-pie"></i> Detalhes por Serviço / Material</div>
+        <table class="data-table sub-table">
+            <thead><tr><th>Tipo</th><th>Item</th><th>Qtde</th><th>Valor unit.</th><th>Subtotal</th></tr></thead>
+            <tbody>${linhas}</tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="4"><strong>Somatória</strong></td>
+                    <td class="valor-total"><strong>${formatCurrency(somatoria)}</strong></td>
+                </tr>
+            </tfoot>
+        </table>`;
+}
+
+// [restore b03a43a] initApp
+async function initApp() {
+    try {
+        const ok = await DB_SERVICE.init();
+        if (ok) {
+            // Carrega todos os dados do SQLite via API
+            DB.servicos = await DB_SERVICE.getServicos();
+            DB.materiais = await DB_SERVICE.getMateriais();
+            DB.clientes = await DB_SERVICE.getClientes();
+            DB.pedidos = await DB_SERVICE.getPedidos();
+            DB.movimentacoes = await DB_SERVICE.getMovimentacoes();
+            DB.bibliotecas = await DB_SERVICE.getBiblioteca();
+
+            // Normaliza docId = id (o id do servidor é o mesmo do cliente)
+            ['servicos', 'materiais', 'clientes', 'pedidos', 'movimentacoes', 'biblioteca'].forEach(tabela => {
+                DB[tabela].forEach(r => { r.docId = r.id; });
+            });
+
+            // Calcular nextIds
+            if (DB.servicos.length) DB.nextId.servico = Math.max(...DB.servicos.map(s => s.id)) + 1;
+            if (DB.materiais.length) DB.nextId.material = Math.max(...DB.materiais.map(m => m.id)) + 1;
+            if (DB.clientes.length) DB.nextId.cliente = Math.max(...DB.clientes.map(c => c.id)) + 1;
+            if (DB.pedidos.length) DB.nextId.pedido = Math.max(...DB.pedidos.map(p => p.id)) + 1;
+            if (DB.movimentacoes.length) DB.nextId.movimentacao = Math.max(...DB.movimentacoes.map(m => m.id)) + 1;
+            if (DB.bibliotecas.length) DB.nextId.biblioteca = Math.max(...DB.bibliotecas.map(b => b.id)) + 1;
+
+            // Carregar chats
+            for (const c of DB.clientes) {
+                try {
+                    DB.chats[`admin_${c.id}`] = await DB_SERVICE.getChat(c.id);
+                } catch(e) {}
+            }
+
+            DBReady = true;
+            console.log('SQLite conectado!');
+            setInterval(() => { if (document.visibilityState === 'visible') salvarAutoBackupLocal(); }, 60000);
+            setInterval(refreshChatsLive, 5000);
+            await restaurarAutoBackupLocal();
+        }
+    } catch (err) {
+        console.warn('API SQLite offline. Modo local ativo.', err);
+        DBReady = false;
+    }
+
+    await carregarConfig();
+
+    setupDragDrop();
+    document.getElementById('movData').value = new Date().toISOString().split('T')[0];
+    updateChatBadge();
+    restaurarSessao();
+}
+
+// [restore b03a43a] lerArquivoComoArrayBuffer
+function lerArquivoComoArrayBuffer(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsArrayBuffer(file);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+    });
+}
+
+// [restore b03a43a] lerArquivoComoDataURL
+function lerArquivoComoDataURL(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+// [restore b03a43a] limparSessao
+function limparSessao() {
+    localStorage.removeItem('fps_session');
+}
+
+// [restore b03a43a] mergeChats
+function mergeChats(fresh, old) {
+    const byId = new Map();
+    (fresh || []).forEach(m => { if (m.id != null) byId.set(m.id, m); });
+    const merged = (old || []).map(lm => {
+        if (lm.id != null && byId.has(lm.id)) {
+            const fm = byId.get(lm.id);
+            byId.delete(lm.id);
+            return fm;
+        }
+        return lm;
+    });
+    byId.forEach(fm => merged.push(fm));
+    merged.sort((a, b) => {
+        const ta = normChatData(a.data), tb = normChatData(b.data);
+        if (ta !== tb) return ta - tb;
+        return (a.id || 0) - (b.id || 0);
+    });
+    return merged;
+}
+
+// [restore b03a43a] metodoPagamentoRotulo
+function metodoPagamentoRotulo(pagamento) {
+    if (pagamento === 'cartao_credito') return 'Cartão';
+    if (pagamento === 'pix') return 'PIX';
+    if (pagamento === 'pendente') return 'Pendente';
+    return (pagamento || '').charAt(0).toUpperCase() + (pagamento || '').slice(1);
+}
+
+// [restore b03a43a] moverPedidoStatus
+async function moverPedidoStatus(id, novoStatus) {
+    const p = DB.pedidos.find(x => String(x.id) === String(id));
+    if (!p || p.status === novoStatus) return;
+    p.status = novoStatus;
+    if (DBReady) {
+        try {
+            await DB_SERVICE.updatePedido(p.docId, { clienteId: p.clienteId, servicos: p.servicos, materiais: p.materiais, desconto: p.desconto, status: novoStatus, total: p.total, parcial: p.parcial || 0, descontoPct: p.descontoPct || 0 });
+        } catch (e) { console.error('updatePedido status', e); }
+    }
+    const mov = DB.movimentacoes.find(m => m.pedidoId != null && String(m.pedidoId) === String(id) && m.pagamento === 'pendente');
+    if (novoStatus === 'cancelado' && mov) {
+        DB.movimentacoes = DB.movimentacoes.filter(m => m.id !== mov.id);
+        if (DBReady && mov.docId) await DB_SERVICE.deleteMovimentacao(mov.docId);
+    }
+    await sincronizarFinanceiroPedido(p);
+    renderPedidosAdmin();
+    renderAdminDashboard();
+    renderFinanceiro();
+    showToast(`Pedido #${id} movido para ${statusLabel(novoStatus)}`, 'success');
+}
+
+// [restore b03a43a] msgSig
+function msgSig(m) {
+    return m.id + '|' + (m.tipo || '') + '|' + (m.mensagem || '').slice(0, 80) + '|' + (m.status || '') + '|' + (m.lida ? 1 : 0) + '|' + (m.audio ? 1 : 0) + '|' + (m.arquivoNome || '');
+}
+
+// [restore b03a43a] nomeClienteDoPedido
+function nomeClienteDoPedido(pedidoId) {
+    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
+    if (!p) return '';
+    const c = DB.clientes.find(x => x.id === p.clienteId);
+    return c ? c.nome : '';
+}
+
+// [restore b03a43a] normChatData
+function normChatData(d) {
+    if (!d) return 0;
+    const t = Date.parse(d);
+    if (!isNaN(t)) return t;
+    const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+    if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+    return 0;
+}
+
+// [restore b03a43a] pagamentosPedidoResumo
+function pagamentosPedidoResumo(p) {
+    const pagamentos = DB.movimentacoes
+        .filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente' && movRefereAoPedido(m, p.id))
+        .sort((a, b) => (a.data || '').localeCompare(b.data || '') || (a.id || 0) - (b.id || 0));
+    if (pagamentos.length === 0) {
+        const temPendente = DB.movimentacoes.some(m => m.pagamento === 'pendente' && movRefereAoPedido(m, p.id));
+        return temPendente
+            ? '<span class="pag-badge pag-pend"><i class="fas fa-hourglass-half"></i> Aguardando pagamento</span>'
+            : '<span class="pag-badge">Sem pagamento</span>';
+    }
+    return pagamentos.map((m, i) => {
+        const icon = m.pagamento === 'cartao_credito' ? 'fa-credit-card' : 'fa-qrcode';
+        const parcela = pagamentos.length > 1 ? ` · ${i + 1}ª parcela` : '';
+        return `<div class="pag-linha"><span class="pag-metodo"><i class="fas ${icon}"></i> ${metodoPagamentoRotulo(m.pagamento)}${parcela}</span> ${formatCurrency(m.valor)} <small>${formatDate(m.data)}</small></div>`;
+    }).join('');
+}
+
+// [restore b03a43a] parseDataChat
+function parseDataChat(isoStr) {
+    if (!isoStr) return null;
+    let s = String(isoStr).trim();
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(s)) s = s.replace(' ', 'T') + 'Z';
+    const t = Date.parse(s);
+    return isNaN(t) ? null : new Date(t);
+}
+
+// [restore b03a43a] parseValorBR
+function parseValorBR(str) {
+    if (str === null || str === undefined) return 0;
+    if (typeof str === 'number') return isFinite(str) ? str : 0;
+    const s = String(str).trim().replace(/R\$\s?/gi, '').replace(/\s/g, '');
+    if (!s) return 0;
+    const lastComma = s.lastIndexOf(',');
+    const lastDot = s.lastIndexOf('.');
+    let normalized;
+    if (lastComma > lastDot) {
+        normalized = s.replace(/\./g, '').replace(',', '.');
+    } else if (lastDot > lastComma) {
+        normalized = s.replace(/,/g, '');
+    } else {
+        normalized = s;
+    }
+    const n = parseFloat(normalized);
+    return isNaN(n) ? 0 : n;
+}
+
+// [restore b03a43a] pedidoKanbanCard
+function pedidoKanbanCard(p) {
+    const cliente = DB.clientes.find(c => String(c.id) === String(p.clienteId));
+    const servicoNomes = (p.servicos || []).map(id => DB.servicos.find(s => String(s.id) === String(id))?.nome || '').filter(Boolean);
+    const mostrar = servicoNomes.slice(0, 2);
+    const extra = servicoNomes.length - mostrar.length;
+    const pagos = valorPagoPedido(p) > 0;
+    const pagoTotal = pedidoPagamentoCompleto(p);
+    const restoPed = Math.max(0, Math.round((valorEsperadoPedido(p) - valorPagoPedido(p)) * 100) / 100);
+    const condRotulo = p.parcial ? 'Dividido 50%+50%' : (p.descontoPct ? `À vista -${p.descontoPct}%` : '');
+    const qtdAudios = (p.audios || []).length;
+    return `<div class="kanban-card" draggable="true" ondragstart="dragPedido(event, ${p.id})" ondragend="this.classList.remove('dragging')">
+        <div class="kanban-card-top">
+            <strong>#${p.id}</strong>
+            ${qtdAudios ? `<span class="kanban-chip" title="${qtdAudios} MP3(s)"><i class="fas fa-music"></i> ${qtdAudios}</span>` : ''}
+            ${pagoTotal
+                ? '<span class="kanban-pagamento pag-ok"><i class="fas fa-check-circle"></i> Pago</span>'
+                : pagos
+                    ? '<span class="kanban-pagamento pag-parc"><i class="fas fa-adjust"></i> Parcial</span>'
+                    : '<span class="kanban-pagamento pag-pend"><i class="fas fa-hourglass"></i> Aguardando</span>'}
+        </div>
+        ${condRotulo ? `<span class="kanban-chip chip-cond">${condRotulo}</span>` : ''}
+        <h5 class="kanban-cliente"><i class="fas fa-user-circle"></i> ${cliente ? cliente.nome : 'N/A'}</h5>
+        <div class="kanban-servicos">
+            ${servicoNomes.length === 0 ? '<span class="kanban-chip chip-material">Materiais</span>' : mostrar.map(n => `<span class="kanban-chip">${n}</span>`).join('')}
+            ${extra > 0 ? `<span class="kanban-chip">+${extra}</span>` : ''}
+        </div>
+        <div class="kanban-card-bottom">
+            <strong class="kanban-total">${formatCurrency(valorEsperadoPedido(p))}</strong>
+            <span class="kanban-data">${formatPedidoDataHora(p)}</span>
+        </div>
+        <div class="kanban-card-acoes">
+            ${restoPed > 0 && p.status !== 'cancelado' ? `<button title="Confirmar pagamento" onclick="confirmarPagamentoPedidoAdmin('${p.id}')"><i class="fas fa-check-circle"></i></button>` : ''}
+            <button title="Ver detalhes" onclick="verDetalhesPedido('${p.id}')"><i class="fas fa-eye"></i></button>
+            <button title="Avançar etapa" onclick="avancarStagePedido('${p.id}')"><i class="fas fa-forward"></i></button>
+            <button title="Editar" onclick="editarPedido('${p.id}')"><i class="fas fa-edit"></i></button>
+            <button class="btn-del" title="Excluir" onclick="excluirPedido('${p.id}')"><i class="fas fa-trash"></i></button>
+        </div>
+    </div>`;
+}
+
+// [restore b03a43a] pedidoPagamentoCompleto
+function pedidoPagamentoCompleto(p) {
+    return valorPagoPedido(p) >= valorEsperadoPedido(p);
+}
+
+// [restore b03a43a] refreshChatsLive
+async function refreshChatsLive() {
+    if (!DBReady || !currentUser) return;
+    try {
+        if (currentUser.role === 'admin') {
+            DB.chats = DB.chats || {};
+            (DB.clientes || []).forEach(c => {
+                const k = `admin_${c.id}`;
+                if (!DB.chats[k]) DB.chats[k] = [];
+            });
+            const keys = Object.keys(DB.chats).filter(k => k.startsWith('admin_'));
+            for (const key of keys) {
+                const clienteId = key.replace('admin_', '');
+                if (!clienteId) continue;
+                try {
+                    const fresh = await DB_SERVICE.getChat(clienteId);
+                    const old = DB.chats[key] || [];
+                    const merged = mergeChats(fresh, old);
+                    if (chatsDiferentes(merged, old)) {
+                        DB.chats[key] = merged;
+                        if (currentChatClient != null && String(currentChatClient) === String(clienteId)) renderChatMessagesAdmin(key);
+                    }
+                } catch (e) {}
+            }
+            try { renderChatList(); } catch (e) {}
+            try { updateChatBadge(); } catch (e) {}
+        } else {
+            const key = `admin_${currentUser.id}`;
+            const fresh = await DB_SERVICE.getChat(currentUser.id);
+            const old = DB.chats[key] || [];
+            const merged = mergeChats(fresh, old);
+            if (chatsDiferentes(merged, old)) {
+                DB.chats[key] = merged;
+                renderClientChat();
+            }
+        }
+    } catch (e) {}
+}
+
+// [restore b03a43a] renderCurrentPage
+function renderCurrentPage(page) {
+    switch(page) {
+        case 'adminHome': renderAdminDashboard(); break;
+        case 'adminServicos': renderServicosAdmin(); break;
+        case 'adminMateriais': renderMateriaisAdmin(); break;
+        case 'adminPedidos': renderPedidosAdmin(); break;
+        case 'adminFinanceiro': renderFinanceiro(); break;
+        case 'adminChat': renderChatList(); break;
+        case 'adminBiblioteca': renderBiblioteca(); break;
+        case 'adminBibliotecas': renderBibliotecas(); break;
+        case 'adminClientes': renderClientes(); break;
+        case 'adminConfig': preencherFormConfig(); break;
+        case 'clientHome': renderClientDashboard(); break;
+        case 'clientServicos': renderServicosClient(); break;
+        case 'clientMateriais': renderMateriaisClient(); break;
+        case 'clientPedidos': renderPedidosClient(); break;
+        case 'clientChat': renderClientChat(); break;
+    }
+}
+
+// [restore b03a43a] renderKanbanPedidos
+function renderKanbanPedidos(pedidos) {
+    const cols = [
+        { status: 'pendente', rotulo: 'Pendente', icone: 'fa-hourglass-half', cor: '#fdcb6e' },
+        { status: 'em_andamento', rotulo: 'Em Andamento', icone: 'fa-spinner', cor: '#6c5ce7' },
+        { status: 'concluido', rotulo: 'Concluído', icone: 'fa-check-circle', cor: '#00b894' },
+        { status: 'cancelado', rotulo: 'Cancelado', icone: 'fa-ban', cor: '#d63031' }
+    ];
+    const board = document.getElementById('kanbanPedidos');
+    if (!board) return;
+    board.innerHTML = cols.map(col => {
+        const itens = pedidos.filter(p => p.status === col.status);
+        return `<div class="kanban-col" data-status="${col.status}"
+            ondragover="event.preventDefault(); this.classList.add('kanban-over')"
+            ondragleave="this.classList.remove('kanban-over')"
+            ondrop="soltarPedidoKanban(event, '${col.status}')">
+            <div class="kanban-col-header">
+                <span class="kanban-titulo"><i class="fas ${col.icone}" style="color:${col.cor}"></i> ${col.rotulo}</span>
+                <span class="kanban-count">${itens.length}</span>
+            </div>
+            <div class="kanban-col-body">
+                ${itens.length ? itens.map(p => pedidoKanbanCard(p)).join('') : '<p class="kanban-vazio">Nenhum pedido</p>'}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+// [restore b03a43a] renderMateriaisAdmin
+function renderMateriaisAdmin() {
+    const container = document.getElementById('listaMateriaisAdmin');
+    container.innerHTML = DB.materiais.map(m => `<div class="item-card">
+        <div class="item-card-image">
+            ${m.imagem ? `<img src="${m.imagem}" alt="${m.nome}">` : `<div class="placeholder-icon"><i class="fas ${getCategoriaIcon(m.categoria)}"></i><span>${capitalize(m.categoria)}</span></div>`}
+        </div>
+        <div class="item-card-body">
+            <h4>${m.nome}</h4>
+            <p>${m.descricao}</p>
+            <div class="item-card-meta">
+                ${formatMaterialPrice(m)}
+                <span class="item-card-badge badge-estoque"><i class="fas fa-tag"></i> ${m.categoria || 'outro'}</span>
+            </div>
+        </div>
+        <div class="item-card-actions">
+            <button class="btn-secondary btn-sm" onclick="editarMaterial(${m.id})"><i class="fas fa-edit"></i> Editar</button>
+            <button class="btn-danger btn-sm" onclick="excluirMaterial(${m.id})"><i class="fas fa-trash"></i> Excluir</button>
+        </div>
+    </div>`).join('');
+}
+
+// [restore b03a43a] renderServicosAdmin
+function renderServicosAdmin() {
+    const container = document.getElementById('listaServicosAdmin');
+    container.innerHTML = DB.servicos.map(s => `<div class="item-card">
+        <div class="item-card-image">
+            ${s.imagem ? `<img src="${s.imagem}" alt="${s.nome}">` : `<div class="placeholder-icon"><i class="fas ${s.icone}"></i><span>${s.duracao}</span></div>`}
+        </div>
+        <div class="item-card-body">
+            <h4>${s.nome}</h4>
+            <small class="item-card-categoria"><i class="fas fa-tag"></i> ${s.categoria || 'outro'}</small>
+            <p>${s.descricao}</p>
+            <div class="item-card-meta">
+                <span class="item-card-price">${formatCurrency(s.preco)}</span>
+                <span class="item-card-badge badge-estoque">${s.duracao}</span>
+            </div>
+        </div>
+        <div class="item-card-actions">
+            <button class="btn-secondary btn-sm" onclick="editarServico(${s.id})"><i class="fas fa-edit"></i> Editar</button>
+            <button class="btn-danger btn-sm" onclick="excluirServico(${s.id})"><i class="fas fa-trash"></i> Excluir</button>
+        </div>
+    </div>`).join('');
+}
+
+// [restore b03a43a] restaurarAutoBackupLocal
+async function restaurarAutoBackupLocal() {
+    if (!DBReady) return;
+    try {
+        const raw = localStorage.getItem('fps_autobackup');
+        if (!raw) return;
+        const b = JSON.parse(raw);
+        if (!b || b.tipo !== 'fps-studio-backup') return;
+        const temDados = (b.servicos && b.servicos.length) || (b.clientes && b.clientes.length) || (b.pedidos && b.pedidos.length);
+        const servidorVazio = DB.servicos.length === 0 && DB.clientes.length === 0 && DB.pedidos.length === 0;
+        if (!temDados || !servidorVazio) return;
+        await DB_SERVICE.importBackup(b);
+        location.reload();
+    } catch (e) {}
+}
+
+// [restore b03a43a] restaurarSessao
+function restaurarSessao() {
+    const saved = localStorage.getItem('fps_session');
+    if (!saved) return;
+    try {
+        const user = JSON.parse(saved);
+        if (!user || !user.role) return;
+        if (user.role === 'cliente') user.role = 'client';
+        if (user.role === 'client') {
+            const cliente = DB.clientes.find(c => c.id === user.id);
+            if (!cliente) { limparSessao(); return; }
+            currentUser = { role: 'client', ...cliente };
+            showDashboard('client');
+            document.getElementById('clientNameDisplay').textContent = cliente.nome;
+            atualizarAvisoPerfil();
+        } else {
+            currentUser = { role: 'admin', nome: 'Administrador' };
+            showDashboard('admin');
+        }
+    } catch (e) {
+        limparSessao();
+    }
+}
+
+// [restore b03a43a] salvarAutoBackupLocal
+function salvarAutoBackupLocal() {
+    if (!DBReady) return;
+    DB_SERVICE.exportBackup().then(dados => {
+        try {
+            localStorage.setItem('fps_autobackup', JSON.stringify(Object.assign({}, dados, { salvoEm: new Date().toISOString() })));
+        } catch (e) {}
+    }).catch(() => {});
+}
+
+// [restore b03a43a] showDashboard
+function showDashboard(role) {
+    document.getElementById('loginScreen').classList.remove('active');
+    if (role === 'admin') {
+        document.getElementById('adminDashboard').classList.add('active');
+        renderAdminDashboard();
+    } else {
+        document.getElementById('clientDashboard').classList.add('active');
+        renderClientDashboard();
+    }
+}
+
+// [restore b03a43a] soltarPedidoKanban
+async function soltarPedidoKanban(event, status) {
+    event.preventDefault();
+    event.currentTarget.classList.remove('kanban-over');
+    const id = event.dataTransfer.getData('text/plain');
+    if (id) await moverPedidoStatus(id, status);
+}
+
+// [restore b03a43a] toggleClienteDetalhe
+function toggleClienteDetalhe(id) {
+    const key = String(id);
+    if (clientesExpandidos.has(key)) {
+        clientesExpandidos.delete(key);
+    } else {
+        clientesExpandidos.add(key);
+    }
+    renderClientes();
+}
+
+// Detalhe expandido do cliente: perfil, somatório geral dos pedidos,
+// movimentações consolidadas e blocos por pedido.
+function htmlDetalheCliente(c) {
+    if (!c) return '';
+    const id = c.id;
+    const pedidos = (DB.pedidos || []).filter(p => String(p.clienteId) === String(id));
+    const ativos = pedidos.filter(p => p.status !== 'cancelado');
+    const cancelados = pedidos.filter(p => p.status === 'cancelado');
+    const pendentes = pedidos.filter(p => p.status === 'pendente');
+    const emAndamento = pedidos.filter(p => p.status === 'em_andamento');
+    const concluidos = pedidos.filter(p => p.status === 'concluido');
+    const totalGasto = ativos.reduce((s, p) => s + valorEsperadoPedido(p), 0);
+    const totalPago = ativos.reduce((s, p) => s + valorPagoPedido(p), 0);
+    const totalCancelado = cancelados.reduce((s, p) => s + valorEsperadoPedido(p), 0);
+    const emAberto = Math.max(0, Math.round((totalGasto - totalPago) * 100) / 100);
+
+    const tipoRot = c.tipoPessoa === 'juridica' ? 'Pessoa Jurídica' : 'Pessoa Física';
+    const docPrincipal = c.tipoPessoa === 'juridica' ? (c.cnpj || '') : (c.cpf || '');
+    const perfilHtml = `
+        <div class="cliente-perfil-topo">
+            <div class="cliente-perfil-avatar"><i class="fas ${c.tipoPessoa === 'juridica' ? 'fa-building' : 'fa-user'}"></i></div>
+            <div class="cliente-perfil-info">
+                <div class="cliente-perfil-nome">${c.nome} ${c.tipoPessoa === 'juridica' ? '<span class="cond-badge">PJ</span>' : (docPrincipal ? '<span class="cond-badge">PF</span>' : '')}</div>
+                <div class="cliente-perfil-linha">
+                    <span><i class="fas fa-tag"></i> ${tipoRot}</span>
+                    ${docPrincipal ? `<span><i class="fas ${c.tipoPessoa === 'juridica' ? 'fa-building' : 'fa-id-card'}"></i> ${docPrincipal}</span>` : '<span class="sem-dado"><i class="fas fa-id-card"></i> Sem CPF/CNPJ</span>'}
+                </div>
+                <div class="cliente-perfil-linha">
+                    <span><i class="fas fa-envelope"></i> ${c.email || '-'}</span>
+                    ${c.telefone ? `<span><i class="fas fa-phone"></i> ${c.telefone}</span>` : ''}
+                    ${c.instagram ? `<span><i class="fab fa-instagram"></i> ${c.instagram}</span>` : ''}
+                </div>
+                ${(c.endereco || c.cidade) ? `<div class="cliente-perfil-linha"><span><i class="fas fa-map-marker-alt"></i> ${[c.endereco, c.numero, c.complemento, c.bairro, c.cep, c.cidade, c.estado].filter(Boolean).join(', ')}</span></div>` : ''}
+            </div>
+        </div>`;
+
+    // --- Somatório geral dos pedidos ---
+    const somatorioHtml = `
+        <div class="sub-secao-titulo"><i class="fas fa-calculator"></i> Somatório Geral dos Pedidos</div>
+        <div class="cliente-resumo">
+            <div class="resumo-card"><span>Pedidos</span><strong>${pedidos.length}</strong></div>
+            <div class="resumo-card"><span>Total Ativos</span><strong>${formatCurrency(totalGasto)}</strong></div>
+            <div class="resumo-card resumo-pago"><span>Pago</span><strong>${formatCurrency(totalPago)}</strong></div>
+            <div class="resumo-card resumo-aberto"><span>Em Aberto</span><strong>${formatCurrency(emAberto)}</strong></div>
+            ${cancelados.length ? `<div class="resumo-card"><span>Cancelados</span><strong>${formatCurrency(totalCancelado)}</strong></div>` : ''}
+        </div>
+        <table class="data-table sub-table" style="margin-top:8px;">
+            <thead><tr>
+                <th>Situação</th><th>Qtd</th><th>Total Esperado</th><th>Total Pago</th><th>Em Aberto</th>
+            </tr></thead>
+            <tbody>
+                ${[
+                    { rot: 'Pendente', lista: pendentes },
+                    { rot: 'Em Andamento', lista: emAndamento },
+                    { rot: 'Concluído', lista: concluidos },
+                    { rot: 'Cancelado', lista: cancelados }
+                ].filter(g => g.lista.length).map(g => {
+                    const esp = g.lista.reduce((s, p) => s + valorEsperadoPedido(p), 0);
+                    const pag = g.lista.reduce((s, p) => s + valorPagoPedido(p), 0);
+                    const ab = g.rot === 'Cancelado' ? 0 : Math.max(0, Math.round((esp - pag) * 100) / 100);
+                    return `<tr${g.rot === 'Cancelado' ? ' style="opacity:0.7;"' : ''}>
+                        <td>${g.rot}</td>
+                        <td>${g.lista.length}</td>
+                        <td>${formatCurrency(esp)}</td>
+                        <td class="valor-pago">${formatCurrency(pag)}</td>
+                        <td class="${ab > 0 ? 'valor-aberto' : ''}">${formatCurrency(ab)}</td>
+                    </tr>`;
+                }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Nenhum pedido</td></tr>'}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td><strong>Geral (ativos)</strong></td>
+                    <td><strong>${ativos.length}</strong></td>
+                    <td class="valor-total"><strong>${formatCurrency(totalGasto)}</strong></td>
+                    <td class="valor-pago"><strong>${formatCurrency(totalPago)}</strong></td>
+                    <td class="${emAberto > 0 ? 'valor-aberto' : 'valor-pago'}"><strong>${formatCurrency(emAberto)}</strong></td>
+                </tr>
+            </tfoot>
+        </table>`;
+
+    // --- Movimentações consolidadas do cliente (todos os pedidos) ---
+    const pedidoIds = pedidos.map(p => p.id);
+    const movsCliente = (DB.movimentacoes || []).filter(m => {
+        if (m.pedidoId != null && pedidoIds.some(pid => String(pid) === String(m.pedidoId))) return true;
+        return pedidoIds.some(pid => movRefereAoPedido(m, pid));
+    });
+    const compsChat = ((DB.chats && DB.chats[`admin_${id}`]) || [])
+        .filter(m => m.tipo === 'comprovante' && m.status !== 'pago')
+        .map(m => ({
+            ...m,
+            orig: 'chat',
+            tipo: 'entrada',
+            valor: m.valor || 0,
+            _pedidoRef: m.pedidoId
+        }));
+    const movTodas = [...movsCliente, ...compsChat].sort((a, b) => {
+        const da = a.data || '', db_ = b.data || '';
+        return da.localeCompare(db_) || String(a.id || 0).localeCompare(String(b.id || 0));
+    });
+
+    const movConsolidadaRows = movTodas.length === 0
+        ? `<tr><td colspan="7" style="padding:10px;text-align:center;color:var(--text-muted);font-size:12px;">Nenhuma movimentação registrada para este cliente.</td></tr>`
+        : movTodas.map(m => {
+            const isChat = m.orig === 'chat';
+            const isPendente = isChat || m.pagamento === 'pendente';
+            const icon = m.pagamento === 'cartao_credito' ? 'fa-credit-card' : m.pagamento === 'pix' ? 'fa-qrcode' : 'fa-hourglass-half';
+            let metodoHtml;
+            if (isChat) {
+                const temCartao = !!(m.mensagem || '').includes('Cartão');
+                metodoHtml = `<i class="fas ${temCartao ? 'fa-credit-card' : 'fa-receipt'}"></i> Comprovante ${temCartao ? '(Cartão)' : '(PIX)'}`;
+            } else {
+                const parcela = (m.descricao || '').includes('(2ª parcela)') ? ' <span class="pag-cond">2ª parcela</span>' : '';
+                metodoHtml = `<i class="fas ${icon}"></i> ${isPendente ? '<em>Aguardando</em>' : metodoPagamentoRotulo(m.pagamento)}${parcela}`;
+            }
+            const dataHora = isChat ? formatDateTime(m.data) : formatDataHoraMov(m);
+            const pid = m.pedidoId != null ? m.pedidoId : (m._pedidoRef != null ? m._pedidoRef : ((m.descricao || '').match(/Pedido #(\d+)/) || [])[1]);
+            const descricao = m.descricao || (isChat ? 'Comprovante de pagamento' : '-');
+            return `<tr class="${isPendente ? 'mov-pendente' : ''}">
+                <td>${dataHora}</td>
+                <td>${pid != null ? `<strong>#${pid}</strong>` : '-'}</td>
+                <td style="white-space:normal;">${descricao}</td>
+                <td>${metodoHtml}</td>
+                <td class="${m.tipo === 'saida' ? 'valor-aberto' : 'valor-pago'}"><strong>${m.tipo === 'saida' ? '-' : '+'}${formatCurrency(m.valor)}</strong></td>
+                <td><span class="status-badge status-${isPendente ? 'pendente' : 'concluido'}">${isPendente ? 'Aguardando' : 'Confirmado'}</span></td>
+                <td>${capitalize(m.categoria || 'servico')}</td>
+            </tr>`;
+        }).join('');
+
+    const entradasConf = movsCliente.filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente').reduce((s, m) => s + (Number(m.valor) || 0), 0);
+    const entradasPend = movsCliente.filter(m => m.tipo === 'entrada' && m.pagamento === 'pendente').reduce((s, m) => s + (Number(m.valor) || 0), 0);
+    const saidasConf = movsCliente.filter(m => m.tipo === 'saida').reduce((s, m) => s + (Number(m.valor) || 0), 0);
+    const compsAguardando = compsChat.reduce((s, m) => s + (Number(m.valor) || 0), 0);
+
+    const movConsolidadaHtml = `
+        <div class="sub-secao-titulo"><i class="fas fa-exchange-alt"></i> Movimentações do Cliente</div>
+        <table class="data-table sub-table" style="margin-top:6px;">
+            <thead><tr>
+                <th>Data / Hora</th><th>Pedido</th><th>Descrição</th><th>Pagamento</th><th>Valor</th><th>Situação</th><th>Categoria</th>
+            </tr></thead>
+            <tbody>${movConsolidadaRows}</tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="4"><strong>Entradas confirmadas</strong></td>
+                    <td class="valor-pago" colspan="3"><strong>${formatCurrency(entradasConf)}</strong></td>
+                </tr>
+                <tr>
+                    <td colspan="4">Entradas pendentes${compsAguardando > 0 ? ` (+ ${formatCurrency(compsAguardando)} em comprovantes)` : ''}</td>
+                    <td class="valor-aberto" colspan="3">${formatCurrency(Math.round((entradasPend + compsAguardando) * 100) / 100)}</td>
+                </tr>
+                <tr>
+                    <td colspan="4">Saídas</td>
+                    <td class="valor-aberto" colspan="3">-${formatCurrency(saidasConf)}</td>
+                </tr>
+                <tr>
+                    <td colspan="4"><strong>Saldo líquido (confirmado)</strong></td>
+                    <td class="valor-total" colspan="3"><strong>${formatCurrency(Math.round((entradasConf - saidasConf) * 100) / 100)}</strong></td>
+                </tr>
+            </tfoot>
+        </table>`;
+
+    // --- Blocos por pedido (detalhe de movimentação de cada pedido) ---
+    const pedidosHtml = pedidos.length === 0
+        ? '<p class="empty-state">Este cliente ainda não possui pedidos.</p>'
+        : pedidos.map(p => {
+            const itens = [
+                ...(p.servicos || []).map(sid => DB.servicos.find(s => String(s.id) === String(sid))?.nome).filter(Boolean),
+                ...(p.materiais || []).map(mid => DB.materiais.find(m => String(m.id) === String(mid))?.nome).filter(Boolean)
+            ];
+            const esperado = valorEsperadoPedido(p);
+            const pago = valorPagoPedido(p);
+            const restante = Math.max(0, Math.round((esperado - pago) * 100) / 100);
+            const cond = p.parcial
+                ? '<span class="pag-cond">50% + 50%</span>'
+                : (p.descontoPct ? `<span class="pag-cond">-${p.descontoPct}% à vista</span>` : '<span class="pag-cond">Integral</span>');
+
+            const movs = (DB.movimentacoes || []).filter(m => movRefereAoPedido(m, p.id));
+            const compsPendentes = ((DB.chats && DB.chats[`admin_${id}`]) || [])
+                .filter(m => m.tipo === 'comprovante' && m.status === 'aguardando' && movRefereAoPedido(m, p.id))
+                .map(m => ({ ...m, orig: 'chat', tipo: 'entrada', valor: m.valor || 0, categoria: m.categoria || 'servico' }));
+            const todos = [...movs, ...compsPendentes].sort((a, b) => {
+                const da = a.data || '', db_ = b.data || '';
+                return da.localeCompare(db_) || String(a.id || 0).localeCompare(String(b.id || 0));
+            });
+
+            const movRows = todos.length === 0
+                ? `<tr><td colspan="5" style="padding:8px 12px;font-size:12px;color:var(--text-muted);text-align:center;">Nenhum movimento registrado</td></tr>`
+                : todos.map(m => {
+                    const isChat = m.orig === 'chat';
+                    const isPendente = isChat || m.pagamento === 'pendente';
+                    const icon = m.pagamento === 'cartao_credito' ? 'fa-credit-card' : m.pagamento === 'pix' ? 'fa-qrcode' : 'fa-hourglass-half';
+                    let metodoHtml;
+                    if (isChat) {
+                        const temCartao = !!(m.mensagem || '').includes('Cartão');
+                        metodoHtml = `<i class="fas ${temCartao ? 'fa-credit-card' : 'fa-receipt'}"></i> Comprovante ${temCartao ? '(Cartão)' : '(PIX)'}`;
+                    } else {
+                        const parcela = (m.descricao || '').includes('(2ª parcela)') ? ' <span class="pag-cond">2ª parcela</span>' : '';
+                        metodoHtml = `<i class="fas ${icon}"></i> ${isPendente ? '<em>Aguardando</em>' : metodoPagamentoRotulo(m.pagamento)}${parcela}`;
+                    }
+                    const dataHora = isChat ? formatDateTime(m.data) : formatDataHoraMov(m);
+                    return `<tr class="${isPendente ? 'mov-pendente' : ''}">
+                        <td>${dataHora}</td>
+                        <td>${m.descricao || (isChat ? 'Comprovante de pagamento' : '-')}</td>
+                        <td>${metodoHtml}</td>
+                        <td class="${m.tipo === 'entrada' ? 'valor-pago' : 'valor-aberto'}"><strong>${m.tipo === 'entrada' ? '+' : '-'}${formatCurrency(m.valor)}</strong></td>
+                        <td><span class="status-badge status-${isPendente ? 'pendente' : 'concluido'}">${isPendente ? 'Aguardando' : 'Confirmado'}</span></td>
+                    </tr>`;
+                }).join('');
+
+            const somaConfirmado = movs.filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente').reduce((s, m) => s + (Number(m.valor) || 0), 0);
+            const somaPendente = Math.max(0, Math.round((esperado - somaConfirmado) * 100) / 100);
+
+            const horaAgend = p.horaInicial ? `${p.horaInicial}${p.horaFinal ? ' &rarr; ' + p.horaFinal : ''}` : '';
+            const dataAgend = p.dataInicial ? `<span style="font-size:11px;color:var(--text-muted);"><i class="fas fa-calendar-alt"></i> ${formatDate(p.dataInicial)} ${horaAgend}</span>` : '';
+            const qtdAudios = (p.audios || []).length;
+            return `<div class="cliente-pedido-bloco">
+                <div class="cliente-pedido-header">
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                        <strong style="font-size:14px;">Pedido #${p.id}</strong>
+                        <span class="status-badge status-${p.status}">${statusLabel(p.status)}</span>
+                        ${cond} ${dataAgend}
+                        ${qtdAudios ? `<span class="badge badge-info" title="${qtdAudios} MP3(s)"><i class="fas fa-music"></i> ${qtdAudios}</span>` : ''}
+                    </div>
+                    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:13px;">
+                        <span style="color:var(--text-muted);">${itens.join(', ') || '-'}</span>
+                        <span>Total: <strong>${formatCurrency(esperado)}</strong></span>
+                        <span class="valor-pago">Pago: <strong>${formatCurrency(pago)}</strong></span>
+                        ${restante > 0 ? `<span class="valor-aberto">Falta: <strong>${formatCurrency(restante)}</strong></span>` : `<span style="color:#26cc00;"><i class="fas fa-check-circle"></i> Quitado</span>`}
+                        ${restante > 0 && p.status !== 'cancelado' ? `<button class="btn-primary btn-sm" onclick="confirmarPagamentoPedidoAdmin('${p.id}')"><i class="fas fa-check-circle"></i> Confirmar Pagamento</button>` : ''}
+                        <button class="btn-secondary btn-sm" onclick="verDetalhesPedido('${p.id}')"><i class="fas fa-eye"></i> Detalhes</button>
+                    </div>
+                </div>
+                <table class="data-table sub-table" style="margin:0;">
+                    <thead><tr>
+                        <th>Data / Hora</th><th>Descrição</th><th>Pagamento</th><th>Valor</th><th>Situação</th>
+                    </tr></thead>
+                    <tbody>${movRows}</tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="2"><strong>Totais</strong></td>
+                            <td class="${somaPendente > 0 ? 'valor-aberto' : 'valor-pago'}">${somaPendente > 0 ? `<span>Aguardando: <strong>${formatCurrency(somaPendente)}</strong></span>` : '<span>Sem pendência</span>'}</td>
+                            <td class="valor-pago"><strong>Confirmado: ${formatCurrency(somaConfirmado)}</strong></td>
+                            <td class="${restante > 0 ? 'valor-aberto' : 'valor-pago'}"><strong>${restante > 0 ? 'Falta ' + formatCurrency(restante) : 'Quitado'}</strong></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>`;
+        }).join('');
+
+    return `<div class="cliente-detalhe-content">
+        ${perfilHtml}
+        ${somatorioHtml}
+        ${htmlResumoServicosCliente(id)}
+        ${movConsolidadaHtml}
+        <div class="sub-secao-titulo"><i class="fas fa-clipboard-list"></i> Pedidos e Movimentações por Pedido</div>
+        ${pedidosHtml}
+    </div>`;
+}
+
+// [restore b03a43a] valorEsperadoPedido
+function valorEsperadoPedido(p) {
+    if (!p) return 0;
+    const total = Number(p.total) || 0;
+    if (!p.parcial && p.descontoPct) return Math.max(0, Math.round(total * (1 - p.descontoPct / 100) * 100) / 100);
+    return total;
+}
+
+// [restore b03a43a] verDetalhesPedido
+function verDetalhesPedido(id) {
+    const p = DB.pedidos.find(x => String(x.id) === String(id));
+    if (!p) return;
+    const cliente = DB.clientes.find(c => String(c.id) === String(p.clienteId));
+    const servicos = (p.servicos || []).map(id => DB.servicos.find(s => String(s.id) === String(id))).filter(Boolean);
+    const materiais = (p.materiais || []).map(id => DB.materiais.find(m => String(m.id) === String(id))).filter(Boolean);
+
+    let html = `
+        <div class="detalhe-section">
+            <h4><i class="fas fa-user"></i> Cliente</h4>
+            <div class="detalhe-item"><span>${cliente ? cliente.nome : 'N/A'}</span></div>
+        </div>
+        <div class="detalhe-section">
+            <h4><i class="fas fa-info-circle"></i> Informações</h4>
+            <div class="detalhe-item"><span>Pedido</span><strong>#${p.id}</strong></div>
+            <div class="detalhe-item"><span>Criado em</span><span>${formatDate(p.data)}</span></div>
+            ${p.dataInicial ? `<div class="detalhe-item"><span>Início</span><strong>${formatDate(p.dataInicial)} ${p.horaInicial || ''}${p.horaFinal ? ` &rarr; ${p.horaFinal}` : ''}</strong></div>` : ''}
+            <div class="detalhe-item"><span>Status</span><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></div>
+        </div>`;
+
+    // Seção de Áudios / MP3s do pedido (recebidos do cliente)
+    const audios = p.audios || [];
+    const qtdF = Number(p.qtdFaixas) || 1;
+    html += `<div class="detalhe-section">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <h4><i class="fas fa-music"></i> Áudios / MP3s (${audios.length} de ${qtdF} faixas)</h4>
+            <button class="btn-primary btn-sm" onclick="abrirUploadAudioAdmin('${p.id}')">
+                <i class="fas fa-upload"></i> Upload
+            </button>
+        </div>`;
+    if (audios.length > 0) {
+        html += `<div style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;">`;
+        audios.forEach((a, idx) => {
+            const src = audioSrc(a);
+            const nome = a.nome || 'audio.mp3';
+            html += `
+            <div style="display:flex; align-items:center; gap:10px; background:var(--bg-lighter, #f1f2f6); padding:8px 12px; border-radius:6px;">
+                <i class="fas fa-file-audio" style="color:var(--primary-color, #6c5ce7); font-size:20px;"></i>
+                <div style="flex:1; min-width:0;">
+                    <div style="font-weight:600; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;" title="${nome}">${nome}${a.origem === 'chat' ? ' <small style="color:var(--text-muted);">(chat)</small>' : ''}</div>
+                    <audio controls src="${src}" style="height:28px; width:100%; margin-top:4px;"></audio>
+                </div>
+                <a href="${src}" download="${nome}" class="btn-icon" title="Baixar"><i class="fas fa-download"></i></a>
+                <button class="btn-icon text-danger" onclick="excluirAudioPedido('${p.id}', ${idx})" title="Excluir"><i class="fas fa-trash"></i></button>
+            </div>`;
+        });
+        html += `</div>`;
+    } else {
+        html += `<p style="color:var(--text-muted); font-size:13px; margin-bottom:10px;">Nenhum MP3 recebido deste pedido ainda.</p>`;
+    }
+    html += `</div>`;
+
+    if (servicos.length) {
+        html += `<div class="detalhe-section"><h4><i class="fas fa-concierge-bell"></i> Serviços</h4>`;
+        servicos.forEach(s => {
+            html += `<div class="detalhe-item"><span>${s.nome}</span><strong>${formatCurrency(s.preco)}</strong></div>`;
+        });
+        html += `</div>`;
+    }
+
+    if (materiais.length) {
+        html += `<div class="detalhe-section"><h4><i class="fas fa-boxes"></i> Materiais</h4>`;
+        materiais.forEach(m => {
+            html += `<div class="detalhe-item"><span>${m.nome}</span>${m.preco <= 0 ? formatMaterialPrice(m) : `<strong>${formatCurrency(m.preco)}</strong>`}</div>`;
+        });
+        html += `</div>`;
+    }
+
+    if (p.desconto > 0) {
+        html += `<div class="detalhe-section"><div class="detalhe-item"><span>Desconto</span><span style="color:var(--danger)">-${formatCurrency(p.desconto)}</span></div></div>`;
+    }
+
+    html += `<div class="pedido-total"><span>Total do Pedido</span><strong>${formatCurrency(valorEsperadoPedido(p))}</strong></div>`;
+
+    document.getElementById('detalhesPedidoContent').innerHTML = html;
+    openModal('detalhesPedidoModal');
+}
+
+// [restore b03a43a] visualizarImagem
+function visualizarImagem(src) {
+    const img = document.getElementById('lightboxImg');
+    if (img && src) img.src = src;
+    document.getElementById('lightboxOverlay').classList.add('active');
+}
+
+// UTILITIES & UPLOAD DE IMAGENS
 // ============================================
 // UPLOAD DE IMAGENS - DRAG & DROP E FORM CLEANUP
 // ============================================
