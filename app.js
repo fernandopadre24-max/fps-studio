@@ -1467,9 +1467,8 @@ function renderClientes() {
         const tipoBadge = c.tipoPessoa === 'juridica'
             ? '<span class="cond-badge" style="margin-left:6px;font-size:10px;">PJ</span>'
             : (c.cpf ? '<span class="cond-badge" style="margin-left:6px;font-size:10px;">PF</span>' : '');
-        const idJs = JSON.stringify(String(c.id));
-        const idAttr = String(c.id).replace(/'/g, '&#39;');
-        return `<tr class="cliente-row" onclick="toggleClienteDetalhe(${idJs})">
+        const idAttr = String(c.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+        return `<tr class="cliente-row" onclick="toggleClienteDetalhe('${idAttr}')">
             <td><strong>${c.nome}</strong>${tipoBadge}</td>
             <td>${c.email || '-'}${c.instagram ? `<br><small style="color:var(--text-muted);"><i class="fab fa-instagram"></i> ${c.instagram}</small>` : ''}</td>
             <td>${c.telefone || '-'}</td>
@@ -1483,11 +1482,11 @@ function renderClientes() {
             </td>
             <td>
                 <div class="table-actions">
-                    <button title="${abertoDet ? 'Ocultar detalhes' : 'Ver movimentações e somatório'}" class="${abertoDet ? 'btn-ativo' : ''}" onclick="event.stopPropagation();toggleClienteDetalhe(${idJs})"><i class="fas ${abertoDet ? 'fa-chevron-up' : 'fa-chevron-down'}"></i></button>
+                    <button title="${abertoDet ? 'Ocultar detalhes' : 'Ver movimentações e somatório'}" class="${abertoDet ? 'btn-ativo' : ''}" onclick="event.stopPropagation();toggleClienteDetalhe('${idAttr}')"><i class="fas ${abertoDet ? 'fa-chevron-up' : 'fa-chevron-down'}"></i></button>
                     <button class="btn-primary btn-sm" onclick="event.stopPropagation();irParaChatComCliente('${idAttr}')" title="Conversar no Chat"><i class="fas fa-comments"></i> Chat</button>
                     <button class="btn-secondary btn-sm" onclick="event.stopPropagation();abrirNovoPedidoModal(null, '${idAttr}')" title="Novo Pedido"><i class="fas fa-plus"></i></button>
-                    <button onclick="editarCliente(${idJs});event.stopPropagation()" title="Editar"><i class="fas fa-edit"></i></button>
-                    <button class="btn-del" onclick="excluirCliente(${idJs});event.stopPropagation()" title="Excluir"><i class="fas fa-trash"></i></button>
+                    <button onclick="editarCliente('${idAttr}');event.stopPropagation()" title="Editar"><i class="fas fa-edit"></i></button>
+                    <button class="btn-del" onclick="excluirCliente('${idAttr}');event.stopPropagation()" title="Excluir"><i class="fas fa-trash"></i></button>
                 </div>
             </td>
         </tr>
