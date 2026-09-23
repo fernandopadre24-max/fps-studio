@@ -513,12 +513,16 @@
                                 </div>
                             </div>
                             <div class="chat-input-area" id="chatInputAreaAdmin" style="display:none;">
-                                <button class="btn-icon" onclick="prepararOrcamentoAvulso()" title="Enviar Orçamento">
+                                <button class="btn-icon" onclick="prepararOrcamentoAvulso()" title="Enviar Ordem de Serviço">
                                     <i class="fas fa-file-invoice-dollar"></i>
                                 </button>
                                 <button class="btn-icon" onclick="openModal('enviarComprovanteModal')" title="Enviar Comprovante">
                                     <i class="fas fa-receipt"></i>
                                 </button>
+                                <button class="btn-icon" onclick="document.getElementById('chatAudioAdmin').click()" title="Enviar Áudio / MP3">
+                                    <i class="fas fa-music"></i>
+                                </button>
+                                <input type="file" id="chatAudioAdmin" accept="audio/mpeg, .mp3" multiple style="display:none;" onchange="sendAudioChat('admin', this)">
                                 <input type="text" id="chatInputAdmin" placeholder="Digite sua mensagem..." onkeypress="if(event.key==='Enter')sendMessageAdmin()">
                                 <button class="btn-send" onclick="sendMessageAdmin()">
                                     <i class="fas fa-paper-plane"></i>
@@ -1485,10 +1489,10 @@
             </div>
         </div>
 
-        <!-- Enviar Orçamento Modal -->
+        <!-- Enviar Ordem de Serviço Modal -->
         <div class="modal" id="enviarOrcamentoModal" onclick="event.stopPropagation()">
             <div class="modal-header">
-                <h3><i class="fas fa-file-invoice-dollar"></i> Enviar Orçamento</h3>
+                <h3><i class="fas fa-file-invoice-dollar"></i> Enviar Ordem de Serviço</h3>
                 <button class="btn-close" onclick="closeAllModals()">&times;</button>
             </div>
             <div class="modal-body">
@@ -1498,8 +1502,8 @@
                 </div>
                 <div class="orcamento-condicao" id="orcamentoCondicaoInfo"></div>
                 <div class="form-group">
-                    <label>Descrição do Orçamento</label>
-                    <textarea id="orcamentoDescricao" placeholder="Descreva o orçamento..."></textarea>
+                    <label>Descrição do Serviço</label>
+                    <textarea id="orcamentoDescricao" placeholder="Descreva o serviço..."></textarea>
                 </div>
                 <div class="form-group">
                     <label>Valor (R$)</label>
@@ -1520,7 +1524,7 @@
                     <input type="text" id="orcamentoValidade" placeholder="Ex: 15 dias">
                 </div>
                 <button class="btn-primary" onclick="enviarOrcamento()">
-                    <i class="fas fa-paper-plane"></i> Enviar Orçamento
+                    <i class="fas fa-paper-plane"></i> Enviar Ordem de Serviço para Pagamento
                 </button>
             </div>
         </div>

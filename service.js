@@ -70,6 +70,9 @@ const DB_SERVICE = {
     async updateBiblioteca(id, d) { return apiCall('biblioteca', 'PUT', d, { id }); },
     async deleteBiblioteca(id) { return apiCall('biblioteca', 'DELETE', null, { id }); },
 
+    // UPLOAD ÁUDIO → Vercel Blob (guarda só a URL)
+    async uploadAudio(d) { return apiCall('upload_audio', 'POST', d); },
+
     // CONFIGURAÇÕES
     async getConfig() { return apiCall('config'); },
     async saveConfig(d) { return apiCall('config', 'POST', d); },

@@ -28,6 +28,8 @@ const CONFIG_DEFAULT = {
 
 let APP_CONFIG = null;
 
+let usingIDB = false;
+
 let currentUser = null;
 let DB = { servicos: [], materiais: [], clientes: [], pedidos: [], movimentacoes: [], chats: {}, config: {} };
 let DBReady = false;
@@ -71,7 +73,8 @@ function setupNavigation() {
             if(pageId === 'adminMateriais') renderMateriais();
             if(pageId === 'adminPedidos') renderPedidos();
             if(pageId === 'adminFinanceiro') renderFinanceiro();
-            if(pageId === 'adminBiblioteca') renderBiblioteca();            if(pageId === 'adminBibliotecas') renderBibliotecas();
+            if(pageId === 'adminBiblioteca') renderBiblioteca();
+            if(pageId === 'adminBibliotecas') renderBibliotecas();
             if(pageId === 'adminChat') renderChatList();
             if(pageId === 'adminClientes') renderClientes();
             if(pageId === 'adminConfig') preencherFormConfig();
@@ -102,7 +105,10 @@ async function init() {
                 if (typeof IDB_SERVICE[k] === 'function') DB_SERVICE[k] = IDB_SERVICE[k].bind(IDB_SERVICE);
             }
             ok = await DB_SERVICE.init();
-            if (ok) console.log('[PERSIST] Usando IndexedDB local como camada primária.');
+            if (ok) {
+                usingIDB = true;
+                console.log('[PERSIST] Usando IndexedDB local como camada primária.');
+            }
         } catch (e) {
             ok = false;
             console.warn('[PERSIST] IndexedDB indisponível:', (e && e.message) ? e.message : e);
@@ -112,7 +118,10 @@ async function init() {
     // Fallback: backend /api (só se IndexedDB falhou)
     if (!ok) {
         try { ok = await DB_SERVICE.init(); } catch (e) { ok = false; }
-        if (ok) console.log('[PERSIST] Usando backend /api (SQLite).');
+        if (ok) {
+            usingIDB = false;
+            console.log('[PERSIST] Usando backend /api (SQLite).');
+        }
     }
 
     if (ok) {
@@ -150,8 +159,13 @@ async function loadDB() {
     
     DB.chats = {};
     for (const c of DB.clientes) {
-        const cChats = await DB_SERVICE.getChat(c.id);
-        DB.chats[`admin_${c.id}`] = cChats || [];
+        try {
+            const cChats = await DB_SERVICE.getChat(c.id);
+            DB.chats[`admin_${c.id}`] = cChats || [];
+        } catch (e) {
+            console.warn('Falha ao carregar chat do cliente', c.id, e);
+            DB.chats[`admin_${c.id}`] = DB.chats[`admin_${c.id}`] || [];
+        }
     }
 }
 
@@ -202,13 +216,19 @@ async function login(event) {
 
     if (user) {
         currentUser = user;
+        salvarSessao();
         showToast('Login efetuado com sucesso', 'success');
         if (user.role === 'admin') {
             showView('adminDashboard');
-            renderAdminDashboard();
+            try { renderAdminDashboard(); } catch (e) { console.error(e); }
+            try { renderFinanceiro(); } catch (e) { console.error(e); }
+            try { renderChatList(); } catch (e) { console.error(e); }
+            try { updateChatBadge(); } catch (e) { console.error(e); }
+            try { if (typeof renderBiblioteca === 'function') renderBiblioteca(); } catch (e) { console.error(e); }
         } else {
             showView('clientDashboard');
-            renderClientDashboard();
+            try { renderClientDashboard(); } catch (e) { console.error(e); }
+            try { updateChatBadge(); } catch (e) { console.error(e); }
         }
     } else {
         showToast('Credenciais inválidas', 'error');
@@ -304,75 +324,87 @@ function limparFiltrosDashboard() {
 }
 
 function renderAdminDashboard() {
-    renderServicos();
-    renderMateriais();
-    renderPedidos();
-    renderMovimentacoes();
-    renderClientes();
+    // Stats PRIMEIRO (antes dos sub-renders), para garantir que a soma
+    // aconteça mesmo que algum sub-render lance exceção.
+    try {
+        const movs = DB.movimentacoes.filter(m => dashEmPeriodo(m.data) && (dashFiltros.tipo === 'todos' || m.tipo === dashFiltros.tipo));
+        const totalReceita = movs.filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente').reduce((s, m) => s + (Number(m.valor) || 0), 0);
+        const pedidosAtivos = DB.pedidos.filter(p => p.status !== 'cancelado' && p.status !== 'concluido').length;
 
-    const movs = DB.movimentacoes.filter(m => dashEmPeriodo(m.data) && (dashFiltros.tipo === 'todos' || m.tipo === dashFiltros.tipo));
-    const totalReceita = movs.filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente').reduce((s, m) => s + (Number(m.valor) || 0), 0);
-    const pedidosAtivos = DB.pedidos.filter(p => p.status !== 'cancelado' && p.status !== 'concluido').length;
+        const setStat = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+        setStat('statReceita', formatCurrency(totalReceita));
+        setStat('statPedidos', pedidosAtivos);
+        setStat('statClientes', DB.clientes.length);
+        setStat('statMateriais', DB.materiais.length);
+        const statPeriodoEl = document.getElementById('statPeriodoReceita');
+        if (statPeriodoEl) statPeriodoEl.textContent = dashPeriodoLabel() ? `(${dashPeriodoLabel()})` : '';
 
-    document.getElementById('statReceita').textContent = formatCurrency(totalReceita);
-    document.getElementById('statPedidos').textContent = pedidosAtivos;
-    document.getElementById('statClientes').textContent = DB.clientes.length;
-    document.getElementById('statMateriais').textContent = DB.materiais.length;
-    const statPeriodoEl = document.getElementById('statPeriodoReceita');
-    if (statPeriodoEl) statPeriodoEl.textContent = dashPeriodoLabel() ? `(${dashPeriodoLabel()})` : '';
+        const ultimosPedidos = [...DB.pedidos].filter(p => dashEmPeriodo(p.data)).sort((a, b) => new Date(b.data) - new Date(a.data)).slice(0, 5);
+        const container = document.getElementById('ultimosPedidos');
+        if (container) {
+            if (ultimosPedidos.length === 0) {
+                container.innerHTML = '<p class="empty-state">Nenhum pedido encontrado neste período</p>';
+            } else {
+                container.innerHTML = ultimosPedidos.map(p => {
+                    const cliente = DB.clientes.find(c => String(c.id) === String(p.clienteId));
+                    return `<div class="pedido-item">
+                        <div class="pedido-item-info">
+                            <h5>Pedido #${p.id} - ${cliente ? cliente.nome : 'N/A'}</h5>
+                            <p>${formatPedidoDataHora(p)}</p>
+                        </div>
+                        <div>
+                            <span class="status-badge status-${p.status}">${statusLabel(p.status)}</span>
+                        </div>
+                    </div>`;
+                }).join('');
+            }
+        }
 
-    const ultimosPedidos = [...DB.pedidos].filter(p => dashEmPeriodo(p.data)).sort((a, b) => new Date(b.data) - new Date(a.data)).slice(0, 5);
-    const container = document.getElementById('ultimosPedidos');
-    if (ultimosPedidos.length === 0) {
-        container.innerHTML = '<p class="empty-state">Nenhum pedido encontrado neste período</p>';
-    } else {
-        container.innerHTML = ultimosPedidos.map(p => {
-            const cliente = DB.clientes.find(c => c.id === p.clienteId);
-            return `<div class="pedido-item">
-                <div class="pedido-item-info">
-                    <h5>Pedido #${p.id} - ${cliente ? cliente.nome : 'N/A'}</h5>
-                    <p>${formatPedidoDataHora(p)}</p>
-                </div>
-                <div>
-                    <span class="status-badge status-${p.status}">${statusLabel(p.status)}</span>
-                </div>
-            </div>`;
-        }).join('');
+        let ultimasMovs = [...movs].sort((a, b) => new Date(b.data) - new Date(a.data));
+        if (dashFiltros.busca) {
+            ultimasMovs = ultimasMovs.filter(m => {
+                const cliente = nomeClienteDoPedido(m.pedidoId) || '';
+                return (m.descricao || '').toLowerCase().includes(dashFiltros.busca) || cliente.toLowerCase().includes(dashFiltros.busca);
+            });
+        }
+        const movContainer = document.getElementById('ultimasMovimentacoes');
+        const mostrarMovs = ultimasMovs.slice(0, 8);
+        if (movContainer) {
+            if (mostrarMovs.length === 0) {
+                movContainer.innerHTML = '<p class="empty-state">Nenhuma movimentação encontrada' + (dashFiltros.busca ? ' para a busca acima' : ' neste período') + '</p>';
+            } else {
+                movContainer.innerHTML = mostrarMovs.map(m => {
+                    const cliente = nomeClienteDoPedido(m.pedidoId);
+                    const pendente = m.tipo === 'entrada' && m.pagamento === 'pendente';
+                    return `<div class="mov-item${pendente ? ' mov-pendente' : ''}">
+                        <div class="mov-item-left">
+                            <div class="mov-item-icon ${m.tipo}">
+                                <i class="fas fa-arrow-${m.tipo === 'entrada' ? 'up' : 'down'}"></i>
+                            </div>
+                            <div class="mov-item-info">
+                                <h5>${m.descricao}</h5>
+                                <p>${formatDate(m.data)}${cliente ? ` · ${cliente}` : ''} · ${capitalize(m.categoria)}</p>
+                                <span class="status-badge status-${pendente ? 'pendente' : m.tipo === 'entrada' ? 'concluido' : 'cancelado'}">${pendente ? 'Pendente' : metodoPagamentoRotulo(m.pagamento)}</span>
+                            </div>
+                        </div>
+                        <div class="mov-item-value ${m.tipo}">${m.tipo === 'entrada' ? '+' : '-'}${formatCurrency(m.valor)}</div>
+                    </div>`;
+                }).join('');
+            }
+        }
+
+        desenharGraficoBarras();
+        desenharDonutServicos();
+    } catch (e) {
+        console.error('renderAdminDashboard stats:', e);
     }
 
-    let ultimasMovs = [...movs].sort((a, b) => new Date(b.data) - new Date(a.data));
-    if (dashFiltros.busca) {
-        ultimasMovs = ultimasMovs.filter(m => {
-            const cliente = nomeClienteDoPedido(m.pedidoId) || '';
-            return (m.descricao || '').toLowerCase().includes(dashFiltros.busca) || cliente.toLowerCase().includes(dashFiltros.busca);
-        });
-    }
-    const movContainer = document.getElementById('ultimasMovimentacoes');
-    const mostrarMovs = ultimasMovs.slice(0, 8);
-    if (mostrarMovs.length === 0) {
-        movContainer.innerHTML = '<p class="empty-state">Nenhuma movimentação encontrada' + (dashFiltros.busca ? ' para a busca acima' : ' neste período') + '</p>';
-    } else {
-        movContainer.innerHTML = mostrarMovs.map(m => {
-            const cliente = nomeClienteDoPedido(m.pedidoId);
-            const pendente = m.tipo === 'entrada' && m.pagamento === 'pendente';
-            return `<div class="mov-item${pendente ? ' mov-pendente' : ''}">
-                <div class="mov-item-left">
-                    <div class="mov-item-icon ${m.tipo}">
-                        <i class="fas fa-arrow-${m.tipo === 'entrada' ? 'up' : 'down'}"></i>
-                    </div>
-                    <div class="mov-item-info">
-                        <h5>${m.descricao}</h5>
-                        <p>${formatDate(m.data)}${cliente ? ` · ${cliente}` : ''} · ${capitalize(m.categoria)}</p>
-                        <span class="status-badge status-${pendente ? 'pendente' : m.tipo === 'entrada' ? 'concluido' : 'cancelado'}">${pendente ? 'Pendente' : metodoPagamentoRotulo(m.pagamento)}</span>
-                    </div>
-                </div>
-                <div class="mov-item-value ${m.tipo}">${m.tipo === 'entrada' ? '+' : '-'}${formatCurrency(m.valor)}</div>
-            </div>`;
-        }).join('');
-    }
-
-    desenharGraficoBarras();
-    desenharDonutServicos();
+    // Sub-renders em try/catch para não derrubar a soma acima.
+    try { renderServicos(); } catch (e) { console.error(e); }
+    try { renderMateriais(); } catch (e) { console.error(e); }
+    try { renderPedidos(); } catch (e) { console.error(e); }
+    try { renderMovimentacoes(); } catch (e) { console.error(e); }
+    try { renderClientes(); } catch (e) { console.error(e); }
 }
 
 // ==========================================
@@ -728,8 +760,14 @@ async function excluirPedido(id) {
     DB.pedidos = DB.pedidos.filter(x => String(x.id) !== String(id));
     if (DBReady && p?.docId) await DB_SERVICE.deletePedido(p.docId);
     if (p) {
-        const movsRemover = DB.movimentacoes.filter(m => m.pedidoId != null && String(m.pedidoId) === String(id)) ||
-            DB.movimentacoes.filter(m => movRefereAoPedido(m, id));
+        const porId = (DB.movimentacoes || []).filter(m => m.pedidoId != null && String(m.pedidoId) === String(id));
+        const porRef = (DB.movimentacoes || []).filter(m => movRefereAoPedido(m, id));
+        const vistos = new Set();
+        const movsRemover = [...porId, ...porRef].filter(m => {
+            if (vistos.has(m.id)) return false;
+            vistos.add(m.id);
+            return true;
+        });
         for (const mov of movsRemover) {
             DB.movimentacoes = DB.movimentacoes.filter(m => m.id !== mov.id);
             if (DBReady && mov.docId) {
@@ -737,9 +775,9 @@ async function excluirPedido(id) {
             }
         }
     }
-    renderPedidos();
-    renderFinanceiro();
-    renderAdminDashboard();
+    try { renderPedidos(); } catch (e) { console.error(e); }
+    try { renderFinanceiro(); } catch (e) { console.error(e); }
+    try { renderAdminDashboard(); } catch (e) { console.error(e); }
     showToast('Pedido excluído', 'success');
 }
 
@@ -811,10 +849,39 @@ async function salvarPedido() {
         DB.pedidos.push(data);
     }
     await sincronizarFinanceiroPedido(salvo);
+
+    // Notificar o cliente no chat (pedido criado pelo admin)
+    if (!id && data.clienteId != null) {
+        const chatKey = `admin_${data.clienteId}`;
+        if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
+        const nomesS = (data.servicos || []).map(sid => { const s = DB.servicos.find(x => String(x.id) === String(sid)); return s ? s.nome : ''; }).filter(Boolean);
+        const nomesM = (data.materiais || []).map(mid => { const m = DB.materiais.find(x => String(x.id) === String(mid)); return m ? m.nome : ''; }).filter(Boolean);
+        const msgPedido = {
+            tipo: 'pedido',
+            remetente: 'admin',
+            clienteId: data.clienteId,
+            pedidoId: data.id,
+            mensagem: `Pedido #${data.id} - ${formatCurrency(data.total || 0)}`,
+            descricao: [...nomesS, ...nomesM].join(', ') || 'Pedido registrado pelo estúdio',
+            valor: data.total || 0,
+            data: new Date().toISOString(),
+            lida: false
+        };
+        DB.chats[chatKey].push(msgPedido);
+        if (DBReady) {
+            try {
+                const resMsg = await DB_SERVICE.sendMessage(msgPedido);
+                if (resMsg && resMsg.id) msgPedido.id = resMsg.id;
+            } catch (e) { console.warn('Erro ao notificar pedido no chat:', e); }
+        }
+        updateChatBadge();
+    }
+
     closeAllModals();
     renderPedidos();
     renderFinanceiro();
     renderAdminDashboard();
+    if (document.getElementById('chatListAdmin')) renderChatList();
     showToast('Pedido salvo', 'success');
 }
 
@@ -822,18 +889,22 @@ async function salvarPedido() {
 // MOVIMENTAÇÕES
 // ==========================================
 function renderMovimentacoes() {
-    const filtroTipo = document.getElementById('filtroTipoMov').value;
-    const dataInicio = document.getElementById('filtroDataInicio').value;
-    const dataFim = document.getElementById('filtroDataFim').value;
+    const filtroTipoEl = document.getElementById('filtroTipoMov');
+    const dataInicioEl = document.getElementById('filtroDataInicio');
+    const dataFimEl = document.getElementById('filtroDataFim');
+    const filtroTipo = filtroTipoEl ? filtroTipoEl.value : 'todos';
+    const dataInicio = dataInicioEl ? dataInicioEl.value : '';
+    const dataFim = dataFimEl ? dataFimEl.value : '';
 
-    let movs = [...DB.movimentacoes];
+    let movs = [...(DB.movimentacoes || [])];
     if (filtroTipo !== 'todos') movs = movs.filter(m => m.tipo === filtroTipo);
-    if (dataInicio) movs = movs.filter(m => m.data >= dataInicio);
-    if (dataFim) movs = movs.filter(m => m.data <= dataFim);
+    if (dataInicio) movs = movs.filter(m => String(m.data || '').slice(0, 10) >= dataInicio);
+    if (dataFim) movs = movs.filter(m => String(m.data || '').slice(0, 10) <= dataFim);
 
     movs.sort((a, b) => new Date(b.data) - new Date(a.data));
 
     const tbody = document.getElementById('movimentacoesBody');
+    if (!tbody) return;
     tbody.innerHTML = movs.map(m => {
         const pidMov = m.pedidoId || ((m.descricao || '').match(/Pedido #(\d+)/) ? parseInt((m.descricao || '').match(/Pedido #(\d+)/)[1]) : null);
         return `<tr class="${m.pagamento === 'pendente' ? 'mov-pendente' : ''}">
@@ -1376,9 +1447,9 @@ function verDetalhesPedidoClient(id) {
                 <i class="fas fa-file-audio" style="color:var(--primary-color, #6c5ce7); font-size:20px;"></i>
                 <div style="flex:1; min-width:0;">
                     <div style="font-weight:600; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;" title="${a.nome}">${a.nome}</div>
-                    <audio controls src="${a.base64}" style="height:28px; width:100%; margin-top:4px;"></audio>
+                    <audio controls src="${audioSrc(a)}" style="height:28px; width:100%; margin-top:4px;"></audio>
                 </div>
-                <a href="${a.base64}" download="${a.nome}" class="btn-icon" title="Baixar áudio"><i class="fas fa-download"></i></a>
+                <a href="${audioSrc(a)}" download="${a.nome}" class="btn-icon" title="Baixar áudio"><i class="fas fa-download"></i></a>
             </div>`;
         });
         html += `</div>`;
@@ -1601,21 +1672,15 @@ async function salvarPedidoClient() {
             const file = fileInput.files[i];
             if (typeof validateAudioFile === 'function' && !validateAudioFile(file)) continue;
             try {
-                const b64 = await arquivoAudioParaDataUrl(file);
-                novoPedido.audios.push({
-                    nome: file.name,
-                    base64: b64,
-                    tamanho: file.size,
-                    tipo: file.type || 'audio/mp3',
-                    data: new Date().toISOString()
-                });
+                const prep = await prepararAudioPedido(file);
+                novoPedido.audios.push(prep);
             } catch (err) {
                 console.error('Falha ao processar áudio', file.name, err);
                 showToast(err && err.message ? err.message : `Falha ao processar ${file.name}`, 'error');
             }
         }
-        const payloadApprox = novoPedido.audios.reduce((s, a) => s + (a.base64 ? a.base64.length : 0), 0);
-        if (payloadApprox > 4000000) {
+        const payloadApprox = novoPedido.audios.reduce((s, a) => s + ((a.base64 && !a.url) ? a.base64.length : 0), 0);
+        if (payloadApprox > limitePayloadAudio()) {
             showToast('Os áudios anexados excedem o limite de envio (~4MB no total). Remova alguns arquivos.', 'error');
             return;
         }
@@ -1677,6 +1742,8 @@ async function salvarPedidoClient() {
     closeAllModals();
     renderPedidosClient();
     renderClientDashboard();
+    renderClientChat();
+    updateChatBadge();
     if (typeof renderBiblioteca === 'function') renderBiblioteca();
     showToast('Pedido enviado com sucesso!', 'success');
 }
@@ -1697,14 +1764,8 @@ async function clienteUploadAudioPedido(pedidoId) {
             const file = e.target.files[i];
             if (typeof validateAudioFile === 'function' && !validateAudioFile(file)) continue;
             try {
-                const b64 = await arquivoAudioParaDataUrl(file);
-                novos.push({
-                    nome: file.name,
-                    base64: b64,
-                    tamanho: file.size,
-                    tipo: file.type || 'audio/mp3',
-                    data: new Date().toISOString()
-                });
+                const prep = await prepararAudioPedido(file);
+                novos.push(prep);
             } catch (err) {
                 console.error('Falha ao processar áudio', file.name, err);
                 showToast(err && err.message ? err.message : `Falha ao processar ${file.name}`, 'error');
@@ -1713,8 +1774,8 @@ async function clienteUploadAudioPedido(pedidoId) {
         if (novos.length === 0) return;
         p.audios = p.audios || [];
         const candidatos = p.audios.concat(novos);
-        const bytes = candidatos.reduce((s, a) => s + (a.base64 ? a.base64.length : 0), 0);
-        if (bytes > 3800000) {
+        const bytes = candidatos.reduce((s, a) => s + ((a.base64 && !a.url) ? a.base64.length : 0), 0);
+        if (bytes > limitePayloadAudio()) {
             showToast('Total de áudios do pedido excede o limite de envio (~3,8MB). Exclua alguns arquivos antes de enviar.', 'error');
             return;
         }
@@ -1889,6 +1950,8 @@ async function confirmarPagamento() {
 
     closeAllModals();
     renderPedidosClient();
+    renderClientChat();
+    updateChatBadge();
     showToast('Comprovante enviado! Aguardando confirmação do administrador.', 'success');
 }
 
@@ -1897,6 +1960,13 @@ async function confirmarPagamento() {
 // ============================================
 function renderChatList() {
     const chatList = document.getElementById('chatListAdmin');
+    if (!chatList) return;
+    DB.chats = DB.chats || {};
+    // Garantir conversa para todo cliente (mesmo sem mensagens)
+    (DB.clientes || []).forEach(c => {
+        const k = `admin_${c.id}`;
+        if (!DB.chats[k]) DB.chats[k] = [];
+    });
     const chatKeys = Object.keys(DB.chats).filter(k => k.startsWith('admin_'));
 
     if (chatKeys.length === 0) {
@@ -1904,28 +1974,54 @@ function renderChatList() {
         return;
     }
 
-    chatList.innerHTML = chatKeys.map(key => {
-        const clienteId = parseInt(key.split('_')[1]);
-        const cliente = DB.clientes.find(c => c.id === clienteId);
-        const messages = DB.chats[key];
+    const sorted = chatKeys.sort((a, b) => {
+        const ma = DB.chats[a] || [];
+        const mb = DB.chats[b] || [];
+        const la = ma[ma.length - 1];
+        const lb = mb[mb.length - 1];
+        return new Date(lb && lb.data || 0) - new Date(la && la.data || 0);
+    });
+
+    chatList.innerHTML = sorted.map(key => {
+        const rawId = key.split('_').slice(1).join('_');
+        const cliente = (DB.clientes || []).find(c => String(c.id) === String(rawId));
+        const clienteId = cliente ? cliente.id : rawId;
+        const messages = DB.chats[key] || [];
         const lastMsg = messages[messages.length - 1];
-        return `<div class="chat-contact ${currentChatClient === clienteId ? 'active' : ''}" onclick="openChatAdmin(${clienteId})">
+        const preview = lastMsg
+            ? String(lastMsg.mensagem || lastMsg.descricao || lastMsg.tipo || 'Mensagem').substring(0, 40) + '...'
+            : 'Nova conversa';
+        const naoLidas = messages.filter(m => m.remetente === 'client' && !m.lida).length;
+        return `<div class="chat-contact ${currentChatClient != null && String(currentChatClient) === String(clienteId) ? 'active' : ''}" onclick='openChatAdmin(${JSON.stringify(String(clienteId))})'>
             <div class="avatar"><i class="fas fa-user"></i></div>
             <div class="chat-contact-info">
-                <h4>${cliente ? cliente.nome : 'Cliente #' + clienteId}</h4>
-                <p>${lastMsg ? (lastMsg.mensagem || lastMsg.tipo).substring(0, 40) + '...' : 'Nova conversa'}</p>
+                <h4>${cliente ? cliente.nome : 'Cliente ' + rawId}</h4>
+                <p>${preview}</p>
             </div>
-            <span class="chat-contact-time">${lastMsg ? timeAgo(lastMsg.data) : ''}</span>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+                <span class="chat-contact-time">${lastMsg ? timeAgo(lastMsg.data) : ''}</span>
+                ${naoLidas ? `<span class="badge badge-success" style="min-width:18px;">${naoLidas}</span>` : ''}
+            </div>
         </div>`;
     }).join('');
 }
 
 function openChatAdmin(clienteId) {
     currentChatClient = clienteId;
-    const cliente = DB.clientes.find(c => c.id === clienteId);
+    const cliente = (DB.clientes || []).find(c => String(c.id) === String(clienteId));
     const chatKey = `admin_${clienteId}`;
 
+    DB.chats = DB.chats || {};
     if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
+
+    // Marcar mensagens do cliente como lidas ao abrir a conversa
+    const paraLer = DB.chats[chatKey].filter(m => m.remetente === 'client' && !m.lida);
+    if (paraLer.length) {
+        paraLer.forEach(m => { m.lida = true; });
+        if (DBReady) {
+            Promise.all(paraLer.map(m => m.id ? DB_SERVICE.updateMessage(m.id, { lida: true }) : null)).catch(() => {});
+        }
+    }
 
     document.getElementById('chatHeaderAdmin').innerHTML = `<div class="chat-user-info">
         <div class="avatar"><i class="fas fa-user"></i></div>
@@ -1939,6 +2035,7 @@ function openChatAdmin(clienteId) {
 
     renderChatMessagesAdmin(chatKey);
     renderChatList();
+    updateChatBadge();
 }
 
 function chatImagemHtml(imagem) {
@@ -1971,14 +2068,14 @@ function renderChatMessagesAdmin(chatKey) {
         if (m.tipo === 'sistema') {
             return `<div class="chat-message system">${m.mensagem}</div>`;
         } else if (m.tipo === 'pedido') {
-            const pedido = DB.pedidos.find(x => x.id === m.pedidoId);
+            const pedido = DB.pedidos.find(x => String(x.id) === String(m.pedidoId));
             return `<div class="chat-message pedido">
-                <h4><i class="fas fa-clipboard-list"></i> Pedido do Cliente</h4>
+                <h4><i class="fas fa-clipboard-list"></i> ${m.remetente === 'admin' ? 'Pedido do Estúdio' : 'Pedido do Cliente'}</h4>
                 <p><strong>${m.mensagem}</strong></p>
                 ${m.descricao ? `<p>${m.descricao}</p>` : ''}
                 <p>Valor do pedido: <strong>${formatCurrency(m.valor || (pedido ? pedido.total : 0))}</strong></p>
                 <div class="comprovante-acoes">
-                    <button class="btn-primary btn-sm" onclick="abrirOrcamentoParaPedido(${msgIdx})"><i class="fas fa-file-invoice-dollar"></i> Enviar Orçamento</button>
+                    <button class="btn-primary btn-sm" onclick="abrirOrcamentoParaPedido(${msgIdx})"><i class="fas fa-file-invoice-dollar"></i> Enviar Ordem de Serviço</button>
                 </div>
                 <div class="chat-message-time">${formatDateTime(m.data)}</div>
             </div>`;
@@ -1986,7 +2083,7 @@ function renderChatMessagesAdmin(chatKey) {
             const desconto = m.desconto || 0;
             const cond = condicaoOrcamentoDe(m);
             return `<div class="chat-message orcamento">
-                <h4><i class="fas fa-file-invoice-dollar"></i> Orçamento</h4>
+                <h4><i class="fas fa-file-invoice-dollar"></i> Ordem de Serviço</h4>
                 <p><strong>${m.descricao}</strong></p>
                 <p>Valor: <strong>${formatCurrency(m.valor)}</strong></p>
                 ${desconto > 0 ? `<p>Desconto: <strong>-${formatCurrency(desconto)}</strong></p>` : ''}
@@ -2104,7 +2201,7 @@ function abrirOrcamentoParaPedido(msgIdx) {
     if (!m) return;
 
     const pedido = DB.pedidos.find(x => String(x.id) === String(m.pedidoId));
-    orcamentoPedidoId = m.pedidoId || null;
+    orcamentoPedidoId = m.pedidoId || (pedido ? pedido.id : null);
     orcamentoCondicao = pedido ? { parcial: !!pedido.parcial, descontoPct: pedido.descontoPct || 0 } : null;
 
     const nomesServicos = (pedido ? pedido.servicos : []).map(id => { const s = DB.servicos.find(x => String(x.id) === String(id)); return s ? s.nome : ''; }).filter(Boolean);
@@ -2166,20 +2263,32 @@ async function enviarOrcamento() {
         validade: document.getElementById('orcamentoValidade').value || '15 dias',
         parcial: orcamentoCondicao ? (orcamentoCondicao.parcial ? 1 : 0) : 0,
         descontoPct: orcamentoCondicao ? (orcamentoCondicao.descontoPct || 0) : 0,
-        data: new Date().toISOString()
+        data: new Date().toISOString(),
+        lida: false
     };
 
     DB.chats[chatKey].push(msgData);
     if (DBReady) {
-        const res = await DB_SERVICE.sendMessage(msgData);
-        if (res && res.id) msgData.id = res.id;
+        try {
+            const res = await DB_SERVICE.sendMessage(msgData);
+            if (res && res.id) msgData.id = res.id;
+        } catch (e) {
+            console.error('Erro ao enviar ordem de serviço:', e);
+            const idx = DB.chats[chatKey].indexOf(msgData);
+            if (idx > -1) DB.chats[chatKey].splice(idx, 1);
+            showToast('Erro ao enviar a ordem de serviço.', 'error');
+            renderChatMessagesAdmin(chatKey);
+            return;
+        }
     }
 
     orcamentoPedidoId = null;
     orcamentoCondicao = null;
     closeAllModals();
     renderChatMessagesAdmin(chatKey);
-    showToast('Orçamento enviado!', 'success');
+    renderChatList();
+    updateChatBadge();
+    showToast('Ordem de serviço enviada para o cliente pagar!', 'success');
     clearForm('orcamento');
 }
 
@@ -2357,7 +2466,9 @@ async function confirmarPagoComprovante(msgIdx) {
     }
 
     renderChatMessagesAdmin(chatKey);
+    renderChatList();
     renderFinanceiro();
+    renderAdminDashboard();
     updateChatBadge();
     celebratePayment();
     showToast('Pagamento confirmado como PAGO!', 'success');
@@ -2365,6 +2476,7 @@ async function confirmarPagoComprovante(msgIdx) {
 
 function updateChatBadge() {
     if (!currentUser) return;
+    DB.chats = DB.chats || {};
     if (currentUser.role === 'admin') {
         let count = 0;
         Object.keys(DB.chats).forEach(key => {
@@ -2394,10 +2506,14 @@ function renderClientChat() {
     const chatKey = `admin_${currentUser.id}`;
     if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
 
-    // Mark admin messages as read
-    DB.chats[chatKey].forEach(m => {
-        if (m.remetente === 'admin') m.lida = true;
-    });
+    // Mark admin messages as read (e persistir no backend)
+    const naoLidas = DB.chats[chatKey].filter(m => m.remetente === 'admin' && !m.lida);
+    if (naoLidas.length) {
+        naoLidas.forEach(m => { m.lida = true; });
+        if (DBReady) {
+            Promise.all(naoLidas.map(m => m.id ? DB_SERVICE.updateMessage(m.id, { lida: true }) : null)).catch(() => {});
+        }
+    }
 
     const container = document.getElementById('chatMessagesClient');
     const messages = DB.chats[chatKey];
@@ -2415,8 +2531,9 @@ function renderClientChat() {
         if (m.tipo === 'sistema') {
             return `<div class="chat-message system">${m.mensagem}</div>`;
         } else if (m.tipo === 'pedido') {
+            const isFromAdmin = m.remetente === 'admin';
             return `<div class="chat-message pedido">
-                <h4><i class="fas fa-clipboard-list"></i> Pedido Enviado</h4>
+                <h4><i class="fas fa-clipboard-list"></i> ${isFromAdmin ? 'Pedido do Estúdio' : 'Pedido Enviado'}</h4>
                 <p><strong>${m.mensagem}</strong></p>
                 ${m.descricao ? `<p>${m.descricao}</p>` : ''}
                 <div class="chat-message-time">${formatDateTime(m.data)}</div>
@@ -2424,15 +2541,16 @@ function renderClientChat() {
         } else if (m.tipo === 'orcamento') {
             const desconto = m.desconto || 0;
             const cond = condicaoOrcamentoDe(m);
+            const temPedido = m.pedidoId != null && m.pedidoId !== '';
             return `<div class="chat-message orcamento">
-                <h4><i class="fas fa-file-invoice-dollar"></i> Orçamento Recebido</h4>
+                <h4><i class="fas fa-file-invoice-dollar"></i> Ordem de Serviço</h4>
                 <p><strong>${m.descricao}</strong></p>
                 <p>Valor: <strong>${formatCurrency(m.valor)}</strong></p>
                 ${desconto > 0 ? `<p>Desconto: <strong>-${formatCurrency(desconto)}</strong></p>` : ''}
                 ${cond.linhas}
                 <p>${cond.rotuloPagar}: <strong>${formatCurrency(cond.totalPagar)}</strong></p>
                 <p>Validade: ${m.validade}</p>
-                ${m.pedidoId ? `<div class="comprovante-acoes">
+                ${temPedido ? `<div class="comprovante-acoes">
                     <button class="btn-primary btn-sm" onclick="pagarOrcamento(${msgIdx})"><i class="fas fa-credit-card"></i> Realizar Pagamento</button>
                 </div>` : ''}
                 <div class="chat-message-time">${formatDateTime(m.data)}</div>
@@ -2470,18 +2588,18 @@ function renderClientChat() {
     updateChatBadge();
 }
 
-async function sendAudioChat(remetente, inputElement) {
+window.sendAudioChat = async function(remetente, inputElement) {
     if (!inputElement.files || inputElement.files.length === 0) return;
-    
+
     let clienteId = null;
     if (remetente === 'client') {
-        clienteId = currentUser.id;
+        clienteId = currentUser && currentUser.id;
     } else {
-        clienteId = document.getElementById('chatClienteSelect') ? parseInt(document.getElementById('chatClienteSelect').value) : null;
+        clienteId = currentChatClient;
     }
-    
+
     if (!clienteId) {
-        showToast('Selecione um cliente para enviar o áudio.', 'error');
+        showToast(remetente === 'client' ? 'Faça login para enviar o áudio.' : 'Selecione uma conversa para enviar o áudio.', 'error');
         return;
     }
     
@@ -2494,23 +2612,53 @@ async function sendAudioChat(remetente, inputElement) {
         
         try {
             if(!validateAudioFile(file)) continue;
-            const b64 = await arquivoAudioParaDataUrl(file);
+            let prep;
+            try {
+                prep = await prepararAudioPedido(file);
+            } catch (err) {
+                prep = { base64: await arquivoAudioParaDataUrl(file) };
+            }
+            const audioSrcVal = prep.url || prep.base64;
             const msgAudio = {
                 tipo: 'audio',
                 remetente: remetente,
                 clienteId: clienteId,
                 mensagem: remetente === 'client' ? 'Áudio de referência enviado' : 'Áudio enviado',
-                audio: b64,
+                audio: audioSrcVal,
+                audioUrl: prep.url || '',
                 arquivoNome: file.name,
                 data: new Date().toISOString(),
                 lida: false
             };
-            
+
             const chatKey = `admin_${clienteId}`;
             if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
             DB.chats[chatKey].push(msgAudio);
 
             if (DBReady) await DB_SERVICE.sendMessage(msgAudio);
+
+            // Cliente: anexar também ao pedido recente para aparecer em Áudios de Pedidos
+            if (remetente === 'client') {
+                const pedidoAtivo = (DB.pedidos || [])
+                    .filter(ped => String(ped.clienteId) === String(clienteId))
+                    .sort((a,b) => (Number(b.id) || 0) - (Number(a.id) || 0))[0];
+                if (pedidoAtivo) {
+                    pedidoAtivo.audios = pedidoAtivo.audios || [];
+                    pedidoAtivo.audios.push({
+                        nome: file.name,
+                        base64: prep.base64 || '',
+                        url: prep.url || '',
+                        tamanho: file.size,
+                        tipo: file.type || 'audio/mp3',
+                        data: new Date().toISOString(),
+                        origem: 'chat'
+                    });
+                    const updId = pedidoAtivo.docId || pedidoAtivo.id;
+                    if (DBReady && updId) {
+                        try { await DB_SERVICE.updatePedido(updId, { audios: pedidoAtivo.audios }); } catch (err) { console.error(err); }
+                    }
+                }
+            }
         } catch(e) {
             console.error(e);
             showToast('Erro ao processar áudio.', 'error');
@@ -2521,8 +2669,10 @@ async function sendAudioChat(remetente, inputElement) {
     if (remetente === 'client') {
         renderClientChat();
     } else {
-        renderChatMessagesAdmin();
+        try { renderChatMessagesAdmin(`admin_${clienteId}`); } catch (e) { console.error(e); }
     }
+    try { renderChatList(); } catch (e) {}
+    if (typeof renderBiblioteca === 'function') renderBiblioteca();
     showToast('Áudio enviado!', 'success');
 }
 
@@ -2559,8 +2709,10 @@ function pagarOrcamento(msgIdx) {
     if (!currentUser || currentUser.role !== 'client') return;
     const msgs = DB.chats[`admin_${currentUser.id}`] || [];
     const m = msgs[msgIdx];
-    if (!m || m.tipo !== 'orcamento' || !m.pedidoId) return;
-    abrirPagamento(m.pedidoId);
+    if (!m || m.tipo !== 'orcamento') return;
+    const pid = m.pedidoId || parseInt((m.descricao || m.mensagem || '').match(/#?(\d+)/)?.[1] || 0);
+    if (!pid) { showToast('Ordem de serviço sem pedido vinculado.', 'error'); return; }
+    abrirPagamento(pid);
 }
 
 function prepareClientPagamentoModal() {
@@ -2957,17 +3109,21 @@ async function processarImagem(file) {
 
 // === renderFinanceiro ===
 function renderFinanceiro() {
-    const recebido = DB.movimentacoes.filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente').reduce((s, m) => s + (Number(m.valor) || 0), 0);
-    const aReceber = DB.movimentacoes.filter(m => m.tipo === 'entrada' && m.pagamento === 'pendente').reduce((s, m) => s + (Number(m.valor) || 0), 0);
-    const saida = DB.movimentacoes.filter(m => m.tipo === 'saida').reduce((s, m) => s + (Number(m.valor) || 0), 0);
+    try {
+        const movs = DB.movimentacoes || [];
+        const recebido = movs.filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente').reduce((s, m) => s + (Number(m.valor) || 0), 0);
+        const aReceber = movs.filter(m => m.tipo === 'entrada' && m.pagamento === 'pendente').reduce((s, m) => s + (Number(m.valor) || 0), 0);
+        const saida = movs.filter(m => m.tipo === 'saida').reduce((s, m) => s + (Number(m.valor) || 0), 0);
 
-    document.getElementById('totalEntradas').textContent = formatCurrency(recebido);
-    const aReceberEl = document.getElementById('totalAReceber');
-    if (aReceberEl) aReceberEl.textContent = formatCurrency(aReceber);
-    document.getElementById('totalSaidas').textContent = formatCurrency(saida);
-    document.getElementById('saldoGeral').textContent = formatCurrency(recebido - saida);
-
-    renderMovimentacoes();
+        const setTxt = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+        setTxt('totalEntradas', formatCurrency(recebido));
+        setTxt('totalAReceber', formatCurrency(aReceber));
+        setTxt('totalSaidas', formatCurrency(saida));
+        setTxt('saldoGeral', formatCurrency(recebido - saida));
+    } catch (e) {
+        console.error('renderFinanceiro stats:', e);
+    }
+    try { renderMovimentacoes(); } catch (e) { console.error('renderMovimentacoes:', e); }
 }
 
 // === renderFooterStudio ===
@@ -2997,15 +3153,18 @@ function renderFooterStudio() {
 
 // === renderPedidosAdmin ===
 function renderPedidosAdmin() {
+    try {
     const selCliente = document.getElementById('filtroClientePedido');
+    if (!selCliente) return;
     const clienteVal = selCliente.value;
     selCliente.innerHTML = '<option value="">Todos os clientes</option>' +
-        DB.clientes.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+        (DB.clientes || []).map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
     selCliente.value = clienteVal;
 
-    const busca = (document.getElementById('buscaPedidoAdmin').value || '').trim().toLowerCase();
-    let pedidos = DB.pedidos.filter(p => {
-        const cliente = DB.clientes.find(c => c.id === p.clienteId);
+    const buscaEl = document.getElementById('buscaPedidoAdmin');
+    const busca = ((buscaEl && buscaEl.value) || '').trim().toLowerCase();
+    let pedidos = (DB.pedidos || []).filter(p => {
+        const cliente = (DB.clientes || []).find(c => String(c.id) === String(p.clienteId));
         const nome = cliente ? cliente.nome.toLowerCase() : '';
         if (clienteVal && String(p.clienteId) !== String(clienteVal)) return false;
         if (busca && !String(p.id).includes(busca.replace('#', '')) && !nome.includes(busca)) return false;
@@ -3014,24 +3173,28 @@ function renderPedidosAdmin() {
 
     renderKanbanPedidos(pedidos);
 
-    const filtro = document.getElementById('filtroStatusPedido').value;
+    const filtroEl = document.getElementById('filtroStatusPedido');
+    const filtro = filtroEl ? filtroEl.value : 'todos';
     let tabela = pedidos;
     if (filtro !== 'todos') tabela = tabela.filter(p => p.status === filtro);
     const tbody = document.getElementById('pedidosAdminBody');
+    if (!tbody) return;
     tbody.innerHTML = tabela.map(p => {
-        const cliente = DB.clientes.find(c => c.id === p.clienteId);
-        const servicoNomes = p.servicos.map(id => DB.servicos.find(s => s.id === id)?.nome || '').filter(Boolean).join(', ');
+        const cliente = DB.clientes.find(c => String(c.id) === String(p.clienteId));
+        const servicoNomes = (p.servicos || []).map(id => DB.servicos.find(s => String(s.id) === String(id))?.nome || '').filter(Boolean).join(', ');
         const condRotulo = p.parcial ? '50% + 50%' : (p.descontoPct ? `-${p.descontoPct}% à vista` : '');
         const restoPed = Math.max(0, Math.round((valorEsperadoPedido(p) - valorPagoPedido(p)) * 100) / 100);
+        const qtdAudios = (p.audios || []).length;
         return `<tr>
             <td><strong>#${p.id}</strong></td>
             <td>${cliente ? cliente.nome : 'N/A'}</td>
-            <td>${servicoNomes || '-'}</td>
+            <td>${servicoNomes || '-'}${qtdAudios ? ` <span class="badge badge-info" title="${qtdAudios} MP3(s) recebido(s)"><i class="fas fa-music"></i> ${qtdAudios}</span>` : ''}</td>
             <td><strong>${formatCurrency(valorEsperadoPedido(p))}</strong>${condRotulo ? `<small class="cond-badge">${condRotulo}</small>` : ''}</td>
             <td><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></td>
             <td>${formatPedidoDataHora(p)}</td>
             <td>
                 <div class="table-actions">
+                    ${qtdAudios ? `<button class="btn-primary btn-sm" onclick="verDetalhesPedido('${p.id}')" title="Ver MP3s recebidos"><i class="fas fa-music"></i></button>` : ''}
                     ${restoPed > 0 ? `<button class="btn-primary btn-sm" onclick="confirmarPagamentoPedidoAdmin('${p.id}')" title="Confirmar Pagamento"><i class="fas fa-check-circle"></i></button>` : ''}
                     <button onclick="verDetalhesPedido('${p.id}')" title="Ver Detalhes"><i class="fas fa-eye"></i></button>
                     <button onclick="editarPedido('${p.id}')" title="Editar"><i class="fas fa-edit"></i></button>
@@ -3040,6 +3203,9 @@ function renderPedidosAdmin() {
             </td>
         </tr>`;
     }).join('');
+    } catch (e) {
+        console.error('renderPedidosAdmin:', e);
+    }
 }
 
 // === salvarSessao ===
@@ -3050,45 +3216,104 @@ function salvarSessao() {
 // === sincronizarFinanceiroPedido ===
 async function sincronizarFinanceiroPedido(p) {
     if (!p) return null;
-    const existente = DB.movimentacoes.find(m => m.pedidoId != null && String(m.pedidoId) === String(p.id)) ||
-        DB.movimentacoes.find(m => m.tipo === 'entrada' && movRefereAoPedido(m, p.id) && m.pagamento !== 'pendente');
+    const doPedido = (DB.movimentacoes || []).filter(m =>
+        (m.pedidoId != null && String(m.pedidoId) === String(p.id)) ||
+        (m.tipo === 'entrada' && movRefereAoPedido(m, p.id))
+    );
+    const pagas = doPedido.filter(m => m.pagamento !== 'pendente');
+    const pendentes = doPedido.filter(m => m.pagamento === 'pendente');
 
     if (p.status === 'cancelado') {
-        if (existente) {
-            DB.movimentacoes = DB.movimentacoes.filter(m => m.id !== existente.id);
-            if (DBReady && existente.docId) await DB_SERVICE.deleteMovimentacao(existente.docId);
+        for (const m of doPedido) {
+            DB.movimentacoes = (DB.movimentacoes || []).filter(x => x.id !== m.id);
+            if (DBReady && m.docId) {
+                try { await DB_SERVICE.deleteMovimentacao(m.docId); } catch (e) {}
+            }
         }
         return null;
     }
 
-    if (existente) {
-        const mudancas = { tipo: 'entrada', descricao: `Pedido #${p.id}`, valor: valorEsperadoPedido(p), categoria: 'servico', pagamento: existente.pagamento || 'pendente', data: existente.data, hora: existente.hora || agoraHora(), pedidoId: p.id };
-        Object.assign(existente, mudancas);
-        if (DBReady && existente.docId) await DB_SERVICE.updateMovimentacao(existente.docId, mudancas);
-        return existente;
-    }
+    // Nunca sobrescrever valor já recebido: paga mantém o valor pago;
+    // pendente recebe apenas o restante (esperado - pago).
+    const pago = pagas.reduce((s, m) => s + (Number(m.valor) || 0), 0);
+    const esperado = valorEsperadoPedido(p);
+    const restante = Math.max(0, Math.round((esperado - pago) * 100) / 100);
 
-    const nova = {
-        id: DB.nextId.movimentacao++,
-        tipo: 'entrada',
-        descricao: `Pedido #${p.id}`,
-        valor: valorEsperadoPedido(p),
-        categoria: 'servico',
-        pagamento: 'pendente',
-        data: new Date().toISOString().split('T')[0],
-        hora: agoraHora(),
-        pedidoId: p.id
-    };
-    DB.movimentacoes.push(nova);
-    if (DBReady) {
-        try {
-            const resDoc = await DB_SERVICE.addMovimentacao(nova);
-            nova.docId = resDoc && resDoc.id ? resDoc.id : resDoc;
-        } catch (e) {
-            console.error('Falha ao persistir movimentação do pedido:', e);
+    let ref = null;
+    if (pagas.length) {
+        ref = pagas[pagas.length - 1];
+        const mudancas = { descricao: `Pedido #${p.id}`, pedidoId: p.id, categoria: ref.categoria || 'servico' };
+        Object.assign(ref, mudancas);
+        if (DBReady && ref.docId) {
+            try { await DB_SERVICE.updateMovimentacao(ref.docId, mudancas); } catch (e) {}
         }
     }
-    return nova;
+
+    if (restante > 0) {
+        if (pendentes.length) {
+            const pend = pendentes[pendentes.length - 1];
+            const mudancas = { tipo: 'entrada', descricao: `Pedido #${p.id}`, valor: restante, categoria: 'servico', pagamento: 'pendente', pedidoId: p.id };
+            Object.assign(pend, mudancas);
+            if (DBReady && pend.docId) {
+                try { await DB_SERVICE.updateMovimentacao(pend.docId, mudancas); } catch (e) {}
+            }
+            ref = ref || pend;
+        } else {
+            const nova = {
+                id: DB.nextId.movimentacao++,
+                tipo: 'entrada',
+                descricao: `Pedido #${p.id}`,
+                valor: restante,
+                categoria: 'servico',
+                pagamento: 'pendente',
+                data: new Date().toISOString().split('T')[0],
+                hora: agoraHora(),
+                pedidoId: p.id
+            };
+            DB.movimentacoes.push(nova);
+            if (DBReady) {
+                try {
+                    const resDoc = await DB_SERVICE.addMovimentacao(nova);
+                    nova.docId = resDoc && resDoc.id ? resDoc.id : resDoc;
+                } catch (e) {
+                    console.error('Falha ao persistir movimentação do pedido:', e);
+                }
+            }
+            ref = nova;
+        }
+    } else {
+        // Tudo já pago: remove pendentes órfãs
+        for (const pend of pendentes) {
+            DB.movimentacoes = (DB.movimentacoes || []).filter(x => x.id !== pend.id);
+            if (DBReady && pend.docId) {
+                try { await DB_SERVICE.deleteMovimentacao(pend.docId); } catch (e) {}
+            }
+        }
+    }
+
+    if (!ref && !pagas.length && restante > 0) {
+        // fallback: cria pendente pelo total
+        const nova = {
+            id: DB.nextId.movimentacao++,
+            tipo: 'entrada',
+            descricao: `Pedido #${p.id}`,
+            valor: esperado,
+            categoria: 'servico',
+            pagamento: 'pendente',
+            data: new Date().toISOString().split('T')[0],
+            hora: agoraHora(),
+            pedidoId: p.id
+        };
+        DB.movimentacoes.push(nova);
+        if (DBReady) {
+            try {
+                const resDoc = await DB_SERVICE.addMovimentacao(nova);
+                nova.docId = resDoc && resDoc.id ? resDoc.id : resDoc;
+            } catch (e) {}
+        }
+        ref = nova;
+    }
+    return ref;
 }
 
 // === statusLabel ===
@@ -3153,8 +3378,18 @@ let selectedPagamentoValor = 0;
 const dashFiltros = { periodo: 'todos', tipo: 'todos', busca: '' };
 // [restore var b03a43a]
 const ordemPedidoStage = ['pendente', 'em_andamento', 'concluido'];
-// [restore var b03a43a]
+// Limite de base64: removido no caminho IDB (armazenamento local sem
+// limite de payload). No caminho API, o limite do Vercel (~4,5MB) ainda
+// se aplica e é contornado via upload para Blob (guarda só a URL).
 const AUDIO_BASE64_LIMIT = 3500000;
+const PAYLOAD_AUDIO_LIMIT = 4000000;
+
+function limiteAudioBase64() {
+    return usingIDB ? Infinity : AUDIO_BASE64_LIMIT;
+}
+function limitePayloadAudio() {
+    return usingIDB ? Infinity : PAYLOAD_AUDIO_LIMIT;
+}
 // [restore var b03a43a]
 let _chatAudioObjectUrls = [];
 
@@ -3169,19 +3404,46 @@ async function arquivoAudioParaDataUrl(file) {
     const arrayBuffer = await lerArquivoComoArrayBuffer(file);
     let dataUrl = '';
     const estimado = Math.ceil(arrayBuffer.byteLength * 4 / 3) + 30;
-    if (estimado <= AUDIO_BASE64_LIMIT) {
+    const limite = limiteAudioBase64();
+    if (estimado <= limite) {
         dataUrl = arrayBufferToDataUrl(arrayBuffer, file.type || 'audio/mpeg');
     } else {
         let kbps = 96;
         while (kbps >= 32) {
             const blob = await comprimirAudio(arrayBuffer, kbps);
             const du = await blobToDataUrl(blob);
-            if (du.length <= AUDIO_BASE64_LIMIT) { dataUrl = du; break; }
+            if (du.length <= limite) { dataUrl = du; break; }
             kbps = Math.floor(kbps / 2);
         }
         if (!dataUrl) throw new Error('Audio maior que o limite de envio (~4MB).');
     }
     return dataUrl;
+}
+
+// Prepara áudio para o pedido: base64 no IDB; no caminho API, envia para
+// Vercel Blob e guarda só a URL (evita estourar o body de ~4,5MB).
+async function prepararAudioPedido(file) {
+    const b64 = await arquivoAudioParaDataUrl(file);
+    const base = {
+        nome: file.name,
+        tamanho: file.size,
+        tipo: file.type || 'audio/mp3',
+        data: new Date().toISOString()
+    };
+    if (usingIDB) return { ...base, base64: b64 };
+    if (!b64 || b64.length < 500000) return { ...base, base64: b64 };
+    try {
+        const up = await DB_SERVICE.uploadAudio({ base64: b64, nome: file.name, tipo: file.type || 'audio/mpeg' });
+        if (up && up.url) return { ...base, url: up.url, origem: 'blob' };
+    } catch (e) {
+        console.warn('upload_audio falhou, mantendo base64:', e);
+    }
+    return { ...base, base64: b64 };
+}
+
+function audioSrc(a) {
+    if (!a) return '';
+    return a.url || a.base64 || a.audio || '';
 }
 
 // [restore b03a43a] arrayBufferToDataUrl
@@ -3352,7 +3614,9 @@ function dashEmPeriodo(data) {
     const f = dashFiltros.periodo;
     if (f === 'todos' || !data) return true;
     const hoje = new Date();
-    const d = new Date(data + 'T00:00:00');
+    // Aceita data ISO completa (com T) e data curta (YYYY-MM-DD)
+    const d = String(data).indexOf('T') !== -1 ? new Date(data) : new Date(data + 'T00:00:00');
+    if (isNaN(d.getTime())) return true;
     if (f === '7') return (hoje - d) / 86400000 <= 7;
     if (f === '30') return (hoje - d) / 86400000 <= 30;
     if (f === 'mes') return d.getMonth() === hoje.getMonth() && d.getFullYear() === hoje.getFullYear();
@@ -3417,7 +3681,7 @@ async function executarConfirmacaoPagamentoAdmin(m, chatKey, descontoAdmin) {
     const pedidoIdRaw = m.pedidoId || parseInt((m.mensagem || '').match(/Pedido #(\d+)/)?.[1] || 0);
     const pedido = DB.pedidos.find(x => String(x.id) === String(pedidoIdRaw));
     const totalPago = Math.max(0, Math.round(((Number(m.valor) || (pedido ? (Number(pedido.total) || 0) : 0)) - descontoAdmin) * 100) / 100);
-    const metodoPag = (m.mensagem || '').includes('Cartão') ? 'cartao_credito' : 'pix';
+    const metodoPag = (m.mensagem || '').includes('Cartão') || (m.mensagem || '').includes('cartao') ? 'cartao_credito' : 'pix';
 
     try {
         if (m.id) await DB_SERVICE.updateMessage(m.id, { status: 'pago', desconto: descontoAdmin });
@@ -3512,7 +3776,11 @@ async function executarConfirmacaoPagamentoAdmin(m, chatKey, descontoAdmin) {
     } catch (e) {
         console.error(e);
         m.status = 'aguardando';
-        renderChatMessagesAdmin(chatKey);
+        try { renderChatMessagesAdmin(chatKey); } catch (e2) {}
+        try { renderChatList(); } catch (e2) {}
+        try { renderFinanceiro(); } catch (e2) {}
+        try { renderAdminDashboard(); } catch (e2) {}
+        try { updateChatBadge(); } catch (e2) {}
         showToast('Erro ao confirmar pagamento. Verifique sua conexão e tente novamente.', 'error');
         return;
     }
@@ -3542,12 +3810,23 @@ async function executarConfirmacaoPagamentoAdmin(m, chatKey, descontoAdmin) {
         }
     }
 
-    if (currentChatClient == m.clienteId) renderChatMessagesAdmin(chatKey);
-    renderFinanceiro();
-    renderAdminDashboard();
-    updateChatBadge();
-    celebratePayment();
-    showToast('Pagamento confirmado como PAGO!', 'success');
+    try {
+        if (currentChatClient != null && String(currentChatClient) === String(m.clienteId)) renderChatMessagesAdmin(chatKey);
+        try { renderChatList(); } catch (e) {}
+        try { renderFinanceiro(); } catch (e) {}
+        try { renderAdminDashboard(); } catch (e) {}
+        updateChatBadge();
+        celebratePayment();
+        showToast('Pagamento confirmado como PAGO!', 'success');
+    } catch (e) {
+        console.error('pós-confirmação:', e);
+        try { renderFinanceiro(); } catch (e2) {}
+        try { renderAdminDashboard(); } catch (e2) {}
+        try { renderChatList(); } catch (e2) {}
+        updateChatBadge();
+        celebratePayment();
+        showToast('Pagamento confirmado como PAGO!', 'success');
+    }
 }
 
 // [restore b03a43a] formatDataHoraMov
@@ -3812,17 +4091,19 @@ function parseValorBR(str) {
 
 // [restore b03a43a] pedidoKanbanCard
 function pedidoKanbanCard(p) {
-    const cliente = DB.clientes.find(c => c.id === p.clienteId);
-    const servicoNomes = p.servicos.map(id => DB.servicos.find(s => s.id === id)?.nome || '').filter(Boolean);
+    const cliente = DB.clientes.find(c => String(c.id) === String(p.clienteId));
+    const servicoNomes = (p.servicos || []).map(id => DB.servicos.find(s => String(s.id) === String(id))?.nome || '').filter(Boolean);
     const mostrar = servicoNomes.slice(0, 2);
     const extra = servicoNomes.length - mostrar.length;
     const pagos = valorPagoPedido(p) > 0;
     const pagoTotal = pedidoPagamentoCompleto(p);
     const restoPed = Math.max(0, Math.round((valorEsperadoPedido(p) - valorPagoPedido(p)) * 100) / 100);
     const condRotulo = p.parcial ? 'Dividido 50%+50%' : (p.descontoPct ? `À vista -${p.descontoPct}%` : '');
+    const qtdAudios = (p.audios || []).length;
     return `<div class="kanban-card" draggable="true" ondragstart="dragPedido(event, ${p.id})" ondragend="this.classList.remove('dragging')">
         <div class="kanban-card-top">
             <strong>#${p.id}</strong>
+            ${qtdAudios ? `<span class="kanban-chip" title="${qtdAudios} MP3(s)"><i class="fas fa-music"></i> ${qtdAudios}</span>` : ''}
             ${pagoTotal
                 ? '<span class="kanban-pagamento pag-ok"><i class="fas fa-check-circle"></i> Pago</span>'
                 : pagos
@@ -3859,9 +4140,14 @@ async function refreshChatsLive() {
     if (!DBReady || !currentUser) return;
     try {
         if (currentUser.role === 'admin') {
+            DB.chats = DB.chats || {};
+            (DB.clientes || []).forEach(c => {
+                const k = `admin_${c.id}`;
+                if (!DB.chats[k]) DB.chats[k] = [];
+            });
             const keys = Object.keys(DB.chats).filter(k => k.startsWith('admin_'));
             for (const key of keys) {
-                const clienteId = parseInt(key.replace('admin_', ''), 10);
+                const clienteId = key.replace('admin_', '');
                 if (!clienteId) continue;
                 try {
                     const fresh = await DB_SERVICE.getChat(clienteId);
@@ -3869,12 +4155,12 @@ async function refreshChatsLive() {
                     const merged = mergeChats(fresh, old);
                     if (chatsDiferentes(merged, old)) {
                         DB.chats[key] = merged;
-                        if (currentChatClient && key === `admin_${currentChatClient}`) renderChatMessagesAdmin(key);
+                        if (currentChatClient != null && String(currentChatClient) === String(clienteId)) renderChatMessagesAdmin(key);
                     }
                 } catch (e) {}
             }
-            renderChatList();
-            updateChatBadge();
+            try { renderChatList(); } catch (e) {}
+            try { updateChatBadge(); } catch (e) {}
         } else {
             const key = `admin_${currentUser.id}`;
             const fresh = await DB_SERVICE.getChat(currentUser.id);
@@ -3897,6 +4183,7 @@ function renderCurrentPage(page) {
         case 'adminPedidos': renderPedidosAdmin(); break;
         case 'adminFinanceiro': renderFinanceiro(); break;
         case 'adminChat': renderChatList(); break;
+        case 'adminBiblioteca': renderBiblioteca(); break;
         case 'adminBibliotecas': renderBibliotecas(); break;
         case 'adminClientes': renderClientes(); break;
         case 'adminConfig': preencherFormConfig(); break;
@@ -3917,6 +4204,7 @@ function renderKanbanPedidos(pedidos) {
         { status: 'cancelado', rotulo: 'Cancelado', icone: 'fa-ban', cor: '#d63031' }
     ];
     const board = document.getElementById('kanbanPedidos');
+    if (!board) return;
     board.innerHTML = cols.map(col => {
         const itens = pedidos.filter(p => p.status === col.status);
         return `<div class="kanban-col" data-status="${col.status}"
@@ -4203,9 +4491,9 @@ function valorEsperadoPedido(p) {
 function verDetalhesPedido(id) {
     const p = DB.pedidos.find(x => String(x.id) === String(id));
     if (!p) return;
-    const cliente = DB.clientes.find(c => c.id === p.clienteId);
-    const servicos = p.servicos.map(id => DB.servicos.find(s => s.id === id)).filter(Boolean);
-    const materiais = p.materiais.map(id => DB.materiais.find(m => m.id === id)).filter(Boolean);
+    const cliente = DB.clientes.find(c => String(c.id) === String(p.clienteId));
+    const servicos = (p.servicos || []).map(id => DB.servicos.find(s => String(s.id) === String(id))).filter(Boolean);
+    const materiais = (p.materiais || []).map(id => DB.materiais.find(m => String(m.id) === String(id))).filter(Boolean);
 
     let html = `
         <div class="detalhe-section">
@@ -4219,6 +4507,38 @@ function verDetalhesPedido(id) {
             ${p.dataInicial ? `<div class="detalhe-item"><span>Início</span><strong>${formatDate(p.dataInicial)} ${p.horaInicial || ''}${p.horaFinal ? ` &rarr; ${p.horaFinal}` : ''}</strong></div>` : ''}
             <div class="detalhe-item"><span>Status</span><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></div>
         </div>`;
+
+    // Seção de Áudios / MP3s do pedido (recebidos do cliente)
+    const audios = p.audios || [];
+    const qtdF = Number(p.qtdFaixas) || 1;
+    html += `<div class="detalhe-section">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <h4><i class="fas fa-music"></i> Áudios / MP3s (${audios.length} de ${qtdF} faixas)</h4>
+            <button class="btn-primary btn-sm" onclick="abrirUploadAudioAdmin('${p.id}')">
+                <i class="fas fa-upload"></i> Upload
+            </button>
+        </div>`;
+    if (audios.length > 0) {
+        html += `<div style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;">`;
+        audios.forEach((a, idx) => {
+            const src = audioSrc(a);
+            const nome = a.nome || 'audio.mp3';
+            html += `
+            <div style="display:flex; align-items:center; gap:10px; background:var(--bg-lighter, #f1f2f6); padding:8px 12px; border-radius:6px;">
+                <i class="fas fa-file-audio" style="color:var(--primary-color, #6c5ce7); font-size:20px;"></i>
+                <div style="flex:1; min-width:0;">
+                    <div style="font-weight:600; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;" title="${nome}">${nome}${a.origem === 'chat' ? ' <small style="color:var(--text-muted);">(chat)</small>' : ''}</div>
+                    <audio controls src="${src}" style="height:28px; width:100%; margin-top:4px;"></audio>
+                </div>
+                <a href="${src}" download="${nome}" class="btn-icon" title="Baixar"><i class="fas fa-download"></i></a>
+                <button class="btn-icon text-danger" onclick="excluirAudioPedido('${p.id}', ${idx})" title="Excluir"><i class="fas fa-trash"></i></button>
+            </div>`;
+        });
+        html += `</div>`;
+    } else {
+        html += `<p style="color:var(--text-muted); font-size:13px; margin-bottom:10px;">Nenhum MP3 recebido deste pedido ainda.</p>`;
+    }
+    html += `</div>`;
 
     if (servicos.length) {
         html += `<div class="detalhe-section"><h4><i class="fas fa-concierge-bell"></i> Serviços</h4>`;
@@ -4818,7 +5138,7 @@ function gerarNotificacoes() {
         const msgs = DB.chats[`admin_${currentUser.id}`] || [];
         msgs.forEach(m => {
             if (m.tipo === 'orcamento' && m.remetente === 'admin' && !m.lida) {
-                lista.push({ icone: 'fa-file-invoice-dollar', classe: 'notif-primary', titulo: 'Novo orçamento', texto: `${m.descricao || 'Orçamento'} - ${formatCurrency(Math.max(0, (m.valor || 0) - (m.desconto || 0)))}`, pagina: 'clientChat' });
+                lista.push({ icone: 'fa-file-invoice-dollar', classe: 'notif-primary', titulo: 'Nova Ordem de Serviço', texto: `${m.descricao || 'Serviço'} - ${formatCurrency(Math.max(0, (m.valor || 0) - (m.desconto || 0)))}`, pagina: 'clientChat' });
             }
             if (m.tipo === 'comprovante' && m.remetente === 'client' && m.status === 'aguardando') {
                 lista.push({ icone: 'fa-hourglass-half', classe: 'notif-warning', titulo: 'Pagamento aguardando', texto: m.mensagem, pagina: 'clientChat' });
@@ -4975,47 +5295,111 @@ window.abrirNovoPedidoModalAdmin = function() {
 window.renderBiblioteca = function() {
     const list = document.getElementById('bibliotecaBody');
     if (!list) return;
-    
-    // Filtrar pedidos que tenham áudios anexados ou faixas previstas
-    const pedidosComAudio = (DB.pedidos || []).filter(p => 
+
+    // 1) Pedidos com áudios anexados ou faixas previstas
+    const pedidosComAudio = (DB.pedidos || []).filter(p =>
         (p.audios && p.audios.length > 0) || (Number(p.qtdFaixas) > 0)
     ).sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0));
-    
-    if (pedidosComAudio.length === 0) {
+
+    // 2) Áudios do chat (tipo:'audio') e biblioteca que ainda NÃO estão
+    //    vinculados a nenhum pedido → "receber" na tela Áudios de Pedidos.
+    const vinculados = new Set();
+    (DB.pedidos || []).forEach(p => {
+        (p.audios || []).forEach(a => {
+            if (a.url) vinculados.add(a.url);
+            if (a.base64) vinculados.add(a.base64);
+            if (a.nome) vinculados.add('nome:' + p.clienteId + '|' + a.nome);
+        });
+    });
+
+    const avulsos = [];
+    Object.keys(DB.chats || {}).forEach(key => {
+        if (!key.startsWith('admin_')) return;
+        const cid = key.split('_')[1];
+        (DB.chats[key] || []).forEach(m => {
+            if (m.tipo !== 'audio' || !m.audio) return;
+            if (vinculados.has(m.audio)) return;
+            if (m.arquivoNome && vinculados.has('nome:' + cid + '|' + m.arquivoNome)) return;
+            avulsos.push({
+                virtual: true,
+                id: 'chat_' + (m.id || avulsos.length),
+                clienteId: m.clienteId != null ? m.clienteId : cid,
+                qtdFaixas: 0,
+                audios: [{
+                    nome: m.arquivoNome || 'audio.mp3',
+                    base64: m.audioUrl || '',
+                    url: m.audioUrl || '',
+                    // áudio de chat: m.audio pode ser data-URL ou URL do Blob
+                    _chat: m.audio,
+                    data: m.data
+                }],
+                origem: 'chat'
+            });
+        });
+    });
+
+    (DB.bibliotecas || []).forEach(b => {
+        if (!b.audio) return;
+        if (vinculados.has(b.audio)) return;
+        if (b.arquivoNome && b.clienteId != null && vinculados.has('nome:' + b.clienteId + '|' + b.arquivoNome)) return;
+        avulsos.push({
+            virtual: true,
+            id: 'bib_' + (b.id || avulsos.length),
+            clienteId: b.clienteId,
+            qtdFaixas: 0,
+            audios: [{
+                nome: b.arquivoNome || 'audio.mp3',
+                base64: b.audio,
+                url: '',
+                data: b.data
+            }],
+            origem: 'biblioteca'
+        });
+    });
+
+    const rows = pedidosComAudio.concat(avulsos);
+
+    if (rows.length === 0) {
         list.innerHTML = '<tr><td colspan="6" class="text-center" style="padding:20px; color:var(--text-muted);">Nenhum áudio de pedido encontrado.</td></tr>';
         return;
     }
-    
-    list.innerHTML = pedidosComAudio.map(p => {
+
+    list.innerHTML = rows.map(p => {
         const cliente = DB.clientes.find(c => String(c.id) === String(p.clienteId));
         const cliNome = cliente ? cliente.nome : 'Cliente #' + (p.clienteId || '-');
         const audios = p.audios || [];
         const qtdF = Number(p.qtdFaixas) || 1;
-        
+        const badgeHtml = p.virtual
+            ? `<span class="badge badge-info">${p.origem === 'chat' ? 'Chat' : 'Biblioteca'}</span>`
+            : `<span class="badge ${audios.length >= qtdF ? 'badge-success' : 'badge-warning'}">${audios.length} / ${qtdF}</span>`;
+
         let arquivosHtml = '';
         if (audios.length > 0) {
-            arquivosHtml = audios.map((a, idx) => `
+            arquivosHtml = audios.map((a, idx) => {
+                const src = a.url || a.base64 || a._chat || '';
+                const nome = a.nome || 'audio.mp3';
+                return `
                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;background:var(--bg-lighter, #f1f2f6);padding:6px 10px;border-radius:4px;font-size:12px;">
                     <i class="fas fa-file-audio text-primary" style="font-size:15px;"></i>
-                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;" title="${a.nome}">${a.nome}</span>
-                    <audio controls src="${a.base64}" style="height:26px;width:130px;"></audio>
-                    <a href="${a.base64}" download="${a.nome}" class="btn-icon" title="Baixar"><i class="fas fa-download"></i></a>
-                    <button class="btn-icon text-danger" onclick="excluirAudioPedido('${p.id}', ${idx})" title="Excluir"><i class="fas fa-trash"></i></button>
-                </div>
-            `).join('');
+                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;" title="${nome}">${nome}</span>
+                    <audio controls src="${src}" style="height:26px;width:130px;"></audio>
+                    <a href="${src}" download="${nome}" class="btn-icon" title="Baixar"><i class="fas fa-download"></i></a>
+                    ${p.virtual ? '' : `<button class="btn-icon text-danger" onclick="excluirAudioPedido('${p.id}', ${idx})" title="Excluir"><i class="fas fa-trash"></i></button>`}
+                </div>`;
+            }).join('');
         } else {
             arquivosHtml = '<span class="text-muted" style="font-style:italic;">Nenhum áudio enviado</span>';
         }
-        
+
         return `
         <tr>
-            <td><strong>#${p.id}</strong></td>
+            <td><strong>#${p.virtual ? '—' : p.id}</strong></td>
             <td>${cliNome}</td>
-            <td>${qtdF}</td>
-            <td><span class="badge ${audios.length >= qtdF ? 'badge-success' : 'badge-warning'}">${audios.length} / ${qtdF}</span></td>
+            <td>${p.virtual ? '—' : qtdF}</td>
+            <td>${badgeHtml}</td>
             <td style="max-width:320px;">${arquivosHtml}</td>
             <td>
-                <button class="btn-primary btn-sm" onclick="abrirUploadAudioAdmin('${p.id}')" title="Enviar novo áudio para este pedido"><i class="fas fa-upload"></i> Upload</button>
+                ${p.virtual ? '' : `<button class="btn-primary btn-sm" onclick="abrirUploadAudioAdmin('${p.id}')" title="Enviar novo áudio para este pedido"><i class="fas fa-upload"></i> Upload</button>`}
             </td>
         </tr>
         `;
@@ -5053,14 +5437,8 @@ window.abrirUploadAudioAdmin = function(pedidoId) {
             const file = e.target.files[i];
             if (typeof validateAudioFile === 'function' && !validateAudioFile(file)) continue;
             try {
-                const b64 = await arquivoAudioParaDataUrl(file);
-                novosAudios.push({
-                    nome: file.name,
-                    base64: b64,
-                    tamanho: file.size,
-                    tipo: file.type || 'audio/mp3',
-                    data: new Date().toISOString()
-                });
+                const prep = await prepararAudioPedido(file);
+                novosAudios.push(prep);
             } catch (err) {
                 console.error('Falha ao processar áudio', file.name, err);
                 showToast(err && err.message ? err.message : `Falha ao processar ${file.name}`, 'error');
@@ -5070,8 +5448,8 @@ window.abrirUploadAudioAdmin = function(pedidoId) {
         if (novosAudios.length === 0) return;
         p.audios = p.audios || [];
         const candidatos = p.audios.concat(novosAudios);
-        const bytes = candidatos.reduce((s, a) => s + (a.base64 ? a.base64.length : 0), 0);
-        if (bytes > 3800000) {
+        const bytes = candidatos.reduce((s, a) => s + ((a.base64 && !a.url) ? a.base64.length : 0), 0);
+        if (bytes > limitePayloadAudio()) {
             showToast('Total de áudios do pedido excede o limite de envio (~3,8MB). Exclua alguns arquivos antes de enviar.', 'error');
             return;
         }
@@ -5129,19 +5507,28 @@ window.enviarAudioBiblioteca = async function(input) {
         input.value = '';
         return;
     }
+    let audioValor = b64;
+    if (!usingIDB && b64 && b64.length > 500000) {
+        try {
+            const up = await DB_SERVICE.uploadAudio({ base64: b64, nome: file.name, tipo: file.type || 'audio/mpeg' });
+            if (up && up.url) audioValor = up.url;
+        } catch (e) {
+            console.warn('upload_audio biblioteca falhou, mantendo base64:', e);
+        }
+    }
     const audioObj = {
         clienteId: currentUser.id,
         arquivoNome: file.name,
-        audio: b64,
+        audio: audioValor,
         descricao: 'Enviado pelo Chat do Cliente',
         duracao: 0,
         data: new Date().toISOString().split('T')[0],
         hora: new Date().toISOString().split('T')[1].slice(0,5)
     };
-    
+
     DB.bibliotecas = DB.bibliotecas || [];
     DB.bibliotecas.push(audioObj);
-    
+
     if (DBReady) {
         try {
             const docId = await DB_SERVICE.addBiblioteca(audioObj);
@@ -5159,14 +5546,13 @@ window.enviarAudioBiblioteca = async function(input) {
 
     if (pedidoAtivo) {
         pedidoAtivo.audios = pedidoAtivo.audios || [];
-        pedidoAtivo.audios.push({
-            nome: file.name,
-            base64: b64,
-            tamanho: file.size,
-            tipo: file.type || 'audio/mp3',
-            data: new Date().toISOString(),
-            origem: 'chat'
-        });
+        let prepAudio;
+        try {
+            prepAudio = await prepararAudioPedido(file);
+        } catch (e) {
+            prepAudio = { nome: file.name, base64: b64, tamanho: file.size, tipo: file.type || 'audio/mp3', data: new Date().toISOString(), origem: 'chat' };
+        }
+        pedidoAtivo.audios.push({ ...prepAudio, origem: 'chat' });
         const updId = pedidoAtivo.docId || pedidoAtivo.id;
         if (DBReady && updId) {
             try { await DB_SERVICE.updatePedido(updId, { audios: pedidoAtivo.audios }); } catch(err) { console.error(err); showToast(err.message || 'Falha ao anexar áudio ao pedido', 'error'); }

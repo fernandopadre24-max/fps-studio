@@ -248,6 +248,8 @@ async function initDb() {
     try { db.run('ALTER TABLE chats ADD COLUMN imagem TEXT DEFAULT ""'); } catch(e) {}
     try { db.run('ALTER TABLE chats ADD COLUMN audio TEXT DEFAULT ""'); } catch(e) {}
     try { db.run('ALTER TABLE chats ADD COLUMN arquivoNome TEXT DEFAULT ""'); } catch(e) {}
+    try { db.run('ALTER TABLE chats ADD COLUMN parcial INTEGER DEFAULT 0'); } catch(e) {}
+    try { db.run('ALTER TABLE chats ADD COLUMN descontoPct REAL DEFAULT 0'); } catch(e) {}
 
     db.run(`
         CREATE TABLE IF NOT EXISTS bibliotecas (

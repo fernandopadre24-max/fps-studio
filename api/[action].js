@@ -165,23 +165,25 @@ module.exports = async (req, res) => {
                     const clienteId = parseInt(query.clienteId);
                     result = queryAll(db, 'SELECT * FROM chats WHERE clienteId=? ORDER BY datetime(data), id', [clienteId]);
                 } else if (method === 'POST') {
-                    const { tipo, remetente, clienteId: cid, mensagem, descricao, valor, validade, desconto, status, pedidoId, imagem, audio, arquivoNome, data } = req.body;
-                    db.run('INSERT INTO chats (tipo, remetente, clienteId, mensagem, descricao, valor, validade, desconto, status, pedidoId, imagem, audio, arquivoNome, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                        [tipo || 'mensagem', remetente || 'client', cid, mensagem || '', descricao || '', valor || 0, validade || '', desconto || 0, status || '', pedidoId || null, imagem || '', audio || '', arquivoNome || '', data || new Date().toISOString()]);
+                    const { tipo, remetente, clienteId: cid, mensagem, descricao, valor, validade, desconto, status, pedidoId, imagem, audio, arquivoNome, data, parcial, descontoPct, lida } = req.body;
+                    db.run('INSERT INTO chats (tipo, remetente, clienteId, mensagem, descricao, valor, validade, desconto, status, pedidoId, imagem, audio, arquivoNome, data, parcial, descontoPct, lida) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                        [tipo || 'mensagem', remetente || 'client', cid, mensagem || '', descricao || '', valor || 0, validade || '', desconto || 0, status || '', pedidoId || null, imagem || '', audio || '', arquivoNome || '', data || new Date().toISOString(), parcial ? 1 : 0, descontoPct || 0, lida ? 1 : 0]);
                     const r = queryOne(db, 'SELECT last_insert_rowid() as id');
                     saveDb(db);
                     result = { id: r.id };
                 } else if (method === 'PUT') {
-                    const { lida, status, desconto, tipo, mensagem, descricao, valor, validade, pedidoId, imagem } = req.body;
+                    const { lida, status, desconto, tipo, mensagem, descricao, valor, validade, pedidoId, imagem, parcial, descontoPct } = req.body;
                     if (status !== undefined && id !== null) {
                         const cur = queryOne(db, 'SELECT * FROM chats WHERE id=?', [id]);
                         const novoDesconto = desconto !== undefined ? desconto : (cur && cur.desconto ? cur.desconto : 0);
                         db.run('UPDATE chats SET status=?, desconto=? WHERE id=?', [status, novoDesconto, id]);
-                    } else if (lida !== undefined) {
+                    } else if (lida !== undefined && id !== null) {
+                        db.run('UPDATE chats SET lida=? WHERE id=?', [lida ? 1 : 0, id]);
+                    } else if (lida !== undefined && req.body.clienteId) {
                         db.run('UPDATE chats SET lida=? WHERE clienteId=?', [lida ? 1 : 0, req.body.clienteId]);
                     } else if (id !== null) {
-                        db.run('UPDATE chats SET tipo=?, mensagem=?, descricao=?, valor=?, validade=?, desconto=?, pedidoId=?, imagem=? WHERE id=?',
-                            [tipo || 'mensagem', mensagem || '', descricao || '', valor || 0, validade || '', desconto || 0, pedidoId || null, imagem || '', id]);
+                        db.run('UPDATE chats SET tipo=?, mensagem=?, descricao=?, valor=?, validade=?, desconto=?, pedidoId=?, imagem=?, parcial=?, descontoPct=? WHERE id=?',
+                            [tipo || 'mensagem', mensagem || '', descricao || '', valor || 0, validade || '', desconto || 0, pedidoId || null, imagem || '', parcial ? 1 : 0, descontoPct || 0, id]);
                     }
                     saveDb(db);
                     result = { ok: true };
@@ -221,6 +223,27 @@ module.exports = async (req, res) => {
                     db.run('DELETE FROM bibliotecas WHERE id=?', [id]);
                     saveDb(db);
                     result = { ok: true };
+                }
+                break;
+
+            // UPLOAD ÁUDIO → Vercel Blob
+            case 'upload_audio':
+                if (method === 'POST') {
+                    const { base64, nome, tipo } = req.body || {};
+                    if (!base64 || typeof base64 !== 'string' || base64.indexOf('base64,') === -1) {
+                        throw new Error('base64 ausente ou inválido');
+                    }
+                    const comma = base64.indexOf(',');
+                    const meta = (base64.slice(0, comma).match(/data:([^;]+)/) || [])[1] || (tipo || 'audio/mpeg');
+                    const bin = base64.slice(comma + 1);
+                    const buffer = Buffer.from(bin, 'base64');
+                    const { put } = require('@vercel/blob');
+                    const safe = String(nome || ('audio-' + Date.now() + '.mp3')).replace(/[^a-zA-Z0-9._-]/g, '_');
+                    const path = 'audios/' + Date.now() + '-' + safe;
+                    const b = await put(path, buffer, { access: 'public', allowOverwrite: false });
+                    result = { url: b.url, nome: safe, tamanho: buffer.length, tipo: meta };
+                } else {
+                    throw new Error('Use POST para upload_audio');
                 }
                 break;
 

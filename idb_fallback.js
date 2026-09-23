@@ -251,6 +251,11 @@ const IDB_SERVICE = {
         return { ok: true };
     },
 
+    // UPLOAD ÁUDIO → IDB guarda base64 direto (sem Blob)
+    async uploadAudio(d) {
+        return { url: (d && d.base64) || '', local: true };
+    },
+
     // ---------- CONFIG ----------
     async getConfig() { return (await idbGet('config')) || {}; },
     async saveConfig(d) { await idbSet('config', d); return { ok: true }; },
