@@ -29,7 +29,27 @@ const CONFIG_DEFAULT = {
 let APP_CONFIG = null;
 
 let currentUser = null;
-let DB = { servicos: [], materiais: [], clientes: [], pedidos: [], movimentacoes: [], chats: {}, config: {} };
+let DB = {
+    servicos: [],
+    materiais: [],
+    clientes: [],
+    pedidos: [],
+    movimentacoes: [],
+    chats: {},
+    config: {},
+    bibliotecas: [],
+    nextId: { servico: 1, material: 1, cliente: 1, pedido: 1, movimentacao: 1 }
+};
+
+function initNextIds() {
+    if (!DB.nextId) DB.nextId = { servico: 1, material: 1, cliente: 1, pedido: 1, movimentacao: 1 };
+    const maxId = (arr) => (arr || []).reduce((max, item) => Math.max(max, parseInt(item.id) || 0), 0);
+    DB.nextId.servico = Math.max(DB.nextId.servico || 1, maxId(DB.servicos) + 1);
+    DB.nextId.material = Math.max(DB.nextId.material || 1, maxId(DB.materiais) + 1);
+    DB.nextId.cliente = Math.max(DB.nextId.cliente || 1, maxId(DB.clientes) + 1);
+    DB.nextId.pedido = Math.max(DB.nextId.pedido || 1, maxId(DB.pedidos) + 1);
+    DB.nextId.movimentacao = Math.max(DB.nextId.movimentacao || 1, maxId(DB.movimentacoes) + 1);
+}
 let DBReady = false;
 let clientesExpandidos = new Set();
 let pedidosExpandidos = new Set();
@@ -273,6 +293,7 @@ async function loadDB() {
         DB.pedidos.forEach(x => { x.docId = x.id; });
         DB.movimentacoes.forEach(x => { x.docId = x.id; });
         DB.bibliotecas.forEach(x => { x.docId = x.id; });
+        initNextIds();
 
         // Inicializar conversas para todos os clientes
         DB.chats = {};
@@ -852,18 +873,26 @@ function editarServico(id) {
     clearForm('servico');
     document.getElementById('servicoId').value = s.id;
     document.getElementById('servicoNome').value = s.nome;
-    document.getElementById('servicoDescricao').value = s.descricao;
+    document.getElementById('servicoDescricao').value = s.descricao || '';
     
-    let precoFmt = Number(s.preco).toFixed(2).replace('.', ',');
+    let precoFmt = Number(s.preco || 0).toFixed(2).replace('.', ',');
     document.getElementById('servicoPreco').value = precoFmt;
     
     if (document.getElementById('servicoDuracao')) document.getElementById('servicoDuracao').value = s.duracao || '';
     if (document.getElementById('servicoIcone')) document.getElementById('servicoIcone').value = s.icone || 'fa-cog';
     if (document.getElementById('servicoCategoria')) document.getElementById('servicoCategoria').value = s.categoria || 'outro';
     
+    const preview = document.getElementById('servicoImagemPreview');
+    const placeholder = document.getElementById('servicoImgPreview');
+    const removeBtn = document.getElementById('servicoImagemRemoveBtn');
     if (s.imagem) {
-        document.getElementById('servicoImagemPreview').src = s.imagem;
-        document.getElementById('servicoImagemPreview').style.display = 'block';
+        if (preview) { preview.src = s.imagem; preview.style.display = 'block'; }
+        if (placeholder) placeholder.style.display = 'none';
+        if (removeBtn) removeBtn.style.display = 'inline-flex';
+    } else {
+        if (preview) { preview.src = ''; preview.style.display = 'none'; }
+        if (placeholder) placeholder.style.display = 'block';
+        if (removeBtn) removeBtn.style.display = 'none';
     }
     openModal('servicoModal');
 }
@@ -881,20 +910,32 @@ async function excluirServico(id) {
 async function salvarServico() {
     const id = document.getElementById('servicoId').value;
     const imgEl = document.getElementById('servicoImagemPreview');
-    const img = (imgEl && imgEl.style.display !== 'none' && imgEl.src) ? imgEl.src : null;
+    const inputEl = document.getElementById('servicoImagem');
+    
+    let img = '';
+    if (inputEl && inputEl.dataset.base64) {
+        img = inputEl.dataset.base64;
+    } else if (imgEl && imgEl.style.display !== 'none' && imgEl.src && !imgEl.src.endsWith('/') && !imgEl.src.startsWith('blob:null')) {
+        img = imgEl.src;
+    }
     
     let strPreco = document.getElementById('servicoPreco').value || '0';
     const precoFloat = parseFloat(strPreco.replace(/\./g, '').replace(',', '.')) || 0;
 
     const data = {
-        nome: document.getElementById('servicoNome').value,
-        descricao: document.getElementById('servicoDescricao').value,
+        nome: (document.getElementById('servicoNome').value || '').trim(),
+        descricao: (document.getElementById('servicoDescricao').value || '').trim(),
         preco: precoFloat,
-        duracao: document.getElementById('servicoDuracao') ? document.getElementById('servicoDuracao').value : '',
-        icone: document.getElementById('servicoIcone') ? document.getElementById('servicoIcone').value : 'fa-cog',
+        duracao: document.getElementById('servicoDuracao') ? document.getElementById('servicoDuracao').value.trim() : '',
+        icone: document.getElementById('servicoIcone') ? document.getElementById('servicoIcone').value.trim() : 'fa-cog',
         categoria: document.getElementById('servicoCategoria') ? document.getElementById('servicoCategoria').value : 'outro',
-        imagem: img
+        imagem: img || ''
     };
+
+    if (!data.nome) {
+        showToast('Informe o nome do serviço', 'error');
+        return;
+    }
     
     if (id) {
         const item = DB.servicos.find(x => x.id === parseInt(id) || x.id === id);
@@ -954,16 +995,24 @@ function editarMaterial(id) {
     clearForm('material');
     document.getElementById('materialId').value = m.id;
     document.getElementById('materialNome').value = m.nome;
-    document.getElementById('materialDescricao').value = m.descricao;
+    document.getElementById('materialDescricao').value = m.descricao || '';
     
-    let precoFmt = Number(m.preco).toFixed(2).replace('.', ',');
+    let precoFmt = Number(m.preco || 0).toFixed(2).replace('.', ',');
     document.getElementById('materialPreco').value = precoFmt;
 
     if (document.getElementById('materialCategoria')) document.getElementById('materialCategoria').value = m.categoria || 'outro';
     
+    const preview = document.getElementById('materialImagemPreview');
+    const placeholder = document.getElementById('materialImgPreview');
+    const removeBtn = document.getElementById('materialImagemRemoveBtn');
     if (m.imagem) {
-        document.getElementById('materialImagemPreview').src = m.imagem;
-        document.getElementById('materialImagemPreview').style.display = 'block';
+        if (preview) { preview.src = m.imagem; preview.style.display = 'block'; }
+        if (placeholder) placeholder.style.display = 'none';
+        if (removeBtn) removeBtn.style.display = 'inline-flex';
+    } else {
+        if (preview) { preview.src = ''; preview.style.display = 'none'; }
+        if (placeholder) placeholder.style.display = 'block';
+        if (removeBtn) removeBtn.style.display = 'none';
     }
     openModal('materialModal');
 }
@@ -981,18 +1030,30 @@ async function excluirMaterial(id) {
 async function salvarMaterial() {
     const id = document.getElementById('materialId').value;
     const imgEl = document.getElementById('materialImagemPreview');
-    const img = (imgEl && imgEl.style.display !== 'none') ? imgEl.src : null;
+    const inputEl = document.getElementById('materialImagem');
+    
+    let img = '';
+    if (inputEl && inputEl.dataset.base64) {
+        img = inputEl.dataset.base64;
+    } else if (imgEl && imgEl.style.display !== 'none' && imgEl.src && !imgEl.src.endsWith('/') && !imgEl.src.startsWith('blob:null')) {
+        img = imgEl.src;
+    }
     
     let strPreco = document.getElementById('materialPreco').value || '0';
     const precoFloat = parseFloat(strPreco.replace(/\./g, '').replace(',', '.')) || 0;
 
     const data = {
-        nome: document.getElementById('materialNome').value,
-        descricao: document.getElementById('materialDescricao').value,
+        nome: (document.getElementById('materialNome').value || '').trim(),
+        descricao: (document.getElementById('materialDescricao').value || '').trim(),
         preco: precoFloat,
         categoria: document.getElementById('materialCategoria') ? document.getElementById('materialCategoria').value : 'outro',
-        imagem: img
+        imagem: img || ''
     };
+
+    if (!data.nome) {
+        showToast('Informe o nome do material', 'error');
+        return;
+    }
     
     if (id) {
         const item = DB.materiais.find(x => x.id === parseInt(id) || x.id === id);
@@ -1514,12 +1575,20 @@ async function salvarCliente() {
             if (DBReady) await DB_SERVICE.updateCliente(DB.clientes[idx].docId, persistido);
         }
     } else {
-        data.id = DB.nextId.cliente++;
-        DB.clientes.push(data);
+        data.id = (DB.nextId && DB.nextId.cliente) ? DB.nextId.cliente++ : Date.now();
         if (DBReady) {
-            const docId = await DB_SERVICE.addCliente(data);
-            DB.clientes[DB.clientes.length - 1].docId = docId;
+            const res = await DB_SERVICE.addCliente(data);
+            if (res && res.id) {
+                data.id = res.id;
+                data.docId = res.id;
+            } else {
+                data.docId = data.id;
+            }
+        } else {
+            data.docId = data.id;
         }
+        DB.clientes.push(data);
+        if (DB.nextId) DB.nextId.cliente = Math.max(DB.nextId.cliente || 1, (parseInt(data.id) || 0) + 1);
     }
 
     closeAllModals();
@@ -1800,18 +1869,33 @@ function verDetalhesPedidoClient(id) {
 
 function prepareClientPedidoModal() {
     const servicosDiv = document.getElementById('clientPedidoServicos');
-    servicosDiv.innerHTML = DB.servicos.map(s => `<div class="checkbox-item">
-        <input type="checkbox" id="cps_${s.id}" value="${s.id}" onchange="updateClientPedidoTotal()">
-        <label for="cps_${s.id}">${s.nome}</label>
-        <span class="item-price">${formatCurrency(s.preco)}</span>
-    </div>`).join('');
+    if (servicosDiv) {
+        servicosDiv.innerHTML = (DB.servicos || []).map(s => `<div class="checkbox-item">
+            <input type="checkbox" id="cps_${s.id}" value="${s.id}" onchange="updateClientPedidoTotal()">
+            <label for="cps_${s.id}">${s.nome}</label>
+            <span class="item-price">${formatCurrency(s.preco)}</span>
+        </div>`).join('') || '<p class="empty-state">Nenhum serviço disponível no momento.</p>';
+    }
 
     const materiaisDiv = document.getElementById('clientPedidoMateriais');
-    materiaisDiv.innerHTML = DB.materiais.map(m => `<div class="checkbox-item">
-        <input type="checkbox" id="cpm_${m.id}" value="${m.id}" onchange="updateClientPedidoTotal()">
-        <label for="cpm_${m.id}">${m.nome}</label>
-        ${formatMaterialPrice(m, 'item-price')}
-    </div>`).join('');
+    if (materiaisDiv) {
+        materiaisDiv.innerHTML = (DB.materiais || []).map(m => `<div class="checkbox-item">
+            <input type="checkbox" id="cpm_${m.id}" value="${m.id}" onchange="updateClientPedidoTotal()">
+            <label for="cpm_${m.id}">${m.nome}</label>
+            ${formatMaterialPrice(m, 'item-price')}
+        </div>`).join('') || '<p class="empty-state">Nenhum material disponível no momento.</p>';
+    }
+
+    const di = document.getElementById('clientPedidoDataInicial');
+    if (di) di.value = '';
+    const hi = document.getElementById('clientPedidoHoraInicial');
+    if (hi) hi.value = '';
+    const hf = document.getElementById('clientPedidoHoraFinal');
+    if (hf) hf.value = '';
+    const audiosInput = document.getElementById('clientPedidoAudios');
+    if (audiosInput) audiosInput.value = '';
+    const qtdInput = document.getElementById('clientPedidoQtdFaixas');
+    if (qtdInput) qtdInput.value = '1';
 
     const dp = document.getElementById('clientPedidoDataPref');
     const hp = document.getElementById('clientPedidoHoraPref');
@@ -1827,6 +1911,9 @@ function prepareClientPedidoModal() {
 
     const radioVista = document.getElementById('clientCondVista');
     if (radioVista) { radioVista.checked = true; }
+
+    const tarja = document.querySelector('.tarja-funcionamento.tarja-dinamica');
+    if (tarja) tarja.classList.remove('tarja-alerta');
 
     const estudioDiv = document.getElementById('clientResumoEstudio');
     if (estudioDiv) {
@@ -1845,17 +1932,16 @@ function prepareClientPedidoModal() {
 function valoresPedidoClient() {
     let total = 0;
     document.querySelectorAll('#clientPedidoServicos input:checked').forEach(cb => {
-        const s = DB.servicos.find(x => x.id === parseInt(cb.value));
-        if (s) total += s.preco;
+        const s = (DB.servicos || []).find(x => x.id == cb.value);
+        if (s) total += Number(s.preco || 0);
     });
     document.querySelectorAll('#clientPedidoMateriais input:checked').forEach(cb => {
-        const m = DB.materiais.find(x => x.id === parseInt(cb.value));
-        if (m) total += m.preco;
+        const m = (DB.materiais || []).find(x => x.id == cb.value);
+        if (m) total += Number(m.preco || 0);
     });
     const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
     return { subTotal: total, condicao };
 }
-
 
 function fileToBase64(file) {
     return new Promise((resolve, reject) => {
@@ -1867,20 +1953,23 @@ function fileToBase64(file) {
 }
 
 function limitAudiosClient(input) {
+    if (!input || !input.files) return;
     if (input.files.length > 10) {
-        showToast('Você pode anexar no máximo 10 áudios.', 'error');
+        showToast('Você pode anexar no máximo 10 áudios.', 'warning');
         const dt = new DataTransfer();
         for (let i = 0; i < 10; i++) dt.items.add(input.files[i]);
         input.files = dt.files;
     }
     
-    const validFiles = new DataTransfer();
-    for(let i=0; i<input.files.length; i++) {
-        if(validateAudioFile(input.files[i])) {
-            validFiles.items.add(input.files[i]);
+    if (typeof validateAudioFile === 'function') {
+        const validFiles = new DataTransfer();
+        for (let i = 0; i < input.files.length; i++) {
+            if (validateAudioFile(input.files[i])) {
+                validFiles.items.add(input.files[i]);
+            }
         }
+        input.files = validFiles.files;
     }
-    input.files = validFiles.files;
 }
 
 function atualizarCondicaoClient() {
@@ -1896,118 +1985,205 @@ function updateClientPedidoTotal() {
     const entrada = condicao === 'metade' ? subTotal / 2 : totalFinal;
     const saldo = condicao === 'metade' ? subTotal / 2 : 0;
 
-    document.getElementById('clientCondVistaValor').textContent = formatCurrency(subTotal * 0.90);
-    document.getElementById('clientCondMetaValor').textContent = formatCurrency(subTotal / 2);
+    const elVistaVal = document.getElementById('clientCondVistaValor');
+    if (elVistaVal) elVistaVal.textContent = formatCurrency(subTotal * 0.90);
+    const elMetaVal = document.getElementById('clientCondMetaValor');
+    if (elMetaVal) elMetaVal.textContent = formatCurrency(subTotal / 2);
 
-    document.getElementById('clientResSubtotal').textContent = formatCurrency(subTotal);
+    const elSub = document.getElementById('clientResSubtotal');
+    if (elSub) elSub.textContent = formatCurrency(subTotal);
+
     const vistaLinha = document.getElementById('clientResVista');
-    vistaLinha.style.display = condicao === 'vista' ? 'flex' : 'none';
-    document.getElementById('clientResDesconto').textContent = '-' + formatCurrency(desconto);
-    document.getElementById('clientResTotal').textContent = formatCurrency(totalFinal);
-    document.getElementById('clientResPagarRotulo').textContent = condicao === 'metade' ? 'Entrada (50%) agora' : 'Pagar agora (à vista)';
-    document.getElementById('clientResPagar').textContent = formatCurrency(entrada);
+    if (vistaLinha) vistaLinha.style.display = condicao === 'vista' ? 'flex' : 'none';
+
+    const elDesc = document.getElementById('clientResDesconto');
+    if (elDesc) elDesc.textContent = '-' + formatCurrency(desconto);
+
+    const elTot = document.getElementById('clientResTotal');
+    if (elTot) elTot.textContent = formatCurrency(totalFinal);
+
+    const elRot = document.getElementById('clientResPagarRotulo');
+    if (elRot) elRot.textContent = condicao === 'metade' ? 'Entrada (50%) agora' : 'Pagar agora (à vista)';
+
+    const elPag = document.getElementById('clientResPagar');
+    if (elPag) elPag.textContent = formatCurrency(entrada);
+
     const saldoLinha = document.getElementById('clientResSaldoLinha');
-    saldoLinha.style.display = condicao === 'metade' ? 'flex' : 'none';
-    document.getElementById('clientResSaldo').textContent = formatCurrency(saldo);
+    if (saldoLinha) saldoLinha.style.display = condicao === 'metade' ? 'flex' : 'none';
+
+    const elSal = document.getElementById('clientResSaldo');
+    if (elSal) elSal.textContent = formatCurrency(saldo);
 }
 
 async function salvarPedidoClient() {
-    if (!currentUser || currentUser.role !== 'client') return;
-    const servicos = [...document.querySelectorAll('#clientPedidoServicos input:checked')].map(cb => parseInt(cb.value));
-    const materiais = [...document.querySelectorAll('#clientPedidoMateriais input:checked')].map(cb => parseInt(cb.value));
+    if (!currentUser || currentUser.role !== 'client') {
+        showToast('Você precisa estar logado como cliente para enviar um pedido.', 'error');
+        return;
+    }
+
+    const servicos = [...document.querySelectorAll('#clientPedidoServicos input:checked')].map(cb => parseInt(cb.value) || cb.value);
+    const materiais = [...document.querySelectorAll('#clientPedidoMateriais input:checked')].map(cb => parseInt(cb.value) || cb.value);
 
     if (servicos.length === 0 && materiais.length === 0) {
         showToast('Selecione pelo menos um serviço ou material!', 'error');
         return;
     }
 
-    let total = 0;
-    servicos.forEach(id => { const s = DB.servicos.find(x => x.id === id); if (s) total += s.preco; });
-    materiais.forEach(id => { const m = DB.materiais.find(x => x.id === id); if (m) total += m.preco; });
+    const dataInicial = (document.getElementById('clientPedidoDataInicial')?.value || '').trim();
+    const horaInicial = (document.getElementById('clientPedidoHoraInicial')?.value || '').trim();
+    const horaFinal = (document.getElementById('clientPedidoHoraFinal')?.value || '').trim();
 
-    const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
-    const descontoPct = condicao === 'vista' ? 10 : 0;
-    const parcial = condicao === 'metade' ? 1 : 0;
-    const dataInicial = document.getElementById('clientPedidoDataInicial').value || '';
-    const horaInicial = document.getElementById('clientPedidoHoraInicial').value || '';
-    const horaFinal = document.getElementById('clientPedidoHoraFinal').value || '';
     if (horaInicial || horaFinal) {
-        if (!validarHorarioEstudio(horaInicial, horaFinal)) return;
-    }
-
-    const novoPedido = {
-        id: DB.nextId.pedido++,
-        clienteId: currentUser.id,
-        servicos, materiais,
-        desconto: 0,
-        status: 'pendente',
-        data: new Date().toISOString().split('T')[0],
-        total,
-        parcial,
-        descontoPct,
-        dataInicial,
-        horaInicial,
-        horaFinal,
-        qtdFaixas: parseInt(document.getElementById('clientPedidoQtdFaixas').value) || 1,
-        audios: []
-    };
-    
-    // Anexar áudios
-    const fileInput = document.getElementById('clientPedidoAudios');
-    if (fileInput && fileInput.files.length > 0) {
-        for (let i = 0; i < fileInput.files.length; i++) {
-            const b64 = await fileToBase64(fileInput.files[i]);
-            novoPedido.audios.push({
-                nome: fileInput.files[i].name,
-                base64: b64,
-                data: new Date().toISOString()
-            });
+        if (typeof window.validarHorarioEstudio === 'function' && !window.validarHorarioEstudio(horaInicial, horaFinal)) {
+            return;
         }
     }
 
-    DB.pedidos.push(novoPedido);
-    if (DBReady) {
-        const docId = await DB_SERVICE.addPedido(novoPedido);
-        novoPedido.docId = docId;
-    }
-    await sincronizarFinanceiroPedido(novoPedido);
-
-    // Enviar pedido pelo chat para o administrador
-    const chatKey = `admin_${currentUser.id}`;
-    if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
-
-    const nomesServicos = servicos.map(id => { const s = DB.servicos.find(x => x.id === id); return s ? s.nome : ''; }).filter(Boolean);
-    const nomesMateriais = materiais.map(id => { const m = DB.materiais.find(x => x.id === id); return m ? m.nome : ''; }).filter(Boolean);
-    const detalhes = [...nomesServicos, ...nomesMateriais].join(', ');
-    const rotuloCondicao = condicao === 'vista'
-        ? `Pagamento à vista (10% de desconto): R$ ${formatCurrency(total * 0.90)}`
-        : `Dividido em 2x: entrada de R$ ${formatCurrency(total / 2)} agora e R$ ${formatCurrency(total / 2)} ao finalizar`;
-
-    const prefHorario = dataInicial
-        ? `Agendamento: ${formatDate(dataInicial)} ${horaInicial}`
-        : '';
-
-    const msgData = {
-        tipo: 'pedido',
-        remetente: 'client',
-        clienteId: currentUser.id,
-        pedidoId: novoPedido.id,
-        mensagem: `Novo pedido #${novoPedido.id} - ${formatCurrency(total)}`,
-        descricao: detalhes + ' · ' + rotuloCondicao + (prefHorario ? ' · ' + prefHorario : ''),
-        valor: total,
-        data: new Date().toISOString(),
-        lida: false
-    };
-    DB.chats[chatKey].push(msgData);
-    if (DBReady) {
-        const res = await DB_SERVICE.sendMessage(msgData);
-        if (res && res.id) msgData.id = res.id;
+    const btn = document.querySelector('#novoPedidoClientModal button.btn-primary.btn-full') ||
+                document.querySelector('#novoPedidoClientModal button.btn-primary');
+    let originalHtml = '';
+    if (btn) {
+        originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando Pedido...';
     }
 
-    closeAllModals();
-    renderPedidosClient();
-    renderClientDashboard();
-    showToast('Pedido enviado com sucesso!', 'success');
+    try {
+        let total = 0;
+        servicos.forEach(id => {
+            const s = (DB.servicos || []).find(x => x.id == id);
+            if (s) total += Number(s.preco || 0);
+        });
+        materiais.forEach(id => {
+            const m = (DB.materiais || []).find(x => x.id == id);
+            if (m) total += Number(m.preco || 0);
+        });
+
+        const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
+        const descontoPct = condicao === 'vista' ? 10 : 0;
+        const parcial = condicao === 'metade' ? 1 : 0;
+        const valorDesconto = condicao === 'vista' ? (total * 0.10) : 0;
+
+        let pedidoId = (DB.nextId && DB.nextId.pedido) ? DB.nextId.pedido++ : Date.now();
+
+        const novoPedido = {
+            id: pedidoId,
+            clienteId: currentUser.id,
+            servicos,
+            materiais,
+            desconto: valorDesconto,
+            status: 'pendente',
+            data: new Date().toISOString().split('T')[0],
+            total,
+            parcial,
+            descontoPct,
+            dataInicial,
+            horaInicial,
+            horaFinal,
+            qtdFaixas: parseInt(document.getElementById('clientPedidoQtdFaixas')?.value) || 1,
+            audios: []
+        };
+
+        // Anexar áudios com proteção de tamanho
+        const fileInput = document.getElementById('clientPedidoAudios');
+        if (fileInput && fileInput.files && fileInput.files.length > 0) {
+            for (let i = 0; i < Math.min(fileInput.files.length, 10); i++) {
+                const f = fileInput.files[i];
+                if (f.size > 15 * 1024 * 1024) {
+                    showToast(`O áudio "${f.name}" ultrapassa 15MB e foi ignorado.`, 'warning');
+                    continue;
+                }
+                try {
+                    const b64 = await fileToBase64(f);
+                    novoPedido.audios.push({
+                        nome: f.name,
+                        base64: b64,
+                        data: new Date().toISOString()
+                    });
+                } catch(e) {
+                    console.error('Erro ao ler áudio:', e);
+                }
+            }
+        }
+
+        if (DBReady) {
+            try {
+                const res = await DB_SERVICE.addPedido(novoPedido);
+                if (res && res.id) {
+                    novoPedido.id = res.id;
+                    novoPedido.docId = res.id;
+                } else {
+                    novoPedido.docId = novoPedido.id;
+                }
+            } catch (err) {
+                console.error('Erro ao salvar pedido no DB_SERVICE:', err);
+                novoPedido.docId = novoPedido.id;
+            }
+        } else {
+            novoPedido.docId = novoPedido.id;
+        }
+
+        DB.pedidos.unshift(novoPedido);
+        if (DB.nextId) {
+            DB.nextId.pedido = Math.max(DB.nextId.pedido || 1, (parseInt(novoPedido.id) || 0) + 1);
+        }
+
+        // Enviar notificação de pedido pelo chat para o administrador
+        const chatKey = `admin_${currentUser.id}`;
+        if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
+
+        const nomesServicos = servicos.map(id => {
+            const s = (DB.servicos || []).find(x => x.id == id);
+            return s ? s.nome : '';
+        }).filter(Boolean);
+        const nomesMateriais = materiais.map(id => {
+            const m = (DB.materiais || []).find(x => x.id == id);
+            return m ? m.nome : '';
+        }).filter(Boolean);
+        const detalhes = [...nomesServicos, ...nomesMateriais].join(', ');
+        const totalFinal = condicao === 'vista' ? (total * 0.90) : total;
+        const rotuloCondicao = condicao === 'vista'
+            ? `Pagamento à vista (10% de desconto): ${formatCurrency(totalFinal)}`
+            : `Dividido em 2x: entrada de ${formatCurrency(total / 2)} agora e ${formatCurrency(total / 2)} ao finalizar`;
+
+        const prefHorario = dataInicial
+            ? `Agendamento: ${formatDate(dataInicial)} ${horaInicial || ''}`
+            : '';
+
+        const msgData = {
+            tipo: 'pedido',
+            remetente: 'client',
+            clienteId: currentUser.id,
+            pedidoId: novoPedido.id,
+            mensagem: `Novo pedido #${novoPedido.id} - ${formatCurrency(total)}`,
+            descricao: (detalhes || 'Itens selecionados') + ' · ' + rotuloCondicao + (prefHorario ? ' · ' + prefHorario : ''),
+            valor: total,
+            data: new Date().toISOString(),
+            lida: false
+        };
+        DB.chats[chatKey].push(msgData);
+        if (DBReady) {
+            try {
+                const res = await DB_SERVICE.sendMessage(msgData);
+                if (res && res.id) msgData.id = res.id;
+            } catch (err) {
+                console.error('Erro ao enviar mensagem no chat:', err);
+            }
+        }
+
+        closeAllModals();
+        renderPedidosClient();
+        renderClientDashboard();
+        showToast('Pedido enviado com sucesso!', 'success');
+    } catch (error) {
+        console.error('Erro ao enviar pedido:', error);
+        showToast('Erro ao enviar pedido. Tente novamente.', 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml || '<i class="fas fa-paper-plane"></i> Enviar Pedido';
+        }
+    }
 }
 
 function pixCrc16(str) {
@@ -2661,7 +2837,7 @@ async function confirmarPagoComprovante(msgIdx) {
         const jaConfirmado = DB.movimentacoes.find(mm => mm.pedidoId === pedido.id && mm.pagamento !== 'pendente');
         if (pedido.parcial && jaConfirmado) {
             const nova = {
-                id: DB.nextId.movimentacao++,
+                id: (DB.nextId && DB.nextId.movimentacao) ? DB.nextId.movimentacao++ : Date.now(),
                 tipo: 'entrada',
                 descricao: `Pagamento Pedido #${pedido.id} (2ª parcela)`,
                 valor: totalPago,
@@ -2684,7 +2860,7 @@ async function confirmarPagoComprovante(msgIdx) {
                 if (DBReady && mov.docId) await DB_SERVICE.updateMovimentacao(mov.docId, { tipo: mov.tipo, descricao: mov.descricao, valor: mov.valor, categoria: mov.categoria, pagamento: mov.pagamento, data: mov.data });
             } else {
                 const nova = {
-                    id: DB.nextId.movimentacao++,
+                    id: (DB.nextId && DB.nextId.movimentacao) ? DB.nextId.movimentacao++ : Date.now(),
                     tipo: 'entrada',
                     descricao: `Pagamento Pedido #${pedido.id}`,
                     valor: totalPago,
@@ -3068,20 +3244,8 @@ function closeAllModals() {
 }
 
 // ============================================
-// UTILITIES
+// UTILITIES & IMAGES
 // ============================================
-function previewImagem(input, previewId) {
-    const preview = document.getElementById(previewId);
-    if (input.files && input.files[0]) {
-        const reader = new FileReader();
-        reader.onload = e => { preview.src = e.target.result; preview.style.display = 'block'; };
-        reader.readAsDataURL(input.files[0]);
-    } else if (preview) {
-        preview.style.display = 'none';
-        preview.src = '';
-    }
-}
-
 function lerArquivoComoDataURL(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -3107,9 +3271,93 @@ async function processarImagem(file) {
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
     ctx.drawImage(img, 0, 0, width, height);
-    return canvas.toDataURL('image/jpeg', 0.7);
+    return canvas.toDataURL('image/jpeg', 0.82);
 }
+
+async function previewImagem(input, previewId) {
+    const preview = document.getElementById(previewId);
+    if (!input || !input.files || !input.files[0]) {
+        if (preview) {
+            preview.src = '';
+            preview.style.display = 'none';
+        }
+        return;
+    }
+
+    const file = input.files[0];
+    if (!file.type.startsWith('image/')) {
+        showToast('Selecione apenas arquivos de imagem!', 'error');
+        input.value = '';
+        return;
+    }
+
+    if (file.size > 20 * 1024 * 1024) {
+        showToast('Imagem muito grande! Máximo 20MB.', 'error');
+        input.value = '';
+        return;
+    }
+
+    try {
+        const base64 = await processarImagem(file);
+        input.dataset.base64 = base64;
+        if (preview) {
+            preview.src = base64;
+            preview.style.display = 'block';
+        }
+        if (previewId === 'servicoImagemPreview') {
+            const ph = document.getElementById('servicoImgPreview');
+            if (ph) ph.style.display = 'none';
+            const btn = document.getElementById('servicoImagemRemoveBtn');
+            if (btn) btn.style.display = 'inline-flex';
+        } else if (previewId === 'materialImagemPreview') {
+            const ph = document.getElementById('materialImgPreview');
+            if (ph) ph.style.display = 'none';
+            const btn = document.getElementById('materialImagemRemoveBtn');
+            if (btn) btn.style.display = 'inline-flex';
+        }
+    } catch (err) {
+        console.error('Erro ao processar imagem:', err);
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            input.dataset.base64 = e.target.result;
+            if (preview) {
+                preview.src = e.target.result;
+                preview.style.display = 'block';
+            }
+        };
+        reader.readAsDataURL(file);
+    }
+}
+window.previewImagem = previewImagem;
+
+function removerImagemServico(e) {
+    if (e) e.stopPropagation();
+    const input = document.getElementById('servicoImagem');
+    const preview = document.getElementById('servicoImagemPreview');
+    const placeholder = document.getElementById('servicoImgPreview');
+    const removeBtn = document.getElementById('servicoImagemRemoveBtn');
+    if (input) { input.value = ''; delete input.dataset.base64; }
+    if (preview) { preview.src = ''; preview.style.display = 'none'; }
+    if (placeholder) { placeholder.style.display = 'block'; }
+    if (removeBtn) { removeBtn.style.display = 'none'; }
+}
+window.removerImagemServico = removerImagemServico;
+
+function removerImagemMaterial(e) {
+    if (e) e.stopPropagation();
+    const input = document.getElementById('materialImagem');
+    const preview = document.getElementById('materialImagemPreview');
+    const placeholder = document.getElementById('materialImgPreview');
+    const removeBtn = document.getElementById('materialImagemRemoveBtn');
+    if (input) { input.value = ''; delete input.dataset.base64; }
+    if (preview) { preview.src = ''; preview.style.display = 'none'; }
+    if (placeholder) { placeholder.style.display = 'block'; }
+    if (removeBtn) { removeBtn.style.display = 'none'; }
+}
+window.removerImagemMaterial = removerImagemMaterial;
 
 function formatCurrency(value) {
     return 'R$ ' + value.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
@@ -3128,8 +3376,12 @@ function formatPedidoDataHora(p) {
     return txt;
 }
 
-function validarDiaFuncionamento() {
-    const dp = document.getElementById('clientPedidoDataPref') || document.getElementById('pedidoDataPref');
+function validarDiaFuncionamento(fieldId) {
+    const dp = (fieldId && document.getElementById(fieldId)) ||
+               document.getElementById('clientPedidoDataInicial') ||
+               document.getElementById('pedidoDataInicial') ||
+               document.getElementById('clientPedidoDataPref') ||
+               document.getElementById('pedidoDataPref');
     if (!dp || !dp.value) return;
     const d = new Date(dp.value + 'T12:00:00');
     const dia = d.getDay();
@@ -3138,6 +3390,7 @@ function validarDiaFuncionamento() {
     document.querySelectorAll('.tarja-funcionamento.tarja-dinamica').forEach(t => t.classList.toggle('tarja-alerta', !funciona));
     if (!funciona) showToast(`Atenção: o estúdio não funciona em ${nomes[dia]}s — atendemos de terça a sexta.`, 'error');
 }
+window.validarDiaFuncionamento = validarDiaFuncionamento;
 
 function formatDateTime(isoStr) {
     if (!isoStr) return '';
@@ -3191,33 +3444,8 @@ function getCategoriaIcon(cat) {
 }
 
 // ============================================
-// UPLOAD DE IMAGENS
+// UPLOAD DE IMAGENS - DRAG & DROP E FORM CLEANUP
 // ============================================
-function previewImagem(input, previewId) {
-    const preview = document.getElementById(previewId);
-    const file = input.files[0];
-    if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-        showToast('Selecione apenas arquivos de imagem!', 'error');
-        return;
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-        showToast('Imagem muito grande! Máximo 5MB.', 'error');
-        return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        input.dataset.base64 = e.target.result;
-        const isServico = previewId === 'servicoImgPreview';
-        const removeFn = isServico ? 'removerImagemServico' : 'removerImagemMaterial';
-        preview.innerHTML = `<img src="${e.target.result}" class="upload-preview"><div class="upload-actions"><span>${file.name} (${(file.size / 1024).toFixed(0)}KB)</span><button onclick="${removeFn}(event)"><i class="fas fa-trash"></i> Remover</button></div>`;
-    };
-    reader.readAsDataURL(file);
-}
-
 function setupDragDrop() {
     document.querySelectorAll('.upload-area').forEach(area => {
         area.addEventListener('dragover', function(e) {
@@ -3234,9 +3462,14 @@ function setupDragDrop() {
             e.preventDefault();
             this.classList.remove('dragover');
             const input = this.querySelector('input[type="file"]');
-            const previewId = input.id === 'servicoImagem' ? 'servicoImgPreview' : 'materialImgPreview';
+            if (!input) return;
+            const previewId = input.id === 'servicoImagem' ? 'servicoImagemPreview' :
+                             (input.id === 'materialImagem' ? 'materialImagemPreview' :
+                             (input.id === 'comprovanteImagem' ? 'comprovanteImagemPreview' :
+                             (input.id === 'pagamentoComprovanteImagem' ? 'pagamentoImagemPreview' :
+                             (input.id === 'clientPagamentoImagem' ? 'clientPagamentoImagemPreview' : null))));
             const files = e.dataTransfer.files;
-            if (files.length) {
+            if (files && files.length && previewId) {
                 input.files = files;
                 previewImagem(input, previewId);
             }
@@ -3269,12 +3502,24 @@ function clearForm(prefix) {
 
     // Reset upload previews
     if (prefix === 'servico') {
-        const preview = document.getElementById('servicoImgPreview');
-        if (preview) preview.innerHTML = `<i class="fas fa-cloud-upload-alt"></i><p>Clique para selecionar uma foto</p><span>ou arraste e solte aqui</span>`;
+        const preview = document.getElementById('servicoImagemPreview');
+        if (preview) { preview.src = ''; preview.style.display = 'none'; }
+        const ph = document.getElementById('servicoImgPreview');
+        if (ph) ph.style.display = 'block';
+        const btn = document.getElementById('servicoImagemRemoveBtn');
+        if (btn) btn.style.display = 'none';
+        const fileInput = document.getElementById('servicoImagem');
+        if (fileInput) { fileInput.value = ''; delete fileInput.dataset.base64; }
     }
     if (prefix === 'material') {
-        const preview = document.getElementById('materialImgPreview');
-        if (preview) preview.innerHTML = `<i class="fas fa-cloud-upload-alt"></i><p>Clique para selecionar uma foto</p><span>ou arraste e solte aqui</span>`;
+        const preview = document.getElementById('materialImagemPreview');
+        if (preview) { preview.src = ''; preview.style.display = 'none'; }
+        const ph = document.getElementById('materialImgPreview');
+        if (ph) ph.style.display = 'block';
+        const btn = document.getElementById('materialImagemRemoveBtn');
+        if (btn) btn.style.display = 'none';
+        const fileInput = document.getElementById('materialImagem');
+        if (fileInput) { fileInput.value = ''; delete fileInput.dataset.base64; }
     }
 
     // Uncheck checkboxes
@@ -4142,3 +4387,12 @@ window.validarHorarioEstudio = function(horaInicio, horaFim) {
     }
     return true;
 };
+
+window.salvarPedidoClient = salvarPedidoClient;
+window.prepareClientPedidoModal = prepareClientPedidoModal;
+window.updateClientPedidoTotal = updateClientPedidoTotal;
+window.atualizarCondicaoClient = atualizarCondicaoClient;
+window.verDetalhesPedidoClient = verDetalhesPedidoClient;
+window.limitAudiosClient = limitAudiosClient;
+window.valoresPedidoClient = valoresPedidoClient;
+

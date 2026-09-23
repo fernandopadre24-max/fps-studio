@@ -58,7 +58,7 @@ module.exports = async (req, res) => {
                 } else if (method === 'PUT') {
                     const { nome, descricao, preco, categoria, imagem } = req.body;
                     db.run('UPDATE materiais SET nome=?, descricao=?, preco=?, categoria=?, imagem=? WHERE id=?',
-                        [nome, descricao, preco, categoria, imagem, id]);
+                        [nome, descricao, preco, categoria || 'outro', imagem || '', id]);
                     saveDb(db);
                     result = { ok: true };
                 } else if (method === 'DELETE') {

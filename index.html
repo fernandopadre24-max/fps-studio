@@ -1055,13 +1055,16 @@
                     <label>Imagem do Serviço</label>
                     <div class="upload-area" onclick="document.getElementById('servicoImagem').click()">
                         <input type="file" id="servicoImagem" accept="image/*" style="display:none" onchange="previewImagem(this, 'servicoImagemPreview')">
-                        <img id="servicoImagemPreview" style="display:none; width:100%; height:120px; object-fit:cover; border-radius:4px; margin-bottom:10px;">
+                        <img id="servicoImagemPreview" style="display:none; width:100%; height:130px; object-fit:cover; border-radius:6px; margin-bottom:8px;">
                         <div class="upload-placeholder" id="servicoImgPreview">
                             <i class="fas fa-cloud-upload-alt"></i>
                             <p>Clique para selecionar uma foto</p>
-                            <span>ou arraste e solte aqui</span>
+                            <span>ou arraste e solte aqui (JPG, PNG, WebP)</span>
                         </div>
                     </div>
+                    <button type="button" id="servicoImagemRemoveBtn" class="btn-sm btn-secondary" style="display:none; margin-top:8px; width:auto;" onclick="removerImagemServico(event)">
+                        <i class="fas fa-trash"></i> Remover Imagem
+                    </button>
                 </div>
                 <button class="btn-primary" onclick="salvarServico()">
                     <i class="fas fa-save"></i> Salvar
@@ -1109,13 +1112,16 @@
                     <label>Imagem do Material</label>
                     <div class="upload-area" onclick="document.getElementById('materialImagem').click()">
                         <input type="file" id="materialImagem" accept="image/*" style="display:none" onchange="previewImagem(this, 'materialImagemPreview')">
-                        <img id="materialImagemPreview" style="display:none; width:100%; height:120px; object-fit:cover; border-radius:4px; margin-bottom:10px;">
+                        <img id="materialImagemPreview" style="display:none; width:100%; height:130px; object-fit:cover; border-radius:6px; margin-bottom:8px;">
                         <div class="upload-placeholder" id="materialImgPreview">
                             <i class="fas fa-cloud-upload-alt"></i>
                             <p>Clique para selecionar uma foto</p>
-                            <span>ou arraste e solte aqui</span>
+                            <span>ou arraste e solte aqui (JPG, PNG, WebP)</span>
                         </div>
                     </div>
+                    <button type="button" id="materialImagemRemoveBtn" class="btn-sm btn-secondary" style="display:none; margin-top:8px; width:auto;" onclick="removerImagemMaterial(event)">
+                        <i class="fas fa-trash"></i> Remover Imagem
+                    </button>
                 </div>
                 <button class="btn-primary" onclick="salvarMaterial()">
                     <i class="fas fa-save"></i> Salvar
