@@ -103,7 +103,6 @@ function setupNavigation() {
             if(pageId === 'adminPedidos') renderPedidos();
             if(pageId === 'adminFinanceiro') renderMovimentacoes();
             if(pageId === 'adminBiblioteca') renderBiblioteca();
-            if(pageId === 'adminBibliotecas') renderBibliotecas();
             if(pageId === 'adminChat') renderChatList();
             if(pageId === 'adminClientes') renderClientes();
             if(pageId === 'adminConfig') preencherFormConfig();
@@ -203,9 +202,6 @@ function startSync() {
                 const bibs = await DB_SERVICE.getBiblioteca();
                 if (Array.isArray(bibs) && bibs.length !== (DB.bibliotecas || []).length) {
                     DB.bibliotecas = bibs;
-                    if (document.getElementById('adminBibliotecas')?.classList.contains('active')) {
-                        renderBibliotecas();
-                    }
                 }
             } else if (currentUser.role === 'client' || currentUser.role === 'cliente') {
                 const myChats = await DB_SERVICE.getChat(currentUser.id);
@@ -1165,7 +1161,7 @@ function renderPedidos() {
                 const c = (DB.clientes || []).find(x => x.id == p.clienteId);
                 const servs = (p.servicos || []).map(id => (DB.servicos || []).find(s => s.id == id)?.nome).filter(Boolean).join(', ') || 'Sem serviços';
                 return `
-                    <div class="kanban-card" onclick="editarPedido('${p.id}')" style="background:#fff;border-radius:8px;padding:12px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,0.1);border-left:4px solid ${conf.color};cursor:pointer;">
+                    <div class="kanban-card" onclick="verDetalhesPedido('${p.id}')" style="background:#fff;border-radius:8px;padding:12px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,0.1);border-left:4px solid ${conf.color};cursor:pointer;">
                         <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
                             <strong style="font-size:13px;">#${p.id}</strong>
                             <small style="color:#64748b;">${formatDate(p.data)}</small>
@@ -3773,22 +3769,6 @@ function dragPedido(event, id) {
     event.currentTarget.classList.add('dragging');
 }
 
-// [restore b03a43a] excluirAudioBiblioteca
-async function excluirAudioBiblioteca(id) {
-    if (!confirm('Excluir este áudio da biblioteca?')) return;
-    const item = DB.bibliotecas.find(x => x.id === id);
-    if (!item) return;
-    DB.bibliotecas = DB.bibliotecas.filter(x => x.id !== id);
-    try {
-        if (item.docId || item.id) await DB_SERVICE.deleteBiblioteca(item.docId || item.id);
-        showToast('Áudio excluído!', 'success');
-    } catch (e) {
-        console.error(e);
-        showToast('Erro ao excluir o áudio.', 'error');
-    }
-    renderBibliotecas();
-}
-
 // [restore b03a43a] executarConfirmacaoPagamentoAdmin
 async function executarConfirmacaoPagamentoAdmin(m, chatKey, descontoAdmin) {
     if (!m || m.tipo !== 'comprovante') return;
@@ -4304,7 +4284,6 @@ function renderCurrentPage(page) {
         case 'adminFinanceiro': renderFinanceiro(); break;
         case 'adminChat': renderChatList(); break;
         case 'adminBiblioteca': renderBiblioteca(); break;
-        case 'adminBibliotecas': renderBibliotecas(); break;
         case 'adminClientes': renderClientes(); break;
         case 'adminConfig': preencherFormConfig(); break;
         case 'clientHome': renderClientDashboard(); break;
@@ -4768,10 +4747,52 @@ function verDetalhesPedido(id) {
     const p = DB.pedidos.find(x => String(x.id) === String(id));
     if (!p) return;
     const cliente = DB.clientes.find(c => String(c.id) === String(p.clienteId));
-    const servicos = (p.servicos || []).map(id => DB.servicos.find(s => String(s.id) === String(id))).filter(Boolean);
-    const materiais = (p.materiais || []).map(id => DB.materiais.find(m => String(m.id) === String(id))).filter(Boolean);
+    const servicos = (p.servicos || []).map(sid => DB.servicos.find(s => String(s.id) === String(sid))).filter(Boolean);
+    const materiais = (p.materiais || []).map(mid => DB.materiais.find(m => String(m.id) === String(mid))).filter(Boolean);
+    const qtdF = Number(p.qtdFaixas) || 1;
+    const audios = p.audios || [];
+
+    let itensHtml = '';
+    if (servicos.length) {
+        servicos.forEach(s => {
+            itensHtml += `
+            <div class="detalhe-item" style="align-items:flex-start;">
+                <div>
+                    <div style="font-weight:600;">${s.nome}</div>
+                    ${s.descricao ? `<small style="color:var(--text-muted); display:block; white-space:normal;">${s.descricao}</small>` : ''}
+                </div>
+                <strong>${formatCurrency(s.preco)}</strong>
+            </div>`;
+        });
+    }
+    if (materiais.length) {
+        materiais.forEach(m => {
+            itensHtml += `
+            <div class="detalhe-item" style="align-items:flex-start;">
+                <div>
+                    <div style="font-weight:600;">${m.nome}</div>
+                    ${m.descricao ? `<small style="color:var(--text-muted); display:block; white-space:normal;">${m.descricao}</small>` : ''}
+                </div>
+                ${m.preco <= 0 ? formatMaterialPrice(m) : `<strong>${formatCurrency(m.preco)}</strong>`}
+            </div>`;
+        });
+    }
+    if (!itensHtml) {
+        itensHtml = `<p style="color:var(--text-muted); font-size:13px; margin:0;">Nenhum serviço ou material listado.</p>`;
+    }
 
     let html = `
+        <div class="detalhe-section" style="border-left:4px solid var(--primary); background:rgba(108,92,231,0.06); border-radius:6px; padding:12px;">
+            <h4><i class="fas fa-clipboard-list"></i> O que foi pedido</h4>
+            <div class="detalhe-item"><span>Faixas solicitadas</span><strong>${qtdF}</strong></div>
+            ${itensHtml}
+            <div class="detalhe-item" style="margin-top:8px; border-top:1px dashed rgba(0,0,0,0.12); padding-top:8px;">
+                <span>Total</span>
+                <strong style="color:var(--primary); font-size:16px;">${formatCurrency(valorEsperadoPedido(p))}</strong>
+            </div>
+            ${p.desconto > 0 ? `<div class="detalhe-item"><span>Desconto</span><span style="color:var(--danger)">-${formatCurrency(p.desconto)}</span></div>` : ''}
+            ${p.condicao ? `<div class="detalhe-item"><span>Condição</span><span>${p.condicao}</span></div>` : ''}
+        </div>
         <div class="detalhe-section">
             <h4><i class="fas fa-user"></i> Cliente</h4>
             <div class="detalhe-item"><span>${cliente ? cliente.nome : 'N/A'}</span></div>
@@ -4784,9 +4805,6 @@ function verDetalhesPedido(id) {
             <div class="detalhe-item"><span>Status</span><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></div>
         </div>`;
 
-    // Seção de Áudios / MP3s do pedido (recebidos do cliente)
-    const audios = p.audios || [];
-    const qtdF = Number(p.qtdFaixas) || 1;
     html += `<div class="detalhe-section">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
             <h4><i class="fas fa-music"></i> Áudios / MP3s (${audios.length} de ${qtdF} faixas)</h4>
@@ -4798,7 +4816,7 @@ function verDetalhesPedido(id) {
         html += `<div style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;">`;
         audios.forEach((a, idx) => {
             const src = audioSrc(a);
-            const nome = a.nome || 'audio.mp3';
+            const nome = a.nome || a.arquivoNome || 'audio.mp3';
             html += `
             <div style="display:flex; align-items:center; gap:10px; background:var(--bg-lighter, #f1f2f6); padding:8px 12px; border-radius:6px;">
                 <i class="fas fa-file-audio" style="color:var(--primary-color, #6c5ce7); font-size:20px;"></i>
@@ -4816,27 +4834,12 @@ function verDetalhesPedido(id) {
     }
     html += `</div>`;
 
-    if (servicos.length) {
-        html += `<div class="detalhe-section"><h4><i class="fas fa-concierge-bell"></i> Serviços</h4>`;
-        servicos.forEach(s => {
-            html += `<div class="detalhe-item"><span>${s.nome}</span><strong>${formatCurrency(s.preco)}</strong></div>`;
-        });
-        html += `</div>`;
+    if (p.observacoes || p.descricao || p.detalhes) {
+        html += `<div class="detalhe-section">
+            <h4><i class="fas fa-sticky-note"></i> Observações</h4>
+            <p style="margin:0; font-size:13px; white-space:pre-wrap;">${p.observacoes || p.descricao || p.detalhes}</p>
+        </div>`;
     }
-
-    if (materiais.length) {
-        html += `<div class="detalhe-section"><h4><i class="fas fa-boxes"></i> Materiais</h4>`;
-        materiais.forEach(m => {
-            html += `<div class="detalhe-item"><span>${m.nome}</span>${m.preco <= 0 ? formatMaterialPrice(m) : `<strong>${formatCurrency(m.preco)}</strong>`}</div>`;
-        });
-        html += `</div>`;
-    }
-
-    if (p.desconto > 0) {
-        html += `<div class="detalhe-section"><div class="detalhe-item"><span>Desconto</span><span style="color:var(--danger)">-${formatCurrency(p.desconto)}</span></div></div>`;
-    }
-
-    html += `<div class="pedido-total"><span>Total do Pedido</span><strong>${formatCurrency(valorEsperadoPedido(p))}</strong></div>`;
 
     document.getElementById('detalhesPedidoContent').innerHTML = html;
     openModal('detalhesPedidoModal');
@@ -5837,136 +5840,6 @@ window.validateAudioFile = function(file) {
     return true;
 };
 
-window.enviarAudioBiblioteca = async function(input) {
-    if (!currentUser || currentUser.role !== 'client') return;
-    if (!input.files || input.files.length === 0) return;
-    
-    const file = input.files[0];
-    if (!validateAudioFile(file)) {
-        input.value = '';
-        return;
-    }
-    
-    showToast('Enviando áudio...', 'info');
-    
-    try {
-        let prep;
-        try {
-            prep = await prepararAudioPedido(file);
-        } catch (err) {
-            prep = { nome: file.name, base64: await fileToBase64(file), data: new Date().toISOString() };
-        }
-        const b64 = prep.url || prep.base64;
-        const audioObj = {
-            clienteId: currentUser.id,
-            arquivoNome: file.name,
-            audio: b64,
-            audioUrl: prep.url || '',
-            descricao: 'Enviado pelo Chat do Cliente',
-            duracao: 0,
-            data: new Date().toISOString().split('T')[0],
-            hora: new Date().toTimeString().slice(0, 5)
-        };
-        
-        DB.bibliotecas = DB.bibliotecas || [];
-        DB.bibliotecas.push(audioObj);
-        
-        if (DBReady) {
-            const docId = await DB_SERVICE.addBiblioteca(audioObj);
-            audioObj.id = (docId && docId.id) ? docId.id : docId;
-        }
-        
-        // Mensagem no chat para notificar o admin
-        const chatKey = 'admin_' + currentUser.id;
-        if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
-        
-        const msgData = {
-            tipo: 'audio',
-            remetente: 'client',
-            clienteId: currentUser.id,
-            arquivoNome: file.name,
-            audio: b64,
-            mensagem: '🎵 Enviei um novo arquivo de áudio (' + file.name + ')',
-            data: new Date().toISOString(),
-            lida: false
-        };
-        DB.chats[chatKey].push(msgData);
-        if (DBReady) {
-            const res = await DB_SERVICE.sendMessage(msgData);
-            if (res && res.id) msgData.id = res.id;
-        }
-        if (document.getElementById('chatMessagesClient')) renderClientChat();
-        
-        showToast('Áudio enviado com sucesso para o estúdio!', 'success');
-    } catch (err) {
-        console.error('Erro ao enviar áudio do cliente:', err);
-        showToast('Erro ao processar o áudio. Tente novamente.', 'error');
-    }
-
-    input.value = '';
-};
-
-window.renderBibliotecas = function() {
-    const selectCli = document.getElementById('biblioFiltroCliente');
-    if (selectCli && selectCli.options.length <= 1) {
-        selectCli.innerHTML = '<option value="">Todos os clientes</option>' + DB.clientes.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
-    }
-    const list = document.getElementById('bibliotecasBody');
-    if (!list) return;
-    
-    let dados = DB.bibliotecas || [];
-    
-    const filtroCli = document.getElementById('biblioFiltroCliente')?.value;
-    if (filtroCli) {
-        dados = dados.filter(b => b.clienteId == filtroCli);
-    }
-    
-    const dtInicio = document.getElementById('biblioDataInicio')?.value;
-    const dtFim = document.getElementById('biblioDataFim')?.value;
-    if (dtInicio) dados = dados.filter(b => b.data >= dtInicio);
-    if (dtFim) dados = dados.filter(b => b.data <= dtFim);
-    
-    const busca = document.getElementById('biblioBusca')?.value?.toLowerCase();
-    if (busca) {
-        dados = dados.filter(b => b.arquivoNome.toLowerCase().includes(busca) || b.descricao.toLowerCase().includes(busca));
-    }
-    
-    if (dados.length === 0) {
-        list.innerHTML = '<tr><td colspan="5" class="text-center">Nenhum áudio encontrado.</td></tr>';
-        return;
-    }
-    
-    list.innerHTML = dados.map(b => {
-        const cliente = DB.clientes.find(c => c.id === b.clienteId);
-        const cliNome = cliente ? cliente.nome : 'Desconhecido';
-        return `
-        <tr>
-            <td>${cliNome}</td>
-            <td>
-                <strong>${b.arquivoNome}</strong>
-                <br><small class="text-muted">${b.descricao}</small>
-            </td>
-            <td>${formatDate(b.data)} ${b.hora || ''}</td>
-            <td>
-                ${b.audio ? `<audio controls src="${b.audio}" style="height:30px;width:150px;"></audio>` : '-'}
-            </td>
-            <td>
-                ${b.audio ? `<a href="${b.audio}" download="${b.arquivoNome}" class="btn-icon" title="Baixar"><i class="fas fa-download"></i></a>` : ''}
-                <button class="btn-icon text-danger" onclick="excluirBibliotecaAudio(${b.id})" title="Excluir"><i class="fas fa-trash"></i></button>
-            </td>
-        </tr>
-        `;
-    }).join('');
-};
-
-window.excluirBibliotecaAudio = async function(id) {
-    if(!confirm('Excluir este áudio da biblioteca?')) return;
-    DB.bibliotecas = DB.bibliotecas.filter(x => x.id !== id);
-    if(DBReady) await DB_SERVICE.deleteBiblioteca(id);
-    renderBibliotecas();
-    showToast('Áudio excluído!', 'success');
-};
-
 window.mascaraMoedaBR = function(i) {
         let v = i.value.replace(/\D/g, '');
         v = (v / 100).toFixed(2) + '';
@@ -6006,6 +5879,10 @@ window.prepareClientPedidoModal = prepareClientPedidoModal;
 window.updateClientPedidoTotal = updateClientPedidoTotal;
 window.atualizarCondicaoClient = atualizarCondicaoClient;
 window.verDetalhesPedidoClient = verDetalhesPedidoClient;
+window.verDetalhesPedido = verDetalhesPedido;
+window.editarPedido = editarPedido;
+window.excluirPedido = excluirPedido;
+window.salvarPedido = salvarPedido;
 window.limitAudiosClient = limitAudiosClient;
 window.valoresPedidoClient = valoresPedidoClient;
 

@@ -147,9 +147,6 @@
                     <i class="fas fa-comments"></i><span>Chat</span>
                     <span class="badge" id="chatBadge">0</span>
                 </a>
-                <a href="#" class="nav-item" data-page="adminBibliotecas">
-                    <i class="fas fa-compact-disc"></i><span>Áudios Avulsos</span>
-                </a>
                 <a href="#" class="nav-item" data-page="adminClientes">
                     <i class="fas fa-users"></i><span>Clientes</span>
                 </a>
@@ -529,35 +526,6 @@
                                 </button>
                             </div>
                         </div>
-                    </div>
-                </div>
-
-                <!-- BIBLIOTECA DE ÁUDIOS -->
-                <div class="page" id="adminBibliotecas">
-                    <div class="page-header">
-                        <h2>Áudios Avulsos (Enviados via Chat)</h2>
-                    </div>
-                    <div class="filter-bar">
-                        <select id="biblioFiltroCliente" onchange="renderBibliotecas()">
-                            <option value="">Todos os clientes</option>
-                        </select>
-                        <input type="date" id="biblioDataInicio" onchange="renderBibliotecas()">
-                        <input type="date" id="biblioDataFim" onchange="renderBibliotecas()">
-                        <input type="text" id="biblioBusca" placeholder="Buscar por arquivo..." oninput="renderBibliotecas()">
-                    </div>
-                    <div class="table-container">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Cliente</th>
-                                    <th>Arquivo</th>
-                                    <th>Data / Hora</th>
-                                    <th>Áudio</th>
-                                    <th>Ações</th>
-                                </tr>
-                            </thead>
-                            <tbody id="bibliotecasBody"></tbody>
-                        </table>
                     </div>
                 </div>
 
