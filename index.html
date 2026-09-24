@@ -378,6 +378,7 @@
                                     <th>Cliente</th>
                                     <th>Serviços</th>
                                     <th>Total</th>
+                                    <th>Pagamento</th>
                                     <th>Status</th>
                                     <th>Data</th>
                                     <th>Ações</th>
@@ -556,79 +557,434 @@
 
                 <!-- CONFIGURAÇÕES -->
                 <div class="page" id="adminConfig">
-                    <div class="page-header">
-                        <h2>Configurações do Sistema</h2>
+                    <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+                        <div>
+                            <h2>Configurações do Sistema</h2>
+                            <p class="page-subtitle" style="font-size:13px;color:var(--dark-light);margin-top:2px;">
+                                Personalize estilos de tela, modelos de design, cores de cards e identidade do estúdio
+                            </p>
+                        </div>
                         <div class="page-header-actions">
-                            <button class="btn-secondary" onclick="restaurarConfigPadrao()"><i class="fas fa-undo"></i> Padrão</button>
-                            <button class="btn-primary" onclick="salvarConfig()"><i class="fas fa-save"></i> Salvar</button>
+                            <button class="btn-secondary" onclick="restaurarConfigPadrao()"><i class="fas fa-undo"></i> Restaurar Padrão</button>
+                            <button class="btn-primary" onclick="salvarConfig()"><i class="fas fa-save"></i> Salvar Alterações</button>
                         </div>
                     </div>
                     <div class="settings-grid">
-                        <div class="card">
-                            <div class="card-header"><h3><i class="fas fa-pen"></i> Identidade</h3></div>
+                        <!-- PRÉ-VISUALIZAÇÃO EM TEMPO REAL -->
+                        <div class="card settings-preview-card" style="grid-column: 1 / -1;">
+                            <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+                                <h3><i class="fas fa-eye"></i> Pré-visualização do Design em Tempo Real</h3>
+                                <span class="preview-badge" id="previewResumoBadge">Estilo: Papel Vintage · Cards: Papel Creme · Cantos: Arredondado</span>
+                            </div>
                             <div class="card-body">
-                                <div class="form-group">
-                                    <label>Título do App</label>
-                                    <input type="text" id="configTitulo" maxlength="40" placeholder="Ex.: FPS Studio">
-                                    <small class="field-hint">Aparece no login e na barra lateral.</small>
+                                <div class="preview-stage-container" id="configLivePreviewStage">
+                                    <div class="mini-app-screen" id="miniAppScreen">
+                                        <div class="mini-topbar">
+                                            <div class="mini-brand"><i class="fas fa-microphone-alt"></i> <span id="miniBrandNome">FPS Studio</span></div>
+                                            <div class="mini-topbar-actions">
+                                                <span class="mini-pill"><i class="fas fa-clock"></i> 14:30</span>
+                                                <span class="mini-pill"><i class="fas fa-palette"></i> Studio Pro</span>
+                                            </div>
+                                        </div>
+                                        <div class="mini-content-grid">
+                                            <!-- Mini Stat Card -->
+                                            <div class="mini-stat-card">
+                                                <div class="mini-stat-icon"><i class="fas fa-chart-line"></i></div>
+                                                <div class="mini-stat-info">
+                                                    <span class="mini-stat-label">Faturamento do Mês</span>
+                                                    <strong class="mini-stat-val">R$ 14.850,00</strong>
+                                                    <small class="mini-stat-sub"><i class="fas fa-arrow-up"></i> +18.4% este mês</small>
+                                                </div>
+                                            </div>
+                                            <!-- Mini Kanban Pedido Card -->
+                                            <div class="mini-kanban-card">
+                                                <div class="mini-card-top">
+                                                    <span class="mini-pedido-id">Pedido #1042</span>
+                                                    <span class="mini-status-badge">Em Andamento</span>
+                                                </div>
+                                                <h4 class="mini-pedido-titulo">Gravação e Mixagem EP</h4>
+                                                <p class="mini-pedido-cliente"><i class="fas fa-user"></i> Roberto Mendes · 4 faixas</p>
+                                                <div class="mini-card-bottom">
+                                                    <strong class="mini-pedido-valor">R$ 1.800,00</strong>
+                                                    <div class="mini-card-btns">
+                                                        <button class="mini-btn-secondary" type="button"><i class="fas fa-eye"></i> Ver</button>
+                                                        <button class="mini-btn-primary" type="button"><i class="fas fa-check"></i> Avançar</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <!-- Mini Controles -->
+                                            <div class="mini-controls-card">
+                                                <div class="mini-card-top">
+                                                    <span class="mini-section-label">Ações & Filtros</span>
+                                                </div>
+                                                <div class="mini-btn-row">
+                                                    <button class="mini-btn-primary" type="button"><i class="fas fa-plus"></i> Novo Pedido</button>
+                                                    <button class="mini-btn-secondary" type="button"><i class="fas fa-filter"></i> Filtrar</button>
+                                                </div>
+                                                <div class="mini-tag-row">
+                                                    <span class="mini-tag active">Voz</span>
+                                                    <span class="mini-tag">Mastering</span>
+                                                    <span class="mini-tag">Podcast</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <p class="field-hint" style="margin-top:10px;text-align:center;">
+                                    <i class="fas fa-magic"></i> Clique em qualquer estilo, modelo ou cor abaixo para testar e ver a interface se transformar instantaneamente.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- 1. ESTILOS DE TELA -->
+                        <div class="card" style="grid-column: 1 / -1;">
+                            <div class="card-header">
+                                <h3><i class="fas fa-desktop"></i> Estilos de Tela (Ambiente Visual do Estúdio)</h3>
+                            </div>
+                            <div class="card-body">
+                                <p class="field-hint" style="margin-bottom:12px;">
+                                    Selecione a atmosfera geral para o estúdio. O estilo altera os fundos, a textura de mesa e a iluminação global.
+                                </p>
+                                <input type="hidden" id="configEstiloTela" value="papel">
+                                <div class="visual-picker-grid" id="pickerEstilosTela">
+                                    <div class="visual-picker-tile" data-estilo="papel" onclick="selecionarEstiloTela('papel')">
+                                        <div class="tile-icon-header">
+                                            <i class="fas fa-scroll tile-main-icon" style="color:#d4af37;"></i>
+                                            <span class="tile-check"><i class="fas fa-check"></i></span>
+                                        </div>
+                                        <div class="tile-info">
+                                            <h4>Papel Pergaminho</h4>
+                                            <p>Textura amarelada analógica clássica, aconchegante e vintage de estúdio.</p>
+                                        </div>
+                                        <div class="tile-visual-swatch" style="background: linear-gradient(135deg, #fdf6e3, #efe3c0); border-color:#d4c49a;"></div>
+                                    </div>
+
+                                    <div class="visual-picker-tile" data-estilo="padrao" onclick="selecionarEstiloTela('padrao')">
+                                        <div class="tile-icon-header">
+                                            <i class="fas fa-layer-group tile-main-icon" style="color:#6c5ce7;"></i>
+                                            <span class="tile-check"><i class="fas fa-check"></i></span>
+                                        </div>
+                                        <div class="tile-info">
+                                            <h4>Studio Moderno</h4>
+                                            <p>Interface contemporânea, limpa e profissional com superfícies nítidas.</p>
+                                        </div>
+                                        <div class="tile-visual-swatch" style="background: linear-gradient(135deg, #ffffff, #f4f6fa); border-color:#dfe6e9;"></div>
+                                    </div>
+
+                                    <div class="visual-picker-tile" data-estilo="cyber" onclick="selecionarEstiloTela('cyber')">
+                                        <div class="tile-icon-header">
+                                            <i class="fas fa-terminal tile-main-icon" style="color:#00cec9;"></i>
+                                            <span class="tile-check"><i class="fas fa-check"></i></span>
+                                        </div>
+                                        <div class="tile-info">
+                                            <h4>Cyber Dark Neon</h4>
+                                            <p>Obsidian escuro com contornos luminosos ciano e roxo synthwave.</p>
+                                        </div>
+                                        <div class="tile-visual-swatch" style="background: linear-gradient(135deg, #090a12, #16182a); border-color:#00cec9;"></div>
+                                    </div>
+
+                                    <div class="visual-picker-tile" data-estilo="luxo" onclick="selecionarEstiloTela('luxo')">
+                                        <div class="tile-icon-header">
+                                            <i class="fas fa-gem tile-main-icon" style="color:#d4af37;"></i>
+                                            <span class="tile-check"><i class="fas fa-check"></i></span>
+                                        </div>
+                                        <div class="tile-info">
+                                            <h4>Luxo Acústico</h4>
+                                            <p>Tons nobres de madeira, veludo acústico e detalhes sofisticados em ouro.</p>
+                                        </div>
+                                        <div class="tile-visual-swatch" style="background: linear-gradient(135deg, #241e1a, #161210); border-color:#d4af37;"></div>
+                                    </div>
+
+                                    <div class="visual-picker-tile" data-estilo="nordico" onclick="selecionarEstiloTela('nordico')">
+                                        <div class="tile-icon-header">
+                                            <i class="fas fa-feather-alt tile-main-icon" style="color:#3498db;"></i>
+                                            <span class="tile-check"><i class="fas fa-check"></i></span>
+                                        </div>
+                                        <div class="tile-info">
+                                            <h4>Minimalista Nórdico</h4>
+                                            <p>Tons suaves de ardósia e neve, espaçoso, calmo e extremamente legível.</p>
+                                        </div>
+                                        <div class="tile-visual-swatch" style="background: linear-gradient(135deg, #f8fafc, #edf2f7); border-color:#cbd5e0;"></div>
+                                    </div>
+
+                                    <div class="visual-picker-tile" data-estilo="retro" onclick="selecionarEstiloTela('retro')">
+                                        <div class="tile-icon-header">
+                                            <i class="fas fa-sliders-h tile-main-icon" style="color:#e67e22;"></i>
+                                            <span class="tile-check"><i class="fas fa-check"></i></span>
+                                        </div>
+                                        <div class="tile-info">
+                                            <h4>Console Analógico 80s</h4>
+                                            <p>Vibe de mesas de som clássicas analógicas com indicadores quentes.</p>
+                                        </div>
+                                        <div class="tile-visual-swatch" style="background: linear-gradient(135deg, #f2ecd9, #e0d7c2); border-color:#c4b796;"></div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                        <div class="card">
-                            <div class="card-header"><h3><i class="fas fa-palette"></i> Aparência</h3></div>
+
+                        <!-- 2. CORES E MODELOS DE CARDS -->
+                        <div class="card" style="grid-column: 1 / -1;">
+                            <div class="card-header">
+                                <h3><i class="fas fa-clone"></i> Cores e Modelos de Cards</h3>
+                            </div>
                             <div class="card-body">
+                                <p class="field-hint" style="margin-bottom:12px;">
+                                    Personalize o acabamento e estilo visual de todos os cards de pedidos (Kanban), cards de estatísticas, catálogo e formulários.
+                                </p>
+                                <input type="hidden" id="configEstiloCard" value="papel-creme">
+                                <div class="visual-picker-grid" id="pickerEstilosCard">
+                                    <div class="visual-picker-tile" data-card="papel-creme" onclick="selecionarEstiloCard('papel-creme')">
+                                        <div class="tile-icon-header">
+                                            <i class="fas fa-file-invoice tile-main-icon" style="color:#d4af37;"></i>
+                                            <span class="tile-check"><i class="fas fa-check"></i></span>
+                                        </div>
+                                        <div class="tile-info">
+                                            <h4>Papel Creme / Marfim</h4>
+                                            <p>Fichas de estúdio em tom marfim claro, textura de prancheta e bordas douradas.</p>
+                                        </div>
+                                        <div class="tile-visual-swatch" style="background: linear-gradient(160deg, #fffef9, #faf3de); border-color:#d9caa1;"></div>
+                                    </div>
+
+                                    <div class="visual-picker-tile" data-card="neutro" onclick="selecionarEstiloCard('neutro')">
+                                        <div class="tile-icon-header">
+                                            <i class="fas fa-square tile-main-icon" style="color:#6c5ce7;"></i>
+                                            <span class="tile-check"><i class="fas fa-check"></i></span>
+                                        </div>
+                                        <div class="tile-info">
+                                            <h4>Neutro Coerente</h4>
+                                            <p>Visual limpo e tradicional que se adapta harmoniosamente ao modo claro ou escuro.</p>
+                                        </div>
+                                        <div class="tile-visual-swatch" style="background: #ffffff; border-color:#dfe6e9;"></div>
+                                    </div>
+
+                                    <div class="visual-picker-tile" data-card="borda-acento" onclick="selecionarEstiloCard('borda-acento')">
+                                        <div class="tile-icon-header">
+                                            <i class="fas fa-tag tile-main-icon" style="color:#00cec9;"></i>
+                                            <span class="tile-check"><i class="fas fa-check"></i></span>
+                                        </div>
+                                        <div class="tile-info">
+                                            <h4>Borda de Destaque</h4>
+                                            <p>Faixa colorida superior correspondente ao status do pedido e cor do tema.</p>
+                                        </div>
+                                        <div class="tile-visual-swatch" style="background: #ffffff; border-top: 4px solid var(--primary); border-color:#dfe6e9;"></div>
+                                    </div>
+
+                                    <div class="visual-picker-tile" data-card="gradiente" onclick="selecionarEstiloCard('gradiente')">
+                                        <div class="tile-icon-header">
+                                            <i class="fas fa-palette tile-main-icon" style="color:#e84393;"></i>
+                                            <span class="tile-check"><i class="fas fa-check"></i></span>
+                                        </div>
+                                        <div class="tile-info">
+                                            <h4>Gradiente Suave</h4>
+                                            <p>Transição degradê moderna e elegante com brilho suave e bordas refinadas.</p>
+                                        </div>
+                                        <div class="tile-visual-swatch" style="background: linear-gradient(135deg, #ffffff 0%, rgba(108,92,231,0.12) 100%); border-color: rgba(108,92,231,0.3);"></div>
+                                    </div>
+
+                                    <div class="visual-picker-tile" data-card="onix-glass" onclick="selecionarEstiloCard('onix-glass')">
+                                        <div class="tile-icon-header">
+                                            <i class="fas fa-glass-whiskey tile-main-icon" style="color:#74b9ff;"></i>
+                                            <span class="tile-check"><i class="fas fa-check"></i></span>
+                                        </div>
+                                        <div class="tile-info">
+                                            <h4>Ônix Glass</h4>
+                                            <p>Vidro fosco translúcido (Glassmorphism) com reflexos sutis de alta tecnologia.</p>
+                                        </div>
+                                        <div class="tile-visual-swatch" style="background: rgba(255,255,255,0.7); backdrop-filter:blur(6px); border-color:rgba(255,255,255,0.8);"></div>
+                                    </div>
+
+                                    <div class="visual-picker-tile" data-card="status-color" onclick="selecionarEstiloCard('status-color')">
+                                        <div class="tile-icon-header">
+                                            <i class="fas fa-traffic-light tile-main-icon" style="color:#00b894;"></i>
+                                            <span class="tile-check"><i class="fas fa-check"></i></span>
+                                        </div>
+                                        <div class="tile-info">
+                                            <h4>Status Dinâmico</h4>
+                                            <p>O fundo do card ganha matiz inteligente suave de acordo com a etapa do pedido.</p>
+                                        </div>
+                                        <div class="tile-visual-swatch" style="background: linear-gradient(90deg, rgba(253,203,110,0.3), rgba(108,92,231,0.2), rgba(0,184,148,0.3)); border-color:#dfe6e9;"></div>
+                                    </div>
+
+                                    <div class="visual-picker-tile" data-card="custom" onclick="selecionarEstiloCard('custom')">
+                                        <div class="tile-icon-header">
+                                            <i class="fas fa-eye-dropper tile-main-icon" style="color:#fd79a8;"></i>
+                                            <span class="tile-check"><i class="fas fa-check"></i></span>
+                                        </div>
+                                        <div class="tile-info">
+                                            <h4>Cor Personalizada</h4>
+                                            <p>Defina livremente a cor de fundo dos cards com ajuste automático de contraste.</p>
+                                        </div>
+                                        <div class="tile-visual-swatch" id="cardCustomSwatchPreview" style="background: #ffffff; border-color:#dfe6e9;"></div>
+                                    </div>
+                                </div>
+
+                                <!-- Linha de seleção de cor customizada do card -->
+                                <div class="form-group" id="linhaCorCardCustom" style="display:none; margin-top:14px; padding:12px; background:var(--bg); border-radius:var(--radius); border:1px solid var(--gray-light);">
+                                    <label><strong>Cor de fundo personalizada dos Cards:</strong></label>
+                                    <div class="color-row" style="margin-top:6px; display:flex; align-items:center; gap:10px;">
+                                        <input type="color" id="configCorCardCustom" value="#ffffff" onchange="sincronizarColorPickerCard(this.value)">
+                                        <input type="text" id="configCorCardCustomHex" value="#ffffff" maxlength="7" style="width:105px;font-family:monospace;" oninput="sincronizarHexCard(this.value)">
+                                        <span id="configCorCardSwatch" style="width:28px;height:28px;border-radius:6px;display:inline-block;border:1px solid #ccc;background:#ffffff;"></span>
+                                        <button class="btn-secondary btn-sm" type="button" onclick="atualizarVisualConfig()"><i class="fas fa-sync"></i> Aplicar Prévia</button>
+                                    </div>
+                                    <small class="field-hint" style="margin-top:4px;">A cor do texto dos cards se ajusta automaticamente para garantir legibilidade perfeita.</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 3. MODELOS DE DESIGN DE INTERFACE -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-shapes"></i> Modelos de Design da Interface</h3>
+                            </div>
+                            <div class="card-body">
+                                <!-- Curvatura dos Cantos -->
                                 <div class="form-group">
-                                    <label>Tema de cores</label>
-                                    <select id="configTema" onchange="atualizarVisualConfig()">
-                                        <option value="padrao">Padrão (Roxo)</option>
-                                        <option value="neon">Neon (Ciano)</option>
-                                        <option value="oceano">Oceano (Azul)</option>
-                                        <option value="esmeralda">Esmeralda (Verde)</option>
-                                        <option value="solar">Solar (Âmbar)</option>
-                                        <option value="rosa">Rosa</option>
+                                    <label><strong>Curvatura dos Cantos (Border Radius):</strong></label>
+                                    <input type="hidden" id="configDesignRadius" value="arredondado">
+                                    <div class="chips-selector" id="selectorDesignRadius">
+                                        <button type="button" class="chip-btn" data-val="arredondado" onclick="selecionarDesignRadius('arredondado')">
+                                            <i class="fas fa-circle-notch"></i> Arredondado (16px)
+                                        </button>
+                                        <button type="button" class="chip-btn" data-val="suave" onclick="selecionarDesignRadius('suave')">
+                                            <i class="fas fa-square"></i> Suave (10px)
+                                        </button>
+                                        <button type="button" class="chip-btn" data-val="reto" onclick="selecionarDesignRadius('reto')">
+                                            <i class="fas fa-stop"></i> Reto / Técnico (3px)
+                                        </button>
+                                        <button type="button" class="chip-btn" data-val="pilula" onclick="selecionarDesignRadius('pilula')">
+                                            <i class="fas fa-capsules"></i> Pílula (24px)
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Densidade -->
+                                <div class="form-group" style="margin-top:14px;">
+                                    <label><strong>Densidade da Interface:</strong></label>
+                                    <input type="hidden" id="configDesignDensidade" value="normal">
+                                    <div class="chips-selector" id="selectorDesignDensidade">
+                                        <button type="button" class="chip-btn" data-val="confortavel" onclick="selecionarDesignDensidade('confortavel')">
+                                            <i class="fas fa-couch"></i> Confortável (Arejado)
+                                        </button>
+                                        <button type="button" class="chip-btn" data-val="normal" onclick="selecionarDesignDensidade('normal')">
+                                            <i class="fas fa-balance-scale"></i> Normal (Equilibrado)
+                                        </button>
+                                        <button type="button" class="chip-btn" data-val="compacto" onclick="selecionarDesignDensidade('compacto')">
+                                            <i class="fas fa-compress-arrows-alt"></i> Compacto Pro (Mais dados)
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Superfície -->
+                                <div class="form-group" style="margin-top:14px;">
+                                    <label><strong>Efeito de Superfície & Sombras:</strong></label>
+                                    <input type="hidden" id="configDesignSuperficie" value="elevado">
+                                    <div class="chips-selector" id="selectorDesignSuperficie">
+                                        <button type="button" class="chip-btn" data-val="elevado" onclick="selecionarDesignSuperficie('elevado')">
+                                            <i class="fas fa-cloud"></i> Profundidade 3D
+                                        </button>
+                                        <button type="button" class="chip-btn" data-val="vidro" onclick="selecionarDesignSuperficie('vidro')">
+                                            <i class="fas fa-tint"></i> Vidro Fosco
+                                        </button>
+                                        <button type="button" class="chip-btn" data-val="flat" onclick="selecionarDesignSuperficie('flat')">
+                                            <i class="fas fa-minus"></i> Flat Minimalista
+                                        </button>
+                                        <button type="button" class="chip-btn" data-val="glow" onclick="selecionarDesignSuperficie('glow')">
+                                            <i class="fas fa-lightbulb"></i> Contorno Glow
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 4. PALETA DE CORES DE ACENTO -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-palette"></i> Paleta de Cores de Acento</h3>
+                            </div>
+                            <div class="card-body">
+                                <label><strong>Cores de Destaque do Estúdio:</strong></label>
+                                <div class="palette-swatches" id="paletteSwatchesContainer">
+                                    <button type="button" class="palette-btn" data-tema="padrao" style="background:#6c5ce7;" title="Roxo Studio" onclick="selecionarTemaCor('padrao')"></button>
+                                    <button type="button" class="palette-btn" data-tema="neon" style="background:#00cec9;" title="Neon Ciano" onclick="selecionarTemaCor('neon')"></button>
+                                    <button type="button" class="palette-btn" data-tema="oceano" style="background:#0984e3;" title="Oceano Azul" onclick="selecionarTemaCor('oceano')"></button>
+                                    <button type="button" class="palette-btn" data-tema="esmeralda" style="background:#00b894;" title="Esmeralda Verde" onclick="selecionarTemaCor('esmeralda')"></button>
+                                    <button type="button" class="palette-btn" data-tema="solar" style="background:#f39c12;" title="Solar Âmbar" onclick="selecionarTemaCor('solar')"></button>
+                                    <button type="button" class="palette-btn" data-tema="rosa" style="background:#e84393;" title="Rosa Vibrante" onclick="selecionarTemaCor('rosa')"></button>
+                                    <button type="button" class="palette-btn" data-tema="ouro" style="background:#d4af37;" title="Ouro Nobre" onclick="selecionarTemaCor('ouro')"></button>
+                                    <button type="button" class="palette-btn" data-tema="rubro" style="background:#e74c3c;" title="Vermelho Rubro" onclick="selecionarTemaCor('rubro')"></button>
+                                    <button type="button" class="palette-btn" data-tema="custom" style="background:conic-gradient(red, yellow, lime, aqua, blue, magenta, red);" title="Personalizado" onclick="selecionarTemaCor('custom')"></button>
+                                </div>
+
+                                <div class="form-group" style="margin-top:10px;">
+                                    <label>Tema no Menu</label>
+                                    <select id="configTema" onchange="selecionarTemaCor(this.value)">
+                                        <option value="padrao">Padrão (Roxo Studio - #6c5ce7)</option>
+                                        <option value="neon">Neon Ciano (#00cec9)</option>
+                                        <option value="oceano">Oceano Azul (#0984e3)</option>
+                                        <option value="esmeralda">Esmeralda Verde (#00b894)</option>
+                                        <option value="solar">Solar Âmbar (#f39c12)</option>
+                                        <option value="rosa">Rosa Vibrante (#e84393)</option>
+                                        <option value="ouro">Ouro Nobre (#d4af37)</option>
+                                        <option value="rubro">Vermelho Rubro (#e74c3c)</option>
                                         <option value="custom">Cor personalizada</option>
                                     </select>
                                 </div>
-                                <div class="form-group" id="linhaCorCustom" style="display:none">
+                                <div class="form-group" id="linhaCorCustom" style="display:none; margin-top:10px;">
                                     <label>Cor personalizada</label>
-                                    <div class="color-row">
-                                        <input type="color" id="configCorCustom" value="#6c5ce7" onchange="atualizarVisualConfig()">
-                                        <span id="configCorSwatch"></span>
-                                        <button class="btn-secondary btn-sm" onclick="aplicarCorConfig()"><i class="fas fa-check"></i> Aplicar</button>
+                                    <div class="color-row" style="display:flex;align-items:center;gap:10px;">
+                                        <input type="color" id="configCorCustom" value="#6c5ce7" onchange="sincronizarColorPickerPrimary(this.value)">
+                                        <input type="text" id="configCorCustomHex" value="#6c5ce7" maxlength="7" style="width:105px;font-family:monospace;" oninput="sincronizarHexPrimary(this.value)">
+                                        <span id="configCorSwatch" style="width:28px;height:28px;border-radius:6px;display:inline-block;border:1px solid #ccc;background:#6c5ce7;"></span>
+                                        <button class="btn-secondary btn-sm" type="button" onclick="aplicarCorConfig()"><i class="fas fa-check"></i> Aplicar</button>
                                     </div>
                                 </div>
-                                <div class="form-group switch-group">
+                                <div class="form-group switch-group" style="margin-top:14px;">
                                     <label class="switch-label" for="configDark">Modo escuro padrão</label>
                                     <label class="switch">
-                                        <input type="checkbox" id="configDark">
+                                        <input type="checkbox" id="configDark" onchange="atualizarVisualConfig()">
                                         <span class="slider"></span>
                                     </label>
                                 </div>
-                                <div class="config-preview">
-                                    <span class="field-hint">Pré-visualização da cor</span>
-                                    <div class="config-preview-bar" id="configPreviewCor"></div>
+                                <div class="config-preview" style="margin-top:10px;">
+                                    <span class="field-hint">Barra de Acento Primário</span>
+                                    <div class="config-preview-bar" id="configPreviewCor" style="height:6px;border-radius:3px;margin-top:4px;"></div>
                                 </div>
                             </div>
                         </div>
+
+                        <!-- 5. TIPOGRAFIA -->
                         <div class="card">
-                            <div class="card-header"><h3><i class="fas fa-font"></i> Tipografia</h3></div>
+                            <div class="card-header"><h3><i class="fas fa-font"></i> Tipografia & Fonte</h3></div>
                             <div class="card-body">
                                 <div class="form-group">
-                                    <label>Fonte</label>
-                                    <select id="configFonte">
-                                        <option value="Inter">Inter</option>
-                                        <option value="Poppins">Poppins</option>
-                                        <option value="Roboto">Roboto</option>
-                                        <option value="Montserrat">Montserrat</option>
-                                        <option value="Open Sans">Open Sans</option>
-                                        <option value="Lato">Lato</option>
-                                        <option value="Segoe UI">Segoe UI</option>
-                                        <option value="Arial">Arial</option>
+                                    <label>Fonte Principal</label>
+                                    <select id="configFonte" onchange="atualizarVisualConfig()">
+                                        <option value="Inter">Inter (Moderna & Tecnológica)</option>
+                                        <option value="Poppins">Poppins (Geométrica & Elegante)</option>
+                                        <option value="Roboto">Roboto (Clássica & Nítida)</option>
+                                        <option value="Montserrat">Montserrat (Marcante Studio)</option>
+                                        <option value="Open Sans">Open Sans (Neutra & Leve)</option>
+                                        <option value="Lato">Lato (Harmônica)</option>
+                                        <option value="Segoe UI">Segoe UI (Sistema)</option>
+                                        <option value="Arial">Arial (Padrão)</option>
                                     </select>
                                 </div>
-                                <div class="form-group">
+                                <div class="form-group" style="margin-top:12px;">
                                     <label>Tamanho da fonte: <strong id="configFontSizeVal">14px</strong></label>
-                                    <input type="range" id="configFontSize" min="12" max="18" step="0.5" oninput="document.getElementById('configFontSizeVal').textContent = this.value + 'px'">
+                                    <input type="range" id="configFontSize" min="12" max="18" step="0.5" oninput="document.getElementById('configFontSizeVal').textContent = this.value + 'px'; atualizarVisualConfig();">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 6. IDENTIDADE -->
+                        <div class="card">
+                            <div class="card-header"><h3><i class="fas fa-pen"></i> Identidade do Estúdio</h3></div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <label>Título do App</label>
+                                    <input type="text" id="configTitulo" maxlength="40" placeholder="Ex.: FPS Studio" oninput="atualizarVisualConfig()">
+                                    <small class="field-hint">Aparece no login, topo e na barra lateral.</small>
                                 </div>
                             </div>
                         </div>
@@ -910,6 +1266,7 @@
                                     <th>Serviços</th>
                                     <th>Materiais</th>
                                     <th>Total</th>
+                                    <th>Pagamento</th>
                                     <th>Status</th>
                                     <th>Data</th>
                                     <th>Ações</th>
@@ -1117,9 +1474,42 @@
                     <label>Materiais</label>
                     <div class="checkbox-group" id="pedidoMateriais"></div>
                 </div>
+                <div class="form-group">
+                    <label>Condição de Pagamento</label>
+                    <div class="condicao-pagamento condicao-pagamento-3">
+                        <label class="condicao-option" for="adminCondVista">
+                            <input type="radio" name="adminPedidoCondicao" id="adminCondVista" value="vista" checked onchange="updatePedidoTotal()">
+                            <div class="condicao-card">
+                                <span class="condicao-titulo"><i class="fas fa-hand-holding-usd"></i> À vista</span>
+                                <span class="condicao-desc" id="adminCondVistaDesc">Com desconto</span>
+                                <strong id="adminCondVistaValor">R$ 0,00</strong>
+                            </div>
+                        </label>
+                        <label class="condicao-option" for="adminCondMeta">
+                            <input type="radio" name="adminPedidoCondicao" id="adminCondMeta" value="metade" onchange="updatePedidoTotal()">
+                            <div class="condicao-card">
+                                <span class="condicao-titulo"><i class="fas fa-sync-alt"></i> 50% + 50%</span>
+                                <span class="condicao-desc">50% entrada + 50% depois</span>
+                                <strong id="adminCondMetaValor">R$ 0,00</strong>
+                            </div>
+                        </label>
+                        <label class="condicao-option" for="adminCondIntegral">
+                            <input type="radio" name="adminPedidoCondicao" id="adminCondIntegral" value="integral" onchange="updatePedidoTotal()">
+                            <div class="condicao-card">
+                                <span class="condicao-titulo"><i class="fas fa-money-bill-wave"></i> Integral</span>
+                                <span class="condicao-desc">Sem desconto à vista</span>
+                                <strong id="adminCondIntegralValor">R$ 0,00</strong>
+                            </div>
+                        </label>
+                    </div>
+                </div>
                 <div class="form-row">
+                    <div class="form-group" id="grupoDescontoPctAdmin">
+                        <label>% Desconto à Vista</label>
+                        <input type="number" id="pedidoDescontoPct" min="0" max="100" step="1" value="10" placeholder="10" oninput="updatePedidoTotal()">
+                    </div>
                     <div class="form-group">
-                        <label>Desconto (R$)</label>
+                        <label>Desconto Adicional (R$)</label>
                         <input type="text" id="pedidoDesconto" inputmode="decimal" value="0" placeholder="0,00" oninput="mascaraMoedaBR(this); updatePedidoTotal()">
                     </div>
                     <div class="form-group">
@@ -1152,12 +1542,22 @@
                         <label>Hora Final</label>
                         <input type="time" id="pedidoHoraFinal" onchange="validarHorarioEstudio(document.getElementById('pedidoHoraInicial').value, this.value)">
                     </div>
-                
-                    
+                </div>
+                <div class="pedido-resumo" id="adminPedidoResumo" style="margin:16px 0;">
+                    <div class="resumo-linha"><span>Subtotal dos itens</span><strong id="adminResSubtotal">R$ 0,00</strong></div>
+                    <div class="resumo-linha resumo-vista" id="adminResVistaLinha" style="display:none">
+                        <span id="adminResVistaRotulo">Desconto à vista (10%)</span><strong class="texto-positivo" id="adminResDesconto">-R$ 0,00</strong>
+                    </div>
+                    <div class="resumo-linha"><span>Total líquido do pedido</span><strong id="adminResTotal">R$ 0,00</strong></div>
+                    <div class="resumo-linha resumo-entrada" id="adminResEntradaLinha" style="display:none">
+                        <span>Entrada agora (50%)</span><strong id="adminResEntrada">R$ 0,00</strong>
+                    </div>
+                    <div class="resumo-linha" id="adminResSaldoLinha" style="display:none">
+                        <span>Saldo para depois (50%)</span><strong id="adminResSaldo">R$ 0,00</strong>
+                    </div>
                 </div>
                 <div class="pedido-total">
-
-                    <span>Total:</span>
+                    <span>Total a Receber:</span>
                     <strong id="pedidoTotalPreview">R$ 0,00</strong>
                 </div>
                 <button class="btn-primary" onclick="salvarPedido()">

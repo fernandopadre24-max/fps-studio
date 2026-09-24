@@ -1,10 +1,17 @@
 
 
 const TEMAS_PRESET = {
-    padrao: { primary: '#6c5ce7', dark: '#4834d4', light: '#a29bfe', grad1: '#0c0c1d', grad2: '#1a1a3e', grad3: '#2d1b69' },
-    ocean: { primary: '#0984e3', dark: '#0769b8', light: '#74b9ff', grad1: '#000000', grad2: '#0b162c', grad3: '#15315e' },
-    forest: { primary: '#00b894', dark: '#009276', light: '#55efc4', grad1: '#001a14', grad2: '#003328', grad3: '#004d3c' },
-    sunset: { primary: '#e17055', dark: '#cc5c43', light: '#fab1a0', grad1: '#2d110d', grad2: '#4a1b14', grad3: '#6a261c' }
+    padrao: { nome: 'Roxo Studio', primary: '#6c5ce7', dark: '#4834d4', light: '#a29bfe', grad1: '#0c0c1d', grad2: '#1a1a3e', grad3: '#2d1b69' },
+    neon: { nome: 'Neon Ciano', primary: '#00cec9', dark: '#00a8a3', light: '#81ecec', grad1: '#031416', grad2: '#082e30', grad3: '#0f484a' },
+    oceano: { nome: 'Oceano Azul', primary: '#0984e3', dark: '#0769b8', light: '#74b9ff', grad1: '#000000', grad2: '#0b162c', grad3: '#15315e' },
+    ocean: { nome: 'Oceano Azul', primary: '#0984e3', dark: '#0769b8', light: '#74b9ff', grad1: '#000000', grad2: '#0b162c', grad3: '#15315e' },
+    esmeralda: { nome: 'Esmeralda Verde', primary: '#00b894', dark: '#009276', light: '#55efc4', grad1: '#001a14', grad2: '#003328', grad3: '#004d3c' },
+    forest: { nome: 'Esmeralda Verde', primary: '#00b894', dark: '#009276', light: '#55efc4', grad1: '#001a14', grad2: '#003328', grad3: '#004d3c' },
+    solar: { nome: 'Solar Âmbar', primary: '#f39c12', dark: '#d68910', light: '#f8c471', grad1: '#1f1302', grad2: '#382203', grad3: '#5c3807' },
+    sunset: { nome: 'Solar Âmbar', primary: '#e17055', dark: '#cc5c43', light: '#fab1a0', grad1: '#2d110d', grad2: '#4a1b14', grad3: '#6a261c' },
+    rosa: { nome: 'Rosa Vibrante', primary: '#e84393', dark: '#c2185b', light: '#fd79a8', grad1: '#1a0511', grad2: '#330a21', grad3: '#521035' },
+    ouro: { nome: 'Ouro Nobre', primary: '#d4af37', dark: '#b89428', light: '#f3e5ab', grad1: '#1a1608', grad2: '#30280f', grad3: '#4d4018' },
+    rubro: { nome: 'Vermelho Rubro', primary: '#e74c3c', dark: '#c0392b', light: '#ff7675', grad1: '#1a0604', grad2: '#330d09', grad3: '#54160f' }
 };
 
 const CONFIG_DEFAULT = {
@@ -12,21 +19,37 @@ const CONFIG_DEFAULT = {
     tema: 'padrao',
     primaryColor: '#6c5ce7',
     fonte: 'Inter',
-    fontSize: 'medium',
+    fontSize: 14,
     darkPadrao: true,
+    estiloTela: 'papel',
+    estiloCard: 'papel-creme',
+    corCardCustom: '#ffffff',
+    modeloDesign: {
+        radius: 'arredondado',
+        densidade: 'normal',
+        superficie: 'elevado'
+    },
     studio: {
         nome: '',
         telefone: '',
         email: '',
         instagram: '',
         endereco: '',
+        cidade: '',
+        cnpj: '',
         pixChave: '',
-        pixTipo: '',
+        pixTipo: 'email',
         pixBeneficiario: ''
     }
 };
 
 let APP_CONFIG = null;
+try {
+    const cachedCfg = localStorage.getItem('fps_cached_config');
+    if (cachedCfg) {
+        APP_CONFIG = JSON.parse(cachedCfg);
+    }
+} catch (e) {}
 
 let usingIDB = false;
 let currentChatClient = null;
@@ -1196,21 +1219,34 @@ function renderPedidos() {
     // Render Table
     if (tableBody) {
         if (pedidos.length === 0) {
-            tableBody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding:20px;">Nenhum pedido encontrado.</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="8" class="text-center" style="padding:20px;">Nenhum pedido encontrado.</td></tr>';
             return;
         }
         tableBody.innerHTML = pedidos.map(p => {
             const c = (DB.clientes || []).find(x => x.id == p.clienteId);
             const servs = (p.servicos || []).map(id => (DB.servicos || []).find(s => s.id == id)?.nome).filter(Boolean).join(', ') || 'Nenhum';
+            const condRotulo = p.parcial ? '<span class="kanban-chip chip-cond" style="margin-left:4px;">50%+50%</span>' : (p.descontoPct ? `<span class="kanban-chip chip-cond" style="margin-left:4px;">-${p.descontoPct}%</span>` : '');
+            const pagoTotal = pedidoPagamentoCompleto(p);
+            const jaPago = valorPagoPedido(p);
+            const totalEsp = valorEsperadoPedido(p);
+            const restoPed = Math.max(0, Math.round((totalEsp - jaPago) * 100) / 100);
+            const statusPag = pagoTotal
+                ? '<span class="status-badge status-concluido" style="font-size:11px; padding:2px 8px;"><i class="fas fa-check-circle"></i> Pago</span>'
+                : (jaPago > 0
+                    ? `<span class="status-badge" style="background:#e67e22; color:#fff; font-size:11px; padding:2px 8px;"><i class="fas fa-adjust"></i> 50% Pago (${formatCurrency(jaPago)})</span>`
+                    : '<span class="status-badge status-pendente" style="font-size:11px; padding:2px 8px;"><i class="fas fa-hourglass"></i> Pendente</span>');
             return `
             <tr>
                 <td><strong>#${p.id}</strong></td>
                 <td>${c ? c.nome : 'Cliente #' + p.clienteId}</td>
                 <td><small>${servs}</small></td>
-                <td><strong>${formatCurrency(valorEsperadoPedido(p))}</strong></td>
+                <td><strong>${formatCurrency(totalEsp)}</strong>${condRotulo}</td>
+                <td>${statusPag}</td>
                 <td><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></td>
                 <td>${formatDate(p.data)}</td>
                 <td>
+                    ${restoPed > 0 && p.status !== 'cancelado' ? `<button class="btn-icon text-success" onclick="confirmarPagamentoPedidoAdmin('${p.id}')" title="Confirmar pagamento (${p.parcial ? (jaPago > 0 ? '2ª parcela 50%' : '1ª parcela 50%') : 'Total'})"><i class="fas fa-check-circle"></i></button>` : ''}
+                    <button class="btn-icon" onclick="verDetalhesPedido('${p.id}')" title="Ver Detalhes"><i class="fas fa-eye"></i></button>
                     <button class="btn-icon" onclick="editarPedido('${p.id}')" title="Editar"><i class="fas fa-edit"></i></button>
                     <button class="btn-icon text-danger" onclick="excluirPedido('${p.id}')" title="Excluir"><i class="fas fa-trash"></i></button>
                 </td>
@@ -1221,7 +1257,7 @@ function renderPedidos() {
 }
 
 function editarPedido(id) {
-    const p = DB.pedidos.find(x => x.id == id);
+    const p = DB.pedidos.find(x => String(x.id) === String(id));
     if (!p) return;
     clearForm('pedido');
     document.getElementById('pedidoId').value = p.id;
@@ -1237,6 +1273,14 @@ function editarPedido(id) {
     const materiaisHtml = (DB.materiais || []).map(m => `<label><input type="checkbox" value="${m.id}" ${pMats.includes(m.id) ? 'checked' : ''} onchange="updatePedidoTotal()"> ${m.nome} (${Number(m.preco) <= 0 ? 'INCLUSO' : formatCurrency(m.preco)})</label>`).join('');
     document.getElementById('pedidoMateriais').innerHTML = materiaisHtml;
     
+    const condRadioId = p.parcial ? 'adminCondMeta' : ((p.descontoPct > 0 || (p.desconto > 0 && !p.subtotal)) ? 'adminCondVista' : (p.desconto > 0 ? 'adminCondVista' : 'adminCondIntegral'));
+    const elRadio = document.getElementById(condRadioId);
+    if (elRadio) elRadio.checked = true;
+
+    if (document.getElementById('pedidoDescontoPct')) {
+        document.getElementById('pedidoDescontoPct').value = p.descontoPct != null ? p.descontoPct : 10;
+    }
+
     document.getElementById('pedidoDesconto').value = p.desconto ? fmtCalc(p.desconto) : '0,00';
     document.getElementById('pedidoQtdFaixas').value = p.qtdFaixas || 1;
     if(document.getElementById('pedidoHoraInicial')) document.getElementById('pedidoHoraInicial').value = p.horaInicial || '';
@@ -1267,26 +1311,94 @@ async function excluirPedido(id) {
 }
 
 window.updatePedidoTotal = function() {
-    let t = 0;
+    let subTotal = 0;
     [...document.querySelectorAll('#pedidoServicos input:checked')].forEach(cb => {
-        const s = (DB.servicos || []).find(x => x.id == cb.value);
-        if(s) t += s.preco;
+        const s = (DB.servicos || []).find(x => String(x.id) === String(cb.value));
+        if(s) subTotal += Number(s.preco || 0);
     });
     [...document.querySelectorAll('#pedidoMateriais input:checked')].forEach(cb => {
-        const m = (DB.materiais || []).find(x => x.id == cb.value);
-        if(m) t += m.preco;
+        const m = (DB.materiais || []).find(x => String(x.id) === String(cb.value));
+        if(m) subTotal += Number(m.preco || 0);
     });
+
+    const condicao = (document.querySelector('input[name="adminPedidoCondicao"]:checked') || {}).value || 'vista';
+    const pctInput = document.getElementById('pedidoDescontoPct');
+    const descPct = condicao === 'vista' ? (parseFloat(pctInput?.value) || 10) : 0;
+
     const descStr = document.getElementById('pedidoDesconto')?.value || '0';
-    const desc = parseFloat(descStr.replace(/\./g, '').replace(',', '.')) || 0;
-    t = Math.max(0, t - desc);
+    const descAdicional = parseFloat(descStr.replace(/\./g, '').replace(',', '.')) || 0;
+
+    const valorDescontoVista = condicao === 'vista' ? Math.round(subTotal * (descPct / 100) * 100) / 100 : 0;
+    const descontoTotal = valorDescontoVista + descAdicional;
+    const totalLiquido = Math.max(0, Math.round((subTotal - descontoTotal) * 100) / 100);
+
+    const entrada = condicao === 'metade' ? Math.round((totalLiquido / 2) * 100) / 100 : totalLiquido;
+    const saldo = condicao === 'metade' ? Math.max(0, Math.round((totalLiquido - entrada) * 100) / 100) : 0;
+
+    // Atualiza cards de condição
+    const elVistaVal = document.getElementById('adminCondVistaValor');
+    if (elVistaVal) elVistaVal.textContent = formatCurrency(Math.max(0, subTotal * (1 - descPct / 100)));
+    const elMetaVal = document.getElementById('adminCondMetaValor');
+    if (elMetaVal) elMetaVal.textContent = formatCurrency(Math.round((subTotal / 2) * 100) / 100);
+    const elIntegVal = document.getElementById('adminCondIntegralValor');
+    if (elIntegVal) elIntegVal.textContent = formatCurrency(subTotal);
+
+    const elDescVistaDesc = document.getElementById('adminCondVistaDesc');
+    if (elDescVistaDesc) elDescVistaDesc.textContent = `${descPct}% de desconto`;
+
+    // Atualiza resumo
+    const elSub = document.getElementById('adminResSubtotal');
+    if (elSub) elSub.textContent = formatCurrency(subTotal);
+
+    const elVistaLinha = document.getElementById('adminResVistaLinha');
+    if (elVistaLinha) elVistaLinha.style.display = condicao === 'vista' && valorDescontoVista > 0 ? 'flex' : 'none';
+    const elVistaRotulo = document.getElementById('adminResVistaRotulo');
+    if (elVistaRotulo) elVistaRotulo.textContent = `Desconto à vista (${descPct}%)`;
+    const elDesc = document.getElementById('adminResDesconto');
+    if (elDesc) elDesc.textContent = '-' + formatCurrency(valorDescontoVista);
+
+    const elTot = document.getElementById('adminResTotal');
+    if (elTot) elTot.textContent = formatCurrency(totalLiquido);
+
+    const elEntLinha = document.getElementById('adminResEntradaLinha');
+    if (elEntLinha) elEntLinha.style.display = condicao === 'metade' ? 'flex' : 'none';
+    const elEnt = document.getElementById('adminResEntrada');
+    if (elEnt) elEnt.textContent = formatCurrency(entrada);
+
+    const elSalLinha = document.getElementById('adminResSaldoLinha');
+    if (elSalLinha) elSalLinha.style.display = condicao === 'metade' ? 'flex' : 'none';
+    const elSal = document.getElementById('adminResSaldo');
+    if (elSal) elSal.textContent = formatCurrency(saldo);
+
     const prev = document.getElementById('pedidoTotalPreview');
-    if(prev) prev.textContent = formatCurrency(t);
-    return {t, desc};
+    if (prev) {
+        if (condicao === 'metade') {
+            prev.innerHTML = `${formatCurrency(totalLiquido)} <small style="display:block; font-size:12px; color:var(--text-muted); font-weight:normal;">Entrada (50%): ${formatCurrency(entrada)} | Saldo restante (50%): ${formatCurrency(saldo)}</small>`;
+        } else if (condicao === 'vista' && valorDescontoVista > 0) {
+            prev.innerHTML = `${formatCurrency(totalLiquido)} <small style="display:block; font-size:12px; color:var(--success); font-weight:normal;">À vista com ${descPct}% de desconto (-${formatCurrency(valorDescontoVista)})</small>`;
+        } else {
+            prev.textContent = formatCurrency(totalLiquido);
+        }
+    }
+
+    const grupoPct = document.getElementById('grupoDescontoPctAdmin');
+    if (grupoPct) grupoPct.style.display = condicao === 'vista' ? 'block' : 'none';
+
+    return {
+        subTotal,
+        total: totalLiquido,
+        desconto: descontoTotal,
+        descontoPct: descPct,
+        parcial: condicao === 'metade' ? 1 : 0,
+        entrada,
+        saldo,
+        condicao
+    };
 };
 
 async function salvarPedido() {
     const id = document.getElementById('pedidoId').value;
-    const {t, desc} = updatePedidoTotal();
+    const calc = updatePedidoTotal();
     const horaInicial = document.getElementById('pedidoHoraInicial') ? document.getElementById('pedidoHoraInicial').value : '';
     const horaFinal = document.getElementById('pedidoHoraFinal') ? document.getElementById('pedidoHoraFinal').value : '';
     if (horaInicial || horaFinal) {
@@ -1295,22 +1407,31 @@ async function salvarPedido() {
     const servicos = [...document.querySelectorAll('#pedidoServicos input:checked')].map(cb => parseInt(cb.value) || cb.value);
     const materiais = [...document.querySelectorAll('#pedidoMateriais input:checked')].map(cb => parseInt(cb.value) || cb.value);
     
+    const condRotulo = calc.parcial ? 'Dividido 50%+50%' : (calc.condicao === 'vista' ? `À vista -${calc.descontoPct}%` : 'Integral');
+
     const data = {
         clienteId: document.getElementById('pedidoCliente').value,
         status: document.getElementById('pedidoStatus').value,
-        servicos, materiais,
-        desconto: desc,
-        total: t,
-        descontoPct: 0,
+        servicos,
+        materiais,
+        subtotal: calc.subTotal,
+        desconto: calc.desconto,
+        total: calc.total,
+        descontoPct: calc.descontoPct,
+        parcial: calc.parcial,
+        condicao: condRotulo,
         data: document.getElementById('pedidoData')?.value || new Date().toISOString().split('T')[0],
         qtdFaixas: parseInt(document.getElementById('pedidoQtdFaixas').value) || 1,
-        horaInicial, horaFinal
+        horaInicial,
+        horaFinal
     };
     
+    let pedidoSalvo = null;
     if (id) {
-        const item = DB.pedidos.find(x => x.id == id);
+        const item = DB.pedidos.find(x => String(x.id) === String(id));
         if (item) {
             Object.assign(item, data);
+            pedidoSalvo = item;
             if (DBReady) await DB_SERVICE.updatePedido(item.docId || item.id, data);
         }
     } else {
@@ -1323,11 +1444,18 @@ async function salvarPedido() {
             data.docId = data.id;
         }
         DB.pedidos.push(data);
+        pedidoSalvo = data;
     }
+
+    if (pedidoSalvo) {
+        await sincronizarFinanceiroPedido(pedidoSalvo);
+    }
+
     closeAllModals();
     renderPedidos();
     renderAdminDashboard();
-    showToast('Pedido salvo', 'success');
+    renderFinanceiro();
+    showToast('Pedido salvo com sucesso!', 'success');
 }
 
 // ==========================================
@@ -1837,29 +1965,45 @@ function renderMateriaisClient() {
 // ============================================
 function renderPedidosClient() {
     if (!currentUser || currentUser.role !== 'client') return;
-    const meusPedidos = DB.pedidos.filter(p => p.clienteId === currentUser.id);
+    const meusPedidos = DB.pedidos.filter(p => String(p.clienteId) === String(currentUser.id));
     const tbody = document.getElementById('pedidosClientBody');
+    if (!tbody) return;
 
     if (meusPedidos.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Nenhum pedido realizado</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Nenhum pedido realizado</td></tr>';
         return;
     }
 
     tbody.innerHTML = meusPedidos.map(p => {
-        const servicoNomes = p.servicos.map(id => DB.servicos.find(s => s.id === id)?.nome || '').filter(Boolean).join(', ');
-        const materialNomes = p.materiais.map(id => DB.materiais.find(m => m.id === id)?.nome || '').filter(Boolean).join(', ');
-        const condRotulo = p.parcial ? '50% + 50%' : (p.descontoPct ? `-${p.descontoPct}% à vista` : '');
+        const servicoNomes = (p.servicos || []).map(id => DB.servicos.find(s => String(s.id) === String(id))?.nome || '').filter(Boolean).join(', ');
+        const materialNomes = (p.materiais || []).map(id => DB.materiais.find(m => String(m.id) === String(id))?.nome || '').filter(Boolean).join(', ');
+        const c = condicaoPagamentoPedido(p);
+        const condRotulo = p.parcial ? '50% + 50%' : (c.pct ? `-${c.pct}% à vista` : '');
         const totalExibir = valorEsperadoPedido(p);
+        const jaPago = valorPagoPedido(p);
+        const pagoTotal = pedidoPagamentoCompleto(p);
+        const restoPed = Math.max(0, Math.round((totalExibir - jaPago) * 100) / 100);
+
+        const statusPag = pagoTotal
+            ? '<span class="status-badge status-concluido" style="font-size:11px; padding:2px 8px;"><i class="fas fa-check-circle"></i> Quitado</span>'
+            : (jaPago > 0
+                ? `<span class="status-badge" style="background:#e67e22; color:#fff; font-size:11px; padding:2px 8px;"><i class="fas fa-adjust"></i> 50% Pago (${formatCurrency(jaPago)})</span>`
+                : '<span class="status-badge status-pendente" style="font-size:11px; padding:2px 8px;"><i class="fas fa-clock"></i> A Pagar</span>');
+
+        const btnPagarLabel = p.parcial ? (jaPago > 0 ? 'Pagar 50%' : 'Pagar Entrada') : 'Pagar';
+
         return `<tr>
             <td><strong>#${p.id}</strong></td>
-            <td>${servicoNomes || '-'}</td>
-            <td>${materialNomes || '-'}</td>
-            <td><strong>${formatCurrency(totalExibir)}</strong>${condRotulo ? `<small class="cond-badge">${condRotulo}</small>` : ''}</td>
+            <td><small>${servicoNomes || '-'}</small></td>
+            <td><small>${materialNomes || '-'}</small></td>
+            <td><strong>${formatCurrency(totalExibir)}</strong>${condRotulo ? `<small class="cond-badge" style="display:block; font-size:10px; color:var(--primary);">${condRotulo}</small>` : ''}</td>
+            <td>${statusPag}</td>
             <td><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></td>
             <td>${formatPedidoDataHora(p)}</td>
             <td>
-                <div class="table-actions">
-                    <button onclick="verDetalhesPedidoClient(${p.id})" title="Ver Detalhes"><i class="fas fa-eye"></i></button>
+                <div class="table-actions" style="display:flex; gap:6px; align-items:center;">
+                    ${restoPed > 0 && p.status !== 'cancelado' ? `<button class="btn-primary btn-sm" onclick="abrirPagamento('${p.id}')" title="Realizar pagamento"><i class="fas fa-credit-card"></i> ${btnPagarLabel}</button>` : ''}
+                    <button class="btn-icon" onclick="verDetalhesPedidoClient('${p.id}')" title="Ver Detalhes"><i class="fas fa-eye"></i></button>
                 </div>
             </td>
         </tr>`;
@@ -1867,10 +2011,14 @@ function renderPedidosClient() {
 }
 
 function verDetalhesPedidoClient(id) {
-    const p = DB.pedidos.find(x => x.id === id);
+    const p = DB.pedidos.find(x => String(x.id) === String(id));
     if (!p) return;
-    const servicos = p.servicos.map(id => DB.servicos.find(s => s.id === id)).filter(Boolean);
-    const materiais = p.materiais.map(id => DB.materiais.find(m => m.id === id)).filter(Boolean);
+    const servicos = (p.servicos || []).map(sid => DB.servicos.find(s => String(s.id) === String(sid))).filter(Boolean);
+    const materiais = (p.materiais || []).map(mid => DB.materiais.find(m => String(m.id) === String(mid))).filter(Boolean);
+    const c = condicaoPagamentoPedido(p);
+    const totalEsperado = valorEsperadoPedido(p);
+    const jaPago = valorPagoPedido(p);
+    const restoPed = Math.max(0, Math.round((totalEsperado - jaPago) * 100) / 100);
 
     let html = `
         <div class="detalhe-section">
@@ -1897,33 +2045,53 @@ function verDetalhesPedidoClient(id) {
         html += `</div>`;
     }
 
-    const esperadoCli = valorEsperadoPedido(p);
-    html += `<div class="pedido-total"><span>Total a pagar</span><strong>${formatCurrency(esperadoCli)}</strong></div>`;
-    if ((Number(p.desconto) || 0) > 0 || (Number(p.descontoPct) || 0) > 0) {
-        html += `<div class="detalhe-section"><h4><i class="fas fa-percent"></i> Descontos</h4>`;
-        if ((Number(p.descontoPct) || 0) > 0 && !p.parcial) {
-            html += `<div class="detalhe-item"><span>À vista (-${p.descontoPct}%)</span><strong style="color:var(--danger);">-${formatCurrency(Math.round((Number(p.total) || 0) * p.descontoPct) / 100)}</strong></div>`;
-        } else if ((Number(p.desconto) || 0) > 0) {
-            html += `<div class="detalhe-item"><span>Desconto</span><strong style="color:var(--danger);">-${formatCurrency(p.desconto)}</strong></div>`;
-        }
-        html += `</div>`;
-    }
+    html += `<div class="detalhe-section" style="border-left:4px solid var(--primary); background:rgba(108,92,231,0.06); border-radius:6px; padding:12px;">
+        <h4><i class="fas fa-hand-holding-usd"></i> Condição & Financeiro</h4>
+        <div class="detalhe-item"><span>Subtotal dos itens</span><strong>${formatCurrency(c.base)}</strong></div>`;
 
-    html += `<div class="detalhe-section"><h4><i class="fas fa-hand-holding-usd"></i> Condição de Pagamento</h4>`;
-    if (p.parcial) {
-        html += `<div class="detalhe-item"><span>Condição</span><strong>Dividido em 2x (50% + 50%)</strong></div>`;
-        html += `<div class="detalhe-item"><span>Entrada agora</span><strong>${formatCurrency(esperadoCli / 2)}</strong></div>`;
-        html += `<div class="detalhe-item"><span>Saldo ao finalizar</span><strong>${formatCurrency(esperadoCli / 2)}</strong></div>`;
-        html += `<div class="detalhe-item"><span>Já pago</span><strong>${formatCurrency(valorPagoPedido(p))}</strong></div>`;
-    } else if (p.descontoPct) {
-        html += `<div class="detalhe-item"><span>Condição</span><strong>À vista com ${p.descontoPct}% de desconto</strong></div>`;
-        html += `<div class="detalhe-item"><span>Total a pagar</span><strong>${formatCurrency(esperadoCli)}</strong></div>`;
-        html += `<div class="detalhe-item"><span>Já pago</span><strong>${formatCurrency(valorPagoPedido(p))}</strong></div>`;
+    if (c.parcial) {
+        html += `
+        <div class="detalhe-item"><span>Condição</span><strong style="color:var(--primary);">Dividido em 2x (50% + 50%)</strong></div>
+        <div class="detalhe-item"><span>1ª Parcela (Entrada 50%)</span><strong>${formatCurrency(c.totalFinal / 2)}</strong></div>
+        <div class="detalhe-item"><span>2ª Parcela (Saldo 50%)</span><strong>${formatCurrency(c.totalFinal / 2)}</strong></div>
+        <div class="detalhe-item"><span>Já pago até o momento</span><strong style="color:var(--success);">${formatCurrency(jaPago)}</strong></div>
+        <div class="detalhe-item" style="border-top:1px dashed rgba(0,0,0,0.15); padding-top:6px; margin-top:6px;">
+            <span>Saldo pendente</span>
+            <strong style="color:${restoPed > 0 ? 'var(--warning, #e67e22)' : 'var(--success)'}; font-size:15px;">${restoPed > 0 ? formatCurrency(restoPed) : 'Quitado integralmente'}</strong>
+        </div>`;
+    } else if (c.pct > 0) {
+        html += `
+        <div class="detalhe-item"><span>Condição</span><strong style="color:var(--success);">À vista com ${c.pct}% de desconto</strong></div>
+        <div class="detalhe-item"><span>Desconto concedido</span><strong style="color:var(--danger);">-${formatCurrency(Math.round(c.base * c.pct) / 100)}</strong></div>
+        <div class="detalhe-item"><span>Total líquido</span><strong style="color:var(--primary);">${formatCurrency(c.totalFinal)}</strong></div>
+        <div class="detalhe-item"><span>Já pago até o momento</span><strong style="color:var(--success);">${formatCurrency(jaPago)}</strong></div>
+        <div class="detalhe-item" style="border-top:1px dashed rgba(0,0,0,0.15); padding-top:6px; margin-top:6px;">
+            <span>Saldo pendente</span>
+            <strong style="color:${restoPed > 0 ? 'var(--warning, #e67e22)' : 'var(--success)'}; font-size:15px;">${restoPed > 0 ? formatCurrency(restoPed) : 'Quitado integralmente'}</strong>
+        </div>`;
     } else {
-        html += `<div class="detalhe-item"><span>Condição</span><strong>Pagamento integral</strong></div>`;
-        html += `<div class="detalhe-item"><span>Já pago</span><strong>${formatCurrency(valorPagoPedido(p))}</strong></div>`;
+        html += `
+        <div class="detalhe-item"><span>Condição</span><strong>Pagamento integral</strong></div>
+        <div class="detalhe-item"><span>Total líquido</span><strong style="color:var(--primary);">${formatCurrency(c.totalFinal)}</strong></div>
+        <div class="detalhe-item"><span>Já pago até o momento</span><strong style="color:var(--success);">${formatCurrency(jaPago)}</strong></div>
+        <div class="detalhe-item" style="border-top:1px dashed rgba(0,0,0,0.15); padding-top:6px; margin-top:6px;">
+            <span>Saldo pendente</span>
+            <strong style="color:${restoPed > 0 ? 'var(--warning, #e67e22)' : 'var(--success)'}; font-size:15px;">${restoPed > 0 ? formatCurrency(restoPed) : 'Quitado integralmente'}</strong>
+        </div>`;
     }
     html += `</div>`;
+
+    if (restoPed > 0 && p.status !== 'cancelado') {
+        const btnTexto = p.parcial
+            ? (jaPago > 0 ? `Pagar 2ª Parcela (${formatCurrency(restoPed)})` : `Pagar Entrada de 50% (${formatCurrency(Math.min(c.totalFinal / 2, restoPed))})`)
+            : `Pagar Pedido (${formatCurrency(restoPed)})`;
+        html += `
+        <div style="margin-top:16px;">
+            <button class="btn-primary btn-full" onclick="closeAllModals(); abrirPagamento('${p.id}')">
+                <i class="fas fa-credit-card"></i> ${btnTexto}
+            </button>
+        </div>`;
+    }
 
     document.getElementById('pedidoDetalhesClientContent').innerHTML = html;
     openModal('pedidoDetalhesClientModal');
@@ -2124,7 +2292,8 @@ async function salvarPedidoClient() {
         const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
         const descontoPct = condicao === 'vista' ? 10 : 0;
         const parcial = condicao === 'metade' ? 1 : 0;
-        const valorDesconto = condicao === 'vista' ? (total * 0.10) : 0;
+        const valorDesconto = condicao === 'vista' ? Math.round(total * 0.10 * 100) / 100 : 0;
+        const totalFinal = condicao === 'vista' ? Math.max(0, Math.round((total - valorDesconto) * 100) / 100) : total;
 
         let pedidoId = (DB.nextId && DB.nextId.pedido) ? DB.nextId.pedido++ : Date.now();
 
@@ -2133,12 +2302,14 @@ async function salvarPedidoClient() {
             clienteId: currentUser.id,
             servicos,
             materiais,
+            subtotal: total,
             desconto: valorDesconto,
             status: 'pendente',
             data: new Date().toISOString().split('T')[0],
-            total,
+            total: totalFinal,
             parcial,
             descontoPct,
+            condicao: condicao === 'metade' ? 'Dividido 50%+50%' : 'À vista -10%',
             dataInicial,
             horaInicial,
             horaFinal,
@@ -2187,6 +2358,9 @@ async function salvarPedidoClient() {
             DB.nextId.pedido = Math.max(DB.nextId.pedido || 1, (parseInt(novoPedido.id) || 0) + 1);
         }
 
+        // Sincroniza lançamento financeiro pendente do pedido
+        await sincronizarFinanceiroPedido(novoPedido);
+
         // Enviar notificação de pedido pelo chat para o administrador
         const chatKey = `admin_${currentUser.id}`;
         if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
@@ -2200,10 +2374,9 @@ async function salvarPedidoClient() {
             return m ? m.nome : '';
         }).filter(Boolean);
         const detalhes = [...nomesServicos, ...nomesMateriais].join(', ');
-        const totalFinal = condicao === 'vista' ? (total * 0.90) : total;
         const rotuloCondicao = condicao === 'vista'
             ? `Pagamento à vista (10% de desconto): ${formatCurrency(totalFinal)}`
-            : `Dividido em 2x: entrada de ${formatCurrency(total / 2)} agora e ${formatCurrency(total / 2)} ao finalizar`;
+            : `Dividido em 2x (50%+50%): entrada de ${formatCurrency(totalFinal / 2)} agora e ${formatCurrency(totalFinal / 2)} ao finalizar`;
 
         const prefHorario = dataInicial
             ? `Agendamento: ${formatDate(dataInicial)} ${horaInicial || ''}`
@@ -2214,9 +2387,9 @@ async function salvarPedidoClient() {
             remetente: 'client',
             clienteId: currentUser.id,
             pedidoId: novoPedido.id,
-            mensagem: `Novo pedido #${novoPedido.id} - ${formatCurrency(total)}`,
+            mensagem: `Novo pedido #${novoPedido.id} - ${formatCurrency(totalFinal)} (${condicao === 'vista' ? 'À vista com desconto' : '50% + 50%'})`,
             descricao: (detalhes || 'Itens selecionados') + ' · ' + rotuloCondicao + (prefHorario ? ' · ' + prefHorario : ''),
-            valor: total,
+            valor: totalFinal,
             data: new Date().toISOString(),
             lida: false
         };
@@ -2280,25 +2453,26 @@ function abrirPagamento(pedidoId) {
     const c = condicaoPagamentoPedido(p);
     const base = c.base;
     const jaPago = valorPagoPedido(p);
+    const totalEsperado = valorEsperadoPedido(p);
 
-    let valorPag = base;
+    let valorPag = totalEsperado;
     let condRotulo = 'Pagamento integral';
     let saldo = 0;
 
     if (c.parcial) {
-        const falta = Math.max(0, base - jaPago);
+        const falta = Math.max(0, Math.round((c.totalFinal - jaPago) * 100) / 100);
         if (falta <= 0) {
             showToast('Este pedido já está totalmente pago!', 'info');
             return;
         }
-        valorPag = Math.min(base / 2, falta);
-        saldo = Math.max(0, base - (jaPago + valorPag));
+        valorPag = Math.min(Math.round((c.totalFinal / 2) * 100) / 100, falta);
+        saldo = Math.max(0, Math.round((falta - valorPag) * 100) / 100);
         condRotulo = jaPago > 0 ? 'Pagamento da 2ª parcela (50%)' : 'Entrada de 50%';
-    } else if (c.pct) {
-        valorPag = base * (1 - c.pct / 100);
+    } else if (c.pct > 0) {
+        valorPag = c.totalFinal;
         condRotulo = `Pagamento à vista com ${c.pct}% de desconto`;
     } else {
-        valorPag = base;
+        valorPag = c.totalFinal;
         condRotulo = 'Pagamento integral';
     }
 
@@ -2309,21 +2483,21 @@ function abrirPagamento(pedidoId) {
             <span>Pedido #${p.id}</span>
             <strong>${formatCurrency(selectedPagamentoValor)}</strong>
         </div>`;
+    infoHtml += `<div class="pagamento-linha"><span>Subtotal dos itens</span><strong>${formatCurrency(base)}</strong></div>`;
     if (c.orc) {
-        infoHtml += `<div class="pagamento-linha"><span>Valor orçado</span><strong>${formatCurrency(c.orc.valor || 0)}</strong></div>`;
         if ((Number(c.orc.desconto) || 0) > 0) {
             infoHtml += `<div class="pagamento-linha"><span>Desconto do orçamento</span><strong style="color:var(--danger);">-${formatCurrency(c.orc.desconto)}</strong></div>`;
         }
     } else if ((Number(p.desconto) || 0) > 0 && !c.pct) {
         infoHtml += `<div class="pagamento-linha"><span>Desconto já aplicado</span><strong style="color:var(--danger);">-${formatCurrency(p.desconto)}</strong></div>`;
     }
-    if (c.pct) {
+    if (c.pct > 0) {
         infoHtml += `<div class="pagamento-linha"><span>Desconto à vista (${c.pct}%)</span><strong style="color:var(--danger);">-${formatCurrency(Math.round(base * c.pct) / 100)}</strong></div>`;
     }
     infoHtml += `<div class="pagamento-linha"><span>Condição</span><strong>${condRotulo}</strong></div>`;
-    if (c.parcial && jaPago > 0) infoHtml += `<div class="pagamento-linha"><span>Já pago</span><strong>${formatCurrency(jaPago)}</strong></div>`;
-    if (saldo > 0) infoHtml += `<div class="pagamento-linha"><span>Saldo a pagar depois</span><strong>${formatCurrency(saldo)}</strong></div>`;
-    infoHtml += `<p class="field-hint">Envie o comprovante para o administrador confirmar o recebimento.</p>`;
+    if (c.parcial && jaPago > 0) infoHtml += `<div class="pagamento-linha"><span>Já pago anteriormente</span><strong>${formatCurrency(jaPago)}</strong></div>`;
+    if (saldo > 0) infoHtml += `<div class="pagamento-linha"><span>Saldo restante a pagar depois</span><strong style="color:var(--warning, #e67e22);">${formatCurrency(saldo)}</strong></div>`;
+    infoHtml += `<p class="field-hint">Envie o comprovante para o estúdio confirmar o recebimento.</p>`;
     document.getElementById('pagamentoInfo').innerHTML = infoHtml;
 
     const st = studioDados();
@@ -2339,7 +2513,7 @@ function abrirPagamento(pedidoId) {
             ? `<div class="pix-dados-item"><span>Beneficiário</span><strong>${beneficiario}</strong></div>
                <div class="pix-dados-item"><span>Chave PIX</span><strong>${st.pixChave}</strong></div>
                <div class="pix-dados-item"><span>Tipo</span><strong>${(st.pixTipo || 'email').toUpperCase()}</strong></div>
-               <div class="pix-dados-item"><span>Valor</span><strong>${formatCurrency(selectedPagamentoValor)}</strong></div>`
+               <div class="pix-dados-item"><span>Valor a Pagar</span><strong>${formatCurrency(selectedPagamentoValor)}</strong></div>`
             : `<div class="pix-dados-aviso"><i class="fas fa-exclamation-triangle"></i> Chave PIX não cadastrada. Cadastre os dados do estúdio em Configurações.</div>`;
     }
 
@@ -2364,8 +2538,8 @@ function copiarPix() {
 
 async function confirmarPagamento() {
     if (!selectedPedidoId) return;
-    const tipo = document.querySelector('input[name="pagamentoTipo"]:checked').value;
-    const p = DB.pedidos.find(x => x.id === selectedPedidoId);
+    const tipo = document.querySelector('input[name="pagamentoTipo"]:checked')?.value || 'pix';
+    const p = DB.pedidos.find(x => String(x.id) === String(selectedPedidoId));
     if (!p) return;
 
     const fileInput = document.getElementById('pagamentoComprovanteImagem');
@@ -2376,10 +2550,15 @@ async function confirmarPagamento() {
 
     let rotuloCond = 'Pagamento integral';
     const cc = condicaoPagamentoPedido(p);
-    if (cc.parcial) rotuloCond = valorPagoPedido(p) > 0 && (selectedPagamentoValor || 0) >= (cc.base / 2 - 0.01) ? '2ª parcela (50% restante)' : 'Entrada de 50%';
-    else if (cc.pct) rotuloCond = `À vista com ${cc.pct}% de desconto`;
+    const jaPago = valorPagoPedido(p);
 
-    const valorEnvio = selectedPagamentoValor || valorPagamentoSugerido(p) || cc.base;
+    if (cc.parcial) {
+        rotuloCond = jaPago > 0 ? '2ª parcela (50% restante)' : '1ª parcela (entrada 50%)';
+    } else if (cc.pct > 0) {
+        rotuloCond = `À vista com ${cc.pct}% de desconto`;
+    }
+
+    const valorEnvio = selectedPagamentoValor || valorPagamentoSugerido(p) || cc.totalFinal;
     const msgData = {
         tipo: 'comprovante',
         remetente: 'client',
@@ -3727,25 +3906,46 @@ async function confirmarPagamentoPedidoAdmin(pedidoId) {
         return;
     }
 
-    const pendentes = DB.movimentacoes.filter(m => m.pagamento === 'pendente' && movRefereAoPedido(m, p.id));
-    const restanteAtual = Math.max(0, Math.round((valorEsperadoPedido(p) - valorPagoPedido(p)) * 100) / 100);
+    const c = condicaoPagamentoPedido(p);
+    const esperado = valorEsperadoPedido(p);
+    const jaPago = valorPagoPedido(p);
+    const restanteAtual = Math.max(0, Math.round((esperado - jaPago) * 100) / 100);
+
     if (restanteAtual <= 0) {
-        showToast('Este pedido não possui pendência para confirmar.', 'info');
+        showToast('Este pedido já está 100% quitado!', 'info');
         return;
     }
-    if (pendentes.length === 0) {
-        showToast('Nenhum valor pendente registrado para este pedido.', 'info');
-        return;
+
+    const valorSugerido = valorPagamentoSugerido(p);
+    let promptMsg = '';
+    let rotuloParcela = '';
+
+    if (c.parcial) {
+        if (jaPago <= 0) {
+            rotuloParcela = '1ª parcela (entrada 50%)';
+            promptMsg = `Confirmar recebimento da 1ª parcela (entrada 50%: ${formatCurrency(valorSugerido)}) do Pedido #${pedidoId}?\n\nO saldo restante de ${formatCurrency(restanteAtual - valorSugerido)} ficará pendente para depois.`;
+        } else {
+            rotuloParcela = '2ª parcela (50% restante)';
+            promptMsg = `Confirmar recebimento da 2ª parcela (saldo restante de 50%: ${formatCurrency(valorSugerido)}) do Pedido #${pedidoId}?\n\nO pedido será quitado integralmente (100%).`;
+        }
+    } else if (c.pct > 0) {
+        rotuloParcela = `À vista (-${c.pct}%)`;
+        promptMsg = `Confirmar recebimento do pagamento à vista com desconto de ${formatCurrency(valorSugerido)} do Pedido #${pedidoId}?`;
+    } else {
+        rotuloParcela = 'Pagamento';
+        promptMsg = `Confirmar recebimento de ${formatCurrency(valorSugerido)} do Pedido #${pedidoId}?`;
     }
-    if (!confirm(`Confirmar recebimento de ${formatCurrency(restanteAtual)} do Pedido #${pedidoId}?`)) return;
+
+    if (!confirm(promptMsg)) return;
 
     const fake = {
         id: null,
         tipo: 'comprovante',
         remetente: 'client',
         clienteId,
-        mensagem: `Pagamento de ${formatCurrency(restanteAtual)} via PIX para o Pedido #${pedidoId}`,
-        valor: restanteAtual,
+        mensagem: `Pagamento de ${formatCurrency(valorSugerido)} (${rotuloParcela}) via PIX para o Pedido #${pedidoId}`,
+        descricao: `Pagamento Pedido #${pedidoId} - ${rotuloParcela}`,
+        valor: valorSugerido,
         desconto: 0,
         pedidoId,
         status: 'aguardando',
@@ -3826,11 +4026,19 @@ async function executarConfirmacaoPagamentoAdmin(m, chatKey, descontoAdmin) {
 
         if (pedido && totalPago > 0) {
             const jaConfirmado = DB.movimentacoes.find(mm => mm.pedidoId != null && String(mm.pedidoId) === String(pedido.id) && mm.pagamento !== 'pendente');
+            const cPed = condicaoPagamentoPedido(pedido);
+            let descMov = `Pagamento Pedido #${pedido.id}`;
+            if (pedido.parcial) {
+                descMov = jaConfirmado ? `Pagamento Pedido #${pedido.id} (2ª parcela - 50%)` : `Pagamento Pedido #${pedido.id} (1ª parcela - 50%)`;
+            } else if (cPed.pct > 0) {
+                descMov = `Pagamento Pedido #${pedido.id} (À vista -${cPed.pct}%)`;
+            }
+
             if (pedido.parcial && jaConfirmado) {
                 const nova = {
                     id: DB.nextId.movimentacao++,
                     tipo: 'entrada',
-                    descricao: `Pagamento Pedido #${pedido.id} (2ª parcela)`,
+                    descricao: descMov,
                     valor: totalPago,
                     categoria: 'servico',
                     pagamento: metodoPag,
@@ -3845,7 +4053,7 @@ async function executarConfirmacaoPagamentoAdmin(m, chatKey, descontoAdmin) {
                 const mov = DB.movimentacoes.find(mm => mm.pagamento === 'pendente' && movRefereAoPedido(mm, pedido.id));
                 if (mov) {
                     mov.tipo = 'entrada';
-                    mov.descricao = `Pagamento Pedido #${pedido.id}`;
+                    mov.descricao = descMov;
                     mov.valor = totalPago;
                     mov.categoria = mov.categoria || 'servico';
                     mov.pagamento = metodoPag;
@@ -3855,7 +4063,7 @@ async function executarConfirmacaoPagamentoAdmin(m, chatKey, descontoAdmin) {
                     const nova = {
                         id: DB.nextId.movimentacao++,
                         tipo: 'entrada',
-                        descricao: `Pagamento Pedido #${pedido.id}`,
+                        descricao: descMov,
                         valor: totalPago,
                         categoria: 'servico',
                         pagamento: metodoPag,
@@ -3878,16 +4086,19 @@ async function executarConfirmacaoPagamentoAdmin(m, chatKey, descontoAdmin) {
             const pagoAte = valorPagoPedido(pedido);
             const restante = Math.max(0, Math.round((esperado - pagoAte) * 100) / 100);
             const pendentes = DB.movimentacoes.filter(mm => mm.pagamento === 'pendente' && movRefereAoPedido(mm, pedido.id));
+            const descPend = pedido.parcial ? `Pedido #${pedido.id} (2ª parcela pendente - 50%)` : `Pedido #${pedido.id}`;
+
             if (restante > 0) {
                 const pend = pendentes[pendentes.length - 1];
                 if (pend) {
                     pend.valor = restante;
+                    pend.descricao = descPend;
                     if (pend.docId) await DB_SERVICE.updateMovimentacao(pend.docId, { tipo: pend.tipo, descricao: pend.descricao, valor: pend.valor, categoria: pend.categoria, pagamento: pend.pagamento, data: pend.data, hora: pend.hora || '', pedidoId: pend.pedidoId });
                 } else {
                     const nova = {
                         id: DB.nextId.movimentacao++,
                         tipo: 'entrada',
-                        descricao: `Pedido #${pedido.id}`,
+                        descricao: descPend,
                         valor: restante,
                         categoria: 'servico',
                         pagamento: 'pendente',
@@ -3929,11 +4140,26 @@ async function executarConfirmacaoPagamentoAdmin(m, chatKey, descontoAdmin) {
         const nomesMateriais = (pedido.materiais || []).map(id2 => { const mm = DB.materiais.find(x => String(x.id) === String(id2)); return mm ? mm.nome : ''; }).filter(Boolean);
         const detalhes = [...nomesServicos, ...nomesMateriais].join(', ') || 'Serviço solicitado';
         const faltante = pedido ? Math.max(0, Math.round((valorEsperadoPedido(pedido) - valorPagoPedido(pedido)) * 100) / 100) : 0;
+        const cPed = condicaoPagamentoPedido(pedido);
+
+        let msgConfTexto = '';
+        if (pedido.parcial) {
+            if (faltante > 0) {
+                msgConfTexto = `1ª parcela (entrada 50%) do Pedido #${pedido.id} confirmada! Detalhes: ${detalhes}. Valor recebido: ${formatCurrency(totalPago)}. Saldo restante: ${formatCurrency(faltante)} (50% a pagar ao finalizar o serviço).`;
+            } else {
+                msgConfTexto = `2ª parcela (saldo restante de 50%) do Pedido #${pedido.id} confirmada! Valor recebido: ${formatCurrency(totalPago)}. O pedido #${pedido.id} foi 100% quitado!`;
+            }
+        } else if (cPed.pct > 0) {
+            msgConfTexto = `Pagamento à vista com desconto do Pedido #${pedido.id} confirmado! Detalhes: ${detalhes}. Valor recebido: ${formatCurrency(totalPago)}. Pedido 100% quitado!`;
+        } else {
+            msgConfTexto = `Pagamento do Pedido #${pedido.id} confirmado! Detalhes: ${detalhes}. Valor recebido: ${formatCurrency(totalPago)}.${faltante > 0 ? ` Saldo pendente: ${formatCurrency(faltante)}.` : ' Pedido 100% quitado!'}`;
+        }
+
         const confMsg = {
             tipo: 'sistema',
             remetente: 'admin',
             clienteId: m.clienteId,
-            mensagem: `Pagamento do Pedido #${pedido.id} confirmado! Detalhes do serviço: ${detalhes}. Valor recebido: ${formatCurrency(Math.max(0, totalPago))}.${faltante > 0 ? ` Falta pagar ${formatCurrency(faltante)} (50% restante).` : ' Status: em andamento.'}`,
+            mensagem: msgConfTexto,
             data: new Date().toISOString()
         };
         if (!DB.chats[chatKey]) DB.chats[chatKey] = [];
@@ -3952,6 +4178,9 @@ async function executarConfirmacaoPagamentoAdmin(m, chatKey, descontoAdmin) {
         if (currentChatClient != null && String(currentChatClient) === String(m.clienteId)) renderChatMessagesAdmin(chatKey);
         try { renderChatList(); } catch (e) {}
         try { renderFinanceiro(); } catch (e) {}
+        try { renderPedidos(); } catch (e) {}
+        try { renderPedidosClient(); } catch (e) {}
+        try { renderKanban(); } catch (e) {}
         try { renderAdminDashboard(); } catch (e) {}
         updateChatBadge();
         celebratePayment();
@@ -3959,6 +4188,9 @@ async function executarConfirmacaoPagamentoAdmin(m, chatKey, descontoAdmin) {
     } catch (e) {
         console.error('pós-confirmação:', e);
         try { renderFinanceiro(); } catch (e2) {}
+        try { renderPedidos(); } catch (e2) {}
+        try { renderPedidosClient(); } catch (e2) {}
+        try { renderKanban(); } catch (e2) {}
         try { renderAdminDashboard(); } catch (e2) {}
         try { renderChatList(); } catch (e2) {}
         updateChatBadge();
@@ -4781,48 +5013,91 @@ function orcamentoDoPedido(p) {
 
 // [restore b03a43a] condicaoPagamentoPedido
 function condicaoPagamentoPedido(p) {
-    if (!p) return { base: 0, pct: 0, parcial: false, orc: null };
+    if (!p) return { base: 0, pct: 0, parcial: false, orc: null, subtotal: 0, totalFinal: 0, desconto: 0 };
     const orc = orcamentoDoPedido(p);
     if (orc) {
+        const base = Math.max(0, (Number(orc.valor) || 0) - (Number(orc.desconto) || 0));
+        const pct = Number(orc.descontoPct) || 0;
+        const parcial = !!orc.parcial;
+        const totalFinal = (pct && !parcial) ? Math.max(0, Math.round(base * (1 - pct / 100) * 100) / 100) : base;
         return {
-            base: Math.max(0, (Number(orc.valor) || 0) - (Number(orc.desconto) || 0)),
-            pct: Number(orc.descontoPct) || 0,
-            parcial: !!orc.parcial,
-            orc
+            base,
+            subtotal: base,
+            pct: parcial ? 0 : pct,
+            parcial,
+            orc,
+            desconto: (Number(orc.desconto) || 0) + (pct && !parcial ? Math.round(base * (pct / 100) * 100) / 100 : 0),
+            totalFinal
         };
     }
+
+    const parcial = !!p.parcial;
+    const pct = Number(p.descontoPct) || 0;
+    const desc = Number(p.desconto) || 0;
+    const rawTotal = Number(p.total) || 0;
+    let subtotal = Number(p.subtotal) || 0;
+
+    if (!subtotal) {
+        if (pct > 0 && !parcial) {
+            if (desc > 0 && Math.abs((rawTotal + desc) * (1 - pct / 100) - rawTotal) < 1) {
+                subtotal = Math.round((rawTotal + desc) * 100) / 100;
+            } else if (desc > 0) {
+                subtotal = Math.round((rawTotal + desc) * 100) / 100;
+            } else {
+                subtotal = rawTotal;
+            }
+        } else {
+            subtotal = rawTotal + (desc > 0 ? desc : 0);
+        }
+    }
+
+    let totalFinal = rawTotal;
+    if (pct > 0 && !parcial) {
+        totalFinal = Math.max(0, Math.round(subtotal * (1 - pct / 100) * 100) / 100);
+    } else if (parcial) {
+        totalFinal = Math.max(0, Math.round((subtotal - (p.subtotal ? desc : 0)) * 100) / 100);
+        if (totalFinal === 0 && rawTotal > 0) totalFinal = rawTotal;
+    } else {
+        totalFinal = Math.max(0, Math.round((subtotal - (p.subtotal ? desc : 0)) * 100) / 100);
+        if (totalFinal === 0 && rawTotal > 0) totalFinal = rawTotal;
+    }
+
+    const valorDesconto = (pct > 0 && !parcial)
+        ? Math.round(subtotal * (pct / 100) * 100) / 100 + (desc > 0 && p.subtotal ? desc : 0)
+        : desc;
+
     return {
-        base: Number(p.total) || 0,
-        pct: Number(p.descontoPct) || 0,
-        parcial: !!p.parcial,
-        orc: null
+        base: subtotal || totalFinal,
+        subtotal: subtotal || totalFinal,
+        pct: parcial ? 0 : pct,
+        parcial,
+        orc: null,
+        desconto: valorDesconto,
+        totalFinal
     };
 }
 
-// [restore b03a43a] valorEsperadoPedido
 function valorEsperadoPedido(p) {
     if (!p) return 0;
     const c = condicaoPagamentoPedido(p);
-    let base = c.base;
-    if (c.pct && !c.parcial) base = base * (1 - c.pct / 100);
-    return Math.max(0, Math.round(base * 100) / 100);
+    return Math.max(0, Math.round(c.totalFinal * 100) / 100);
 }
 
-// [restore b03a43a] valorPagamentoSugerido
 function valorPagamentoSugerido(p) {
     if (!p) return 0;
     const c = condicaoPagamentoPedido(p);
     const jaPago = valorPagoPedido(p);
+    const totalFinal = c.totalFinal;
+    const falta = Math.max(0, Math.round((totalFinal - jaPago) * 100) / 100);
+    if (falta <= 0) return 0;
+
     if (c.parcial) {
-        const falta = Math.max(0, Math.round((c.base - jaPago) * 100) / 100);
-        if (falta <= 0) return 0;
-        return Math.min(Math.round((c.base / 2) * 100) / 100, falta);
+        const parcela = Math.round((totalFinal / 2) * 100) / 100;
+        return Math.min(parcela, falta);
     }
-    if (c.pct) return Math.max(0, Math.round(c.base * (1 - c.pct / 100) * 100) / 100);
-    return Math.max(0, Math.round(c.base * 100) / 100);
+    return falta;
 }
 
-// [restore b03a43a] verDetalhesPedido
 function verDetalhesPedido(id) {
     const p = DB.pedidos.find(x => String(x.id) === String(id));
     if (!p) return;
@@ -4831,6 +5106,11 @@ function verDetalhesPedido(id) {
     const materiais = (p.materiais || []).map(mid => DB.materiais.find(m => String(m.id) === String(mid))).filter(Boolean);
     const qtdF = Number(p.qtdFaixas) || 1;
     const audios = p.audios || [];
+
+    const c = condicaoPagamentoPedido(p);
+    const totalEsperado = valorEsperadoPedido(p);
+    const jaPago = valorPagoPedido(p);
+    const restoPed = Math.max(0, Math.round((totalEsperado - jaPago) * 100) / 100);
 
     let itensHtml = '';
     if (servicos.length) {
@@ -4867,12 +5147,43 @@ function verDetalhesPedido(id) {
             <div class="detalhe-item"><span>Faixas solicitadas</span><strong>${qtdF}</strong></div>
             ${itensHtml}
             <div class="detalhe-item" style="margin-top:8px; border-top:1px dashed rgba(0,0,0,0.12); padding-top:8px;">
-                <span>Total</span>
-                <strong style="color:var(--primary); font-size:16px;">${formatCurrency(valorEsperadoPedido(p))}</strong>
-            </div>
-            ${p.desconto > 0 ? `<div class="detalhe-item"><span>Desconto</span><span style="color:var(--danger)">-${formatCurrency(p.desconto)}</span></div>` : ''}
-            ${p.condicao ? `<div class="detalhe-item"><span>Condição</span><span>${p.condicao}</span></div>` : ''}
-        </div>
+                <span>Subtotal dos itens</span>
+                <strong>${formatCurrency(c.base)}</strong>
+            </div>`;
+
+    if (c.parcial) {
+        html += `
+            <div class="detalhe-item"><span>Condição</span><strong style="color:var(--primary);">Dividido em 2x (50% + 50%)</strong></div>
+            <div class="detalhe-item"><span>1ª Parcela (Entrada 50%)</span><strong>${formatCurrency(c.totalFinal / 2)}</strong></div>
+            <div class="detalhe-item"><span>2ª Parcela (Saldo 50%)</span><strong>${formatCurrency(c.totalFinal / 2)}</strong></div>
+            <div class="detalhe-item"><span>Total do pedido</span><strong style="color:var(--primary); font-size:15px;">${formatCurrency(totalEsperado)}</strong></div>
+            <div class="detalhe-item"><span>Já recebido</span><strong style="color:var(--success); font-size:15px;">${formatCurrency(jaPago)}</strong></div>
+            <div class="detalhe-item" style="border-top:1px dashed rgba(0,0,0,0.12); padding-top:6px; margin-top:6px;">
+                <span>Saldo pendente</span>
+                <strong style="color:${restoPed > 0 ? 'var(--warning, #e67e22)' : 'var(--success)'}; font-size:16px;">${restoPed > 0 ? formatCurrency(restoPed) : '<i class="fas fa-check-circle"></i> 100% Quitado'}</strong>
+            </div>`;
+    } else if (c.pct > 0) {
+        html += `
+            <div class="detalhe-item"><span>Condição</span><strong style="color:var(--success);">À vista com ${c.pct}% de desconto</strong></div>
+            <div class="detalhe-item"><span>Desconto à vista (-${c.pct}%)</span><strong style="color:var(--danger);">-${formatCurrency(Math.round(c.base * c.pct) / 100)}</strong></div>
+            <div class="detalhe-item"><span>Total a receber</span><strong style="color:var(--primary); font-size:15px;">${formatCurrency(totalEsperado)}</strong></div>
+            <div class="detalhe-item"><span>Já recebido</span><strong style="color:var(--success); font-size:15px;">${formatCurrency(jaPago)}</strong></div>
+            <div class="detalhe-item" style="border-top:1px dashed rgba(0,0,0,0.12); padding-top:6px; margin-top:6px;">
+                <span>Saldo pendente</span>
+                <strong style="color:${restoPed > 0 ? 'var(--warning, #e67e22)' : 'var(--success)'}; font-size:16px;">${restoPed > 0 ? formatCurrency(restoPed) : '<i class="fas fa-check-circle"></i> 100% Quitado'}</strong>
+            </div>`;
+    } else {
+        html += `
+            ${c.desconto > 0 ? `<div class="detalhe-item"><span>Desconto</span><span style="color:var(--danger)">-${formatCurrency(c.desconto)}</span></div>` : ''}
+            <div class="detalhe-item"><span>Total do pedido</span><strong style="color:var(--primary); font-size:15px;">${formatCurrency(totalEsperado)}</strong></div>
+            <div class="detalhe-item"><span>Já recebido</span><strong style="color:var(--success); font-size:15px;">${formatCurrency(jaPago)}</strong></div>
+            <div class="detalhe-item" style="border-top:1px dashed rgba(0,0,0,0.12); padding-top:6px; margin-top:6px;">
+                <span>Saldo pendente</span>
+                <strong style="color:${restoPed > 0 ? 'var(--warning, #e67e22)' : 'var(--success)'}; font-size:16px;">${restoPed > 0 ? formatCurrency(restoPed) : '<i class="fas fa-check-circle"></i> 100% Quitado'}</strong>
+            </div>`;
+    }
+
+    html += `</div>
         <div class="detalhe-section">
             <h4><i class="fas fa-user"></i> Cliente</h4>
             <div class="detalhe-item"><span>${cliente ? cliente.nome : 'N/A'}</span></div>
@@ -4921,7 +5232,12 @@ function verDetalhesPedido(id) {
         </div>`;
     }
 
-    html += `<div style="display:flex; gap:10px; justify-content:flex-end; margin-top:16px; padding-top:14px; border-top:1px solid rgba(0,0,0,0.08);">
+    const btnConfirmarPag = (restoPed > 0 && p.status !== 'cancelado')
+        ? `<button class="btn-primary btn-sm" onclick="closeAllModals(); confirmarPagamentoPedidoAdmin('${p.id}')"><i class="fas fa-check-circle"></i> Confirmar Pagamento (${p.parcial ? (jaPago > 0 ? '2ª Parcela 50%' : '1ª Parcela 50%') : 'Recebimento'})</button>`
+        : '';
+
+    html += `<div style="display:flex; gap:10px; justify-content:flex-end; align-items:center; flex-wrap:wrap; margin-top:16px; padding-top:14px; border-top:1px solid rgba(0,0,0,0.08);">
+        ${btnConfirmarPag}
         <button class="btn-secondary btn-sm" onclick="closeAllModals(); editarPedido('${p.id}')"><i class="fas fa-edit"></i> Editar</button>
         <button class="btn-danger btn-sm" onclick="excluirPedido('${p.id}')"><i class="fas fa-trash"></i> Excluir Pedido</button>
     </div>`;
@@ -5290,12 +5606,57 @@ function aplicarConfigLook() {
     root.style.setProperty('--primary', cor.primary);
     root.style.setProperty('--primary-dark', cor.dark);
     root.style.setProperty('--primary-light', cor.light);
-    root.style.setProperty('--ff', cfg.fonte);
-    root.style.zoom = Math.max(0.8, Math.min(1.3, (parseFloat(cfg.fontSize) || 14) / 14));
+
+    const rgb = hexToRgb(cor.primary);
+    if (rgb) {
+        root.style.setProperty('--primary-rgb', `${rgb.r}, ${rgb.g}, ${rgb.b}`);
+    }
+
+    root.style.setProperty('--ff', cfg.fonte || 'Inter');
+    const fSize = parseFloat(cfg.fontSize) || 14;
+    root.style.zoom = Math.max(0.8, Math.min(1.3, fSize / 14));
+
+    // Screen Style (Estilos de Tela)
+    const estiloTela = cfg.estiloTela || 'papel';
+    const todosEstilosTela = ['papel', 'padrao', 'cyber', 'luxo', 'nordico', 'retro'];
+    todosEstilosTela.forEach(est => document.body.classList.remove(`screen-style-${est}`));
+    document.body.classList.add(`screen-style-${estiloTela}`);
+
+    // Card Style (Cores e Modelos de Cards)
+    const estiloCard = cfg.estiloCard || 'papel-creme';
+    const todosEstilosCard = ['neutro', 'borda-acento', 'papel-creme', 'gradiente', 'onix-glass', 'status-color', 'custom'];
+    todosEstilosCard.forEach(cEst => document.body.classList.remove(`card-style-${cEst}`));
+    document.body.classList.add(`card-style-${estiloCard}`);
+
+    if (estiloCard === 'custom' && cfg.corCardCustom) {
+        root.style.setProperty('--custom-card-bg', cfg.corCardCustom);
+        const cardRgb = hexToRgb(cfg.corCardCustom);
+        const yiq = cardRgb ? ((cardRgb.r * 299) + (cardRgb.g * 587) + (cardRgb.b * 114)) / 1000 : 255;
+        root.style.setProperty('--custom-card-text', yiq >= 128 ? '#1e272e' : '#f5f6fa');
+        root.style.setProperty('--custom-card-border', yiq >= 128 ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.18)');
+    }
+
+    // Design Model (Arredondamento, Densidade, Superfície)
+    const modelo = cfg.modeloDesign || {};
+    const radius = modelo.radius || 'arredondado';
+    const densidade = modelo.densidade || 'normal';
+    const superficie = modelo.superficie || 'elevado';
+
+    const todosRadius = ['arredondado', 'suave', 'reto', 'pilula'];
+    todosRadius.forEach(r => document.body.classList.remove(`design-radius-${r}`));
+    document.body.classList.add(`design-radius-${radius}`);
+
+    const todasDensidades = ['confortavel', 'normal', 'compacto'];
+    todasDensidades.forEach(d => document.body.classList.remove(`design-density-${d}`));
+    document.body.classList.add(`design-density-${densidade}`);
+
+    const todasSuperficies = ['elevado', 'vidro', 'flat', 'glow'];
+    todasSuperficies.forEach(s => document.body.classList.remove(`design-surface-${s}`));
+    document.body.classList.add(`design-surface-${superficie}`);
 
     const titulo = cfg.appTitle || 'FPS Studio';
     document.title = `${titulo} - Gerenciamento de Estúdio`;
-    document.querySelectorAll('.brand-titulo, #appTitleLogin').forEach(el => { if (el) el.textContent = titulo; });
+    document.querySelectorAll('.brand-titulo, #appTitleLogin, #miniBrandNome').forEach(el => { if (el) el.textContent = titulo; });
 
     const login = document.querySelector('.login-container');
     if (login && cor.grad1) login.style.background = `linear-gradient(135deg, ${cor.grad1} 0%, ${cor.grad2} 50%, ${cor.grad3} 100%)`;
@@ -5303,6 +5664,10 @@ function aplicarConfigLook() {
     if (!localStorage.getItem('fps_tema')) document.body.classList.toggle('dark', !!cfg.darkPadrao);
     atualizarIconeTema();
     carregarFonte(cfg.fonte);
+
+    try {
+        localStorage.setItem('fps_cached_config', JSON.stringify(cfg));
+    } catch(e) {}
 }
 
 async function carregarConfig() {
@@ -5316,39 +5681,233 @@ async function carregarConfig() {
     renderFooterStudio();
 }
 
+function selecionarEstiloTela(estilo) {
+    const input = document.getElementById('configEstiloTela');
+    if (input) input.value = estilo;
+    document.querySelectorAll('#pickerEstilosTela .visual-picker-tile').forEach(tile => {
+        tile.classList.toggle('active', tile.getAttribute('data-estilo') === estilo);
+    });
+    atualizarVisualConfig();
+}
+
+function selecionarEstiloCard(estilo) {
+    const input = document.getElementById('configEstiloCard');
+    if (input) input.value = estilo;
+    document.querySelectorAll('#pickerEstilosCard .visual-picker-tile').forEach(tile => {
+        tile.classList.toggle('active', tile.getAttribute('data-card') === estilo);
+    });
+    const linhaCustom = document.getElementById('linhaCorCardCustom');
+    if (linhaCustom) linhaCustom.style.display = estilo === 'custom' ? 'block' : 'none';
+    atualizarVisualConfig();
+}
+
+function sincronizarColorPickerCard(val) {
+    const hexInput = document.getElementById('configCorCardCustomHex');
+    if (hexInput) hexInput.value = val;
+    atualizarVisualConfig();
+}
+
+function sincronizarHexCard(val) {
+    if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+        const picker = document.getElementById('configCorCardCustom');
+        if (picker) picker.value = val;
+        atualizarVisualConfig();
+    }
+}
+
+function selecionarDesignRadius(radius) {
+    const input = document.getElementById('configDesignRadius');
+    if (input) input.value = radius;
+    document.querySelectorAll('#selectorDesignRadius .chip-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-val') === radius);
+    });
+    atualizarVisualConfig();
+}
+
+function selecionarDesignDensidade(densidade) {
+    const input = document.getElementById('configDesignDensidade');
+    if (input) input.value = densidade;
+    document.querySelectorAll('#selectorDesignDensidade .chip-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-val') === densidade);
+    });
+    atualizarVisualConfig();
+}
+
+function selecionarDesignSuperficie(superficie) {
+    const input = document.getElementById('configDesignSuperficie');
+    if (input) input.value = superficie;
+    document.querySelectorAll('#selectorDesignSuperficie .chip-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-val') === superficie);
+    });
+    atualizarVisualConfig();
+}
+
+function selecionarTemaCor(temaKey, corHex) {
+    const select = document.getElementById('configTema');
+    if (select) select.value = temaKey;
+    if (corHex && temaKey !== 'custom') {
+        const picker = document.getElementById('configCorCustom');
+        if (picker) picker.value = corHex;
+        const hex = document.getElementById('configCorCustomHex');
+        if (hex) hex.value = corHex;
+    }
+    atualizarVisualConfig();
+}
+
+function sincronizarColorPickerPrimary(val) {
+    const hex = document.getElementById('configCorCustomHex');
+    if (hex) hex.value = val;
+    const select = document.getElementById('configTema');
+    if (select) select.value = 'custom';
+    atualizarVisualConfig();
+}
+
+function sincronizarHexPrimary(val) {
+    if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+        const picker = document.getElementById('configCorCustom');
+        if (picker) picker.value = val;
+        const select = document.getElementById('configTema');
+        if (select) select.value = 'custom';
+        atualizarVisualConfig();
+    }
+}
+
 function preencherFormConfig() {
     if (!document.getElementById('configTitulo')) return;
     const cfg = APP_CONFIG || CONFIG_DEFAULT;
-    document.getElementById('configTitulo').value = cfg.appTitle;
-    document.getElementById('configTema').value = cfg.tema;
-    document.getElementById('configCorCustom').value = (cfg.tema === 'custom' && cfg.primaryColor) ? cfg.primaryColor : coresConfig().primary;
-    document.getElementById('configFonte').value = cfg.fonte;
-    document.getElementById('configFontSize').value = cfg.fontSize;
-    document.getElementById('configFontSizeVal').textContent = cfg.fontSize + 'px';
+    document.getElementById('configTitulo').value = cfg.appTitle || 'FPS Studio';
+    document.getElementById('configTema').value = cfg.tema || 'padrao';
+    const primaryHex = (cfg.tema === 'custom' && cfg.primaryColor) ? cfg.primaryColor : coresConfig().primary;
+    if (document.getElementById('configCorCustom')) document.getElementById('configCorCustom').value = primaryHex;
+    if (document.getElementById('configCorCustomHex')) document.getElementById('configCorCustomHex').value = primaryHex;
+
+    document.getElementById('configFonte').value = cfg.fonte || 'Inter';
+    const fSize = parseFloat(cfg.fontSize) || 14;
+    document.getElementById('configFontSize').value = fSize;
+    document.getElementById('configFontSizeVal').textContent = fSize + 'px';
     document.getElementById('configDark').checked = !!cfg.darkPadrao;
+
+    // Screen Style & Card Style
+    if (document.getElementById('configEstiloTela')) document.getElementById('configEstiloTela').value = cfg.estiloTela || 'papel';
+    if (document.getElementById('configEstiloCard')) document.getElementById('configEstiloCard').value = cfg.estiloCard || 'papel-creme';
+    const corCard = cfg.corCardCustom || '#ffffff';
+    if (document.getElementById('configCorCardCustom')) document.getElementById('configCorCardCustom').value = corCard;
+    if (document.getElementById('configCorCardCustomHex')) document.getElementById('configCorCardCustomHex').value = corCard;
+
+    // Design Model
+    const modelo = cfg.modeloDesign || {};
+    if (document.getElementById('configDesignRadius')) document.getElementById('configDesignRadius').value = modelo.radius || 'arredondado';
+    if (document.getElementById('configDesignDensidade')) document.getElementById('configDesignDensidade').value = modelo.densidade || 'normal';
+    if (document.getElementById('configDesignSuperficie')) document.getElementById('configDesignSuperficie').value = modelo.superficie || 'elevado';
+
+    const linhaCustomCard = document.getElementById('linhaCorCardCustom');
+    if (linhaCustomCard) linhaCustomCard.style.display = cfg.estiloCard === 'custom' ? 'block' : 'none';
 
     const st = studioDados();
     if (document.getElementById('configStudioNome')) {
-        document.getElementById('configStudioNome').value = st.nome;
-        document.getElementById('configStudioCnpj').value = st.cnpj;
-        document.getElementById('configStudioTelefone').value = st.telefone;
-        document.getElementById('configStudioEmail').value = st.email;
-        document.getElementById('configStudioEndereco').value = st.endereco;
-        document.getElementById('configStudioCidade').value = st.cidade;
-        document.getElementById('configStudioPixChave').value = st.pixChave;
-        document.getElementById('configStudioPixTipo').value = st.pixTipo;
-        document.getElementById('configStudioPixBeneficiario').value = st.pixBeneficiario;
+        document.getElementById('configStudioNome').value = st.nome || '';
+        document.getElementById('configStudioCnpj').value = st.cnpj || '';
+        document.getElementById('configStudioTelefone').value = st.telefone || '';
+        document.getElementById('configStudioEmail').value = st.email || '';
+        document.getElementById('configStudioEndereco').value = st.endereco || '';
+        document.getElementById('configStudioCidade').value = st.cidade || '';
+        document.getElementById('configStudioPixChave').value = st.pixChave || '';
+        document.getElementById('configStudioPixTipo').value = st.pixTipo || 'email';
+        document.getElementById('configStudioPixBeneficiario').value = st.pixBeneficiario || '';
     }
 
     atualizarVisualConfig();
 }
 
 function atualizarVisualConfig() {
+    if (!document.getElementById('configTema')) return;
     const tema = document.getElementById('configTema').value;
-    document.getElementById('linhaCorCustom').style.display = tema === 'custom' ? 'flex' : 'none';
-    const cor = tema === 'custom' ? document.getElementById('configCorCustom').value : (TEMAS_PRESET[tema] || TEMAS_PRESET.padrao).primary;
-    document.getElementById('configCorSwatch') && (document.getElementById('configCorSwatch').style.background = cor);
-    document.getElementById('configPreviewCor').style.background = cor;
+    const linhaCorCustom = document.getElementById('linhaCorCustom');
+    if (linhaCorCustom) linhaCorCustom.style.display = tema === 'custom' ? 'flex' : 'none';
+
+    // Palette active swatch state
+    document.querySelectorAll('#paletteSwatchesContainer .palette-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-tema') === tema);
+    });
+
+    const corHex = tema === 'custom'
+        ? (document.getElementById('configCorCustom') ? document.getElementById('configCorCustom').value : '#6c5ce7')
+        : ((TEMAS_PRESET[tema] || TEMAS_PRESET.padrao).primary);
+
+    const corSwatch = document.getElementById('configCorSwatch');
+    if (corSwatch) corSwatch.style.background = corHex;
+
+    const previewCor = document.getElementById('configPreviewCor');
+    if (previewCor) previewCor.style.background = corHex;
+
+    // Card custom color
+    const estiloCard = document.getElementById('configEstiloCard') ? document.getElementById('configEstiloCard').value : 'papel-creme';
+    const corCardCustom = document.getElementById('configCorCardCustom') ? document.getElementById('configCorCardCustom').value : '#ffffff';
+    const cardCustomSwatch = document.getElementById('configCorCardSwatch');
+    if (cardCustomSwatch) cardCustomSwatch.style.background = corCardCustom;
+    const cardCustomSwatchPreview = document.getElementById('cardCustomSwatchPreview');
+    if (cardCustomSwatchPreview) cardCustomSwatchPreview.style.background = corCardCustom;
+
+    // Active tiles sync
+    const estiloTela = document.getElementById('configEstiloTela') ? document.getElementById('configEstiloTela').value : 'papel';
+    document.querySelectorAll('#pickerEstilosTela .visual-picker-tile').forEach(tile => {
+        tile.classList.toggle('active', tile.getAttribute('data-estilo') === estiloTela);
+    });
+
+    document.querySelectorAll('#pickerEstilosCard .visual-picker-tile').forEach(tile => {
+        tile.classList.toggle('active', tile.getAttribute('data-card') === estiloCard);
+    });
+
+    const radius = document.getElementById('configDesignRadius') ? document.getElementById('configDesignRadius').value : 'arredondado';
+    document.querySelectorAll('#selectorDesignRadius .chip-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-val') === radius);
+    });
+
+    const densidade = document.getElementById('configDesignDensidade') ? document.getElementById('configDesignDensidade').value : 'normal';
+    document.querySelectorAll('#selectorDesignDensidade .chip-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-val') === densidade);
+    });
+
+    const superficie = document.getElementById('configDesignSuperficie') ? document.getElementById('configDesignSuperficie').value : 'elevado';
+    document.querySelectorAll('#selectorDesignSuperficie .chip-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-val') === superficie);
+    });
+
+    // Update Live Preview Showcase Box
+    const miniScreen = document.getElementById('miniAppScreen');
+    if (miniScreen) {
+        miniScreen.className = 'mini-app-screen';
+        miniScreen.classList.add(`screen-style-${estiloTela}`);
+        miniScreen.classList.add(`card-style-${estiloCard}`);
+        miniScreen.classList.add(`design-radius-${radius}`);
+        miniScreen.classList.add(`design-density-${densidade}`);
+        miniScreen.classList.add(`design-surface-${superficie}`);
+        miniScreen.style.setProperty('--primary', corHex);
+        const rgb = hexToRgb(corHex);
+        if (rgb) miniScreen.style.setProperty('--primary-rgb', `${rgb.r}, ${rgb.g}, ${rgb.b}`);
+        if (estiloCard === 'custom') {
+            miniScreen.style.setProperty('--custom-card-bg', corCardCustom);
+            const cardRgb = hexToRgb(corCardCustom);
+            const yiq = cardRgb ? ((cardRgb.r * 299) + (cardRgb.g * 587) + (cardRgb.b * 114)) / 1000 : 255;
+            miniScreen.style.setProperty('--custom-card-text', yiq >= 128 ? '#1e272e' : '#f5f6fa');
+            miniScreen.style.setProperty('--custom-card-border', yiq >= 128 ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.18)');
+        }
+    }
+
+    const appTitleInput = document.getElementById('configTitulo');
+    const miniBrandNome = document.getElementById('miniBrandNome');
+    if (miniBrandNome && appTitleInput) {
+        miniBrandNome.textContent = (appTitleInput.value || '').trim() || 'FPS Studio';
+    }
+
+    // Update preview summary badge
+    const badge = document.getElementById('previewResumoBadge');
+    if (badge) {
+        const nomesTela = { papel: 'Papel Pergaminho', padrao: 'Studio Moderno', cyber: 'Cyber Dark Neon', luxo: 'Luxo Acústico', nordico: 'Minimalista Nórdico', retro: 'Console Analógico 80s' };
+        const nomesCard = { 'papel-creme': 'Papel Creme', neutro: 'Neutro Coerente', 'borda-acento': 'Borda Destaque', gradiente: 'Gradiente Suave', 'onix-glass': 'Ônix Glass', 'status-color': 'Status Dinâmico', custom: 'Personalizado' };
+        const nomesRadius = { arredondado: 'Arredondado (16px)', suave: 'Suave (10px)', reto: 'Reto (3px)', pilula: 'Pílula (24px)' };
+        badge.textContent = `Estilo: ${nomesTela[estiloTela] || estiloTela} · Cards: ${nomesCard[estiloCard] || estiloCard} · Cantos: ${nomesRadius[radius] || radius}`;
+    }
 }
 
 function aplicarCorConfig() {
@@ -5359,13 +5918,26 @@ function aplicarCorConfig() {
 
 async function salvarConfig() {
     if (!DBReady) { showToast('Sem conexão com o servidor para salvar!', 'error'); return; }
+    const temaVal = document.getElementById('configTema').value;
+    const primaryCor = temaVal === 'custom' 
+        ? (document.getElementById('configCorCustom') ? document.getElementById('configCorCustom').value : '#6c5ce7')
+        : ((TEMAS_PRESET[temaVal] || TEMAS_PRESET.padrao).primary);
+
     const cfg = {
         appTitle: (document.getElementById('configTitulo').value || '').trim() || 'FPS Studio',
-        tema: document.getElementById('configTema').value,
-        primaryColor: document.getElementById('configTema').value === 'custom' ? document.getElementById('configCorCustom').value : '',
+        tema: temaVal,
+        primaryColor: primaryCor,
         fonte: document.getElementById('configFonte').value,
         fontSize: parseFloat(document.getElementById('configFontSize').value) || 14,
         darkPadrao: document.getElementById('configDark').checked,
+        estiloTela: document.getElementById('configEstiloTela') ? document.getElementById('configEstiloTela').value : 'papel',
+        estiloCard: document.getElementById('configEstiloCard') ? document.getElementById('configEstiloCard').value : 'papel-creme',
+        corCardCustom: document.getElementById('configCorCardCustom') ? document.getElementById('configCorCardCustom').value : '#ffffff',
+        modeloDesign: {
+            radius: document.getElementById('configDesignRadius') ? document.getElementById('configDesignRadius').value : 'arredondado',
+            densidade: document.getElementById('configDesignDensidade') ? document.getElementById('configDesignDensidade').value : 'normal',
+            superficie: document.getElementById('configDesignSuperficie') ? document.getElementById('configDesignSuperficie').value : 'elevado'
+        },
         studio: document.getElementById('configStudioNome') ? {
             nome: (document.getElementById('configStudioNome').value || '').trim(),
             cnpj: (document.getElementById('configStudioCnpj').value || '').trim(),
@@ -5376,30 +5948,31 @@ async function salvarConfig() {
             pixChave: (document.getElementById('configStudioPixChave').value || '').trim(),
             pixTipo: document.getElementById('configStudioPixTipo').value,
             pixBeneficiario: (document.getElementById('configStudioPixBeneficiario').value || '').trim()
-        } : CONFIG_DEFAULT.studio
+        } : (APP_CONFIG && APP_CONFIG.studio ? APP_CONFIG.studio : CONFIG_DEFAULT.studio)
     };
     try {
         await DB_SERVICE.saveConfig(cfg);
         APP_CONFIG = cfg;
         aplicarConfigLook();
         renderFooterStudio();
-        showToast('Configurações salvas com sucesso!', 'success');
+        showToast('Configurações e personalização visual salvas com sucesso!', 'success');
     } catch (e) {
         showToast('Erro ao salvar configurações.', 'error');
     }
 }
 
 async function restaurarConfigPadrao() {
-    if (!confirm('Restaurar as configurações de aparência para o padrão?')) return;
+    if (!confirm('Restaurar as configurações e aparências visuais para o padrão original?')) return;
     try {
-        await DB_SERVICE.saveConfig(Object.assign({}, CONFIG_DEFAULT));
-        APP_CONFIG = Object.assign({}, CONFIG_DEFAULT);
+        const padrao = Object.assign({}, CONFIG_DEFAULT);
+        await DB_SERVICE.saveConfig(padrao);
+        APP_CONFIG = padrao;
         aplicarConfigLook();
         preencherFormConfig();
         renderFooterStudio();
-        showToast('Configurações padrão restauradas!', 'success');
+        showToast('Configurações padrão restauradas com sucesso!', 'success');
     } catch (e) {
-        showToast('Erro ao restaurar.', 'error');
+        showToast('Erro ao restaurar configurações.', 'error');
     }
 }
 

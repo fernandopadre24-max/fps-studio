@@ -1,4 +1,4 @@
-﻿/* FPS STUDIO - GERENCIAMENTO DE ESTÃšDIO */
+/* FPS STUDIO - GERENCIAMENTO DE ESTÃšDIO */
 :root {
     --primary: #6c5ce7;
     --primary-dark: #5a4bd1;
@@ -2582,6 +2582,10 @@ body {
     gap: 12px;
 }
 
+.condicao-pagamento.condicao-pagamento-3 {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
 .condicao-option {
     cursor: pointer;
 }
@@ -4204,4 +4208,864 @@ body.dark #adminPedidos .kanban-card small,
 body.dark #adminPedidos .kanban-vazio {
     color: #c4b892 !important;
 }
+
+/* ========================================================
+   ESTILOS DE TELA (SCREEN STYLES / AMBIENTES DE TELA)
+   ======================================================== */
+
+/* 1. PAPEL VINTAGE / PERGAMINHO */
+body.screen-style-papel {
+    --bg: #f8f2e2;
+    --bg-card: #fffef8;
+    --dark: #3a3224;
+    --dark-light: #6e6047;
+    --gray-light: #dfd2b2;
+}
+body.screen-style-papel .main-content,
+body.screen-style-papel .page {
+    background-color: #f7f1e1;
+}
+
+/* 2. STUDIO MODERNO CLEAN */
+body.screen-style-padrao {
+    --bg: #f4f6fa;
+    --bg-card: #ffffff;
+    --dark: #2d3436;
+    --dark-light: #636e72;
+    --gray-light: #dfe6e9;
+}
+body.screen-style-padrao #adminPedidos,
+body.screen-style-padrao #adminFinanceiro {
+    background: var(--bg) !important;
+    border: 1px solid var(--gray-light) !important;
+    border-radius: var(--radius) !important;
+    padding: 20px !important;
+    box-shadow: var(--shadow) !important;
+    color: var(--dark) !important;
+}
+body.screen-style-padrao #adminPedidos::before,
+body.screen-style-padrao #adminFinanceiro::before {
+    display: none !important;
+}
+body.screen-style-padrao #adminPedidos .page-header h2,
+body.screen-style-padrao #adminFinanceiro .page-header h2 {
+    color: var(--dark) !important;
+    text-shadow: none !important;
+}
+body.screen-style-padrao #adminPedidos .filter-bar,
+body.screen-style-padrao #adminFinanceiro .filter-bar {
+    background: var(--bg-card) !important;
+    border-color: var(--gray-light) !important;
+    box-shadow: var(--shadow) !important;
+}
+body.screen-style-padrao #adminPedidos .kanban-col,
+body.screen-style-padrao #adminFinanceiro .kanban-col {
+    background: #edf1f7 !important;
+    border-color: #dfe4ec !important;
+    box-shadow: none !important;
+}
+
+/* 3. CYBER DARK NEON */
+body.screen-style-cyber {
+    --bg: #090a12;
+    --bg-card: #121424;
+    --dark: #f0f3ff;
+    --dark-light: #8e9bb8;
+    --gray-light: #1f233e;
+    --white: #16182a;
+}
+body.screen-style-cyber .main-content,
+body.screen-style-cyber .page {
+    background: radial-gradient(circle at 10% 20%, rgba(0, 206, 201, 0.05) 0%, transparent 45%),
+                radial-gradient(circle at 90% 80%, rgba(108, 92, 231, 0.06) 0%, transparent 45%),
+                #090a12;
+}
+body.screen-style-cyber #adminPedidos,
+body.screen-style-cyber #adminFinanceiro {
+    background: #0f101d !important;
+    border: 1px solid rgba(0, 206, 201, 0.35) !important;
+    border-radius: var(--radius) !important;
+    padding: 20px !important;
+    box-shadow: inset 0 0 60px rgba(0, 206, 201, 0.04), 0 8px 30px rgba(0, 0, 0, 0.6) !important;
+    color: #e8ecf8 !important;
+}
+body.screen-style-cyber #adminPedidos::before,
+body.screen-style-cyber #adminFinanceiro::before {
+    display: none !important;
+}
+body.screen-style-cyber #adminPedidos .page-header h2,
+body.screen-style-cyber #adminFinanceiro .page-header h2 {
+    color: #00cec9 !important;
+    text-shadow: 0 0 14px rgba(0, 206, 201, 0.5) !important;
+}
+body.screen-style-cyber #adminPedidos .filter-bar,
+body.screen-style-cyber #adminFinanceiro .filter-bar {
+    background: #141628 !important;
+    border-color: #272a48 !important;
+}
+body.screen-style-cyber #adminPedidos .kanban-col,
+body.screen-style-cyber #adminFinanceiro .kanban-col {
+    background: #131526 !important;
+    border-color: #262946 !important;
+}
+body.screen-style-cyber .sidebar,
+body.screen-style-cyber .topbar {
+    border-color: rgba(0, 206, 201, 0.2) !important;
+}
+
+/* 4. LUXO ACÚSTICO / MADEIRA & OURO */
+body.screen-style-luxo {
+    --bg: #181411;
+    --bg-card: #231d18;
+    --dark: #f5ede0;
+    --dark-light: #b8a692;
+    --gray-light: #3a3028;
+    --white: #2a221c;
+}
+body.screen-style-luxo .main-content,
+body.screen-style-luxo .page {
+    background: linear-gradient(180deg, #1c1714 0%, #14110e 100%);
+}
+body.screen-style-luxo #adminPedidos,
+body.screen-style-luxo #adminFinanceiro {
+    background: linear-gradient(180deg, #221c17 0%, #171310 100%) !important;
+    border: 1px solid #4a3c2e !important;
+    border-radius: var(--radius) !important;
+    padding: 20px !important;
+    box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.5), 0 8px 30px rgba(0, 0, 0, 0.6) !important;
+    color: #f2e9dc !important;
+}
+body.screen-style-luxo #adminPedidos::before,
+body.screen-style-luxo #adminFinanceiro::before {
+    display: none !important;
+}
+body.screen-style-luxo #adminPedidos .page-header h2,
+body.screen-style-luxo #adminFinanceiro .page-header h2 {
+    color: #d4af37 !important;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6) !important;
+}
+body.screen-style-luxo #adminPedidos .filter-bar,
+body.screen-style-luxo #adminFinanceiro .filter-bar {
+    background: #261f1a !important;
+    border-color: #4a3c2e !important;
+}
+body.screen-style-luxo #adminPedidos .kanban-col,
+body.screen-style-luxo #adminFinanceiro .kanban-col {
+    background: #241d18 !important;
+    border-color: #46372b !important;
+}
+
+/* 5. MINIMALISTA NÓRDICO / SOFT SLATE */
+body.screen-style-nordico {
+    --bg: #edf2f7;
+    --bg-card: #ffffff;
+    --dark: #2d3748;
+    --dark-light: #718096;
+    --gray-light: #e2e8f0;
+}
+body.screen-style-nordico .main-content,
+body.screen-style-nordico .page {
+    background-color: #edf2f7;
+}
+body.screen-style-nordico #adminPedidos,
+body.screen-style-nordico #adminFinanceiro {
+    background: #f8fafc !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: var(--radius) !important;
+    padding: 20px !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04) !important;
+    color: #2d3748 !important;
+}
+body.screen-style-nordico #adminPedidos::before,
+body.screen-style-nordico #adminFinanceiro::before {
+    display: none !important;
+}
+body.screen-style-nordico #adminPedidos .page-header h2,
+body.screen-style-nordico #adminFinanceiro .page-header h2 {
+    color: #2b6cb0 !important;
+    text-shadow: none !important;
+}
+body.screen-style-nordico #adminPedidos .filter-bar,
+body.screen-style-nordico #adminFinanceiro .filter-bar {
+    background: #ffffff !important;
+    border-color: #e2e8f0 !important;
+}
+body.screen-style-nordico #adminPedidos .kanban-col,
+body.screen-style-nordico #adminFinanceiro .kanban-col {
+    background: #edf2f7 !important;
+    border-color: #e2e8f0 !important;
+}
+
+/* 6. CONSOLE ANALÓGICO 80s */
+body.screen-style-retro {
+    --bg: #e6dfce;
+    --bg-card: #f2ebd9;
+    --dark: #2f281e;
+    --dark-light: #6b5e4c;
+    --gray-light: #cebf9f;
+}
+body.screen-style-retro .main-content,
+body.screen-style-retro .page {
+    background-color: #e6dfce;
+}
+body.screen-style-retro #adminPedidos,
+body.screen-style-retro #adminFinanceiro {
+    background: #eae3d2 !important;
+    border: 1px solid #c9bfa8 !important;
+    border-radius: var(--radius) !important;
+    padding: 20px !important;
+    box-shadow: inset 0 0 30px rgba(120, 100, 60, 0.08) !important;
+    color: #2e281d !important;
+}
+body.screen-style-retro #adminPedidos::before,
+body.screen-style-retro #adminFinanceiro::before {
+    display: none !important;
+}
+body.screen-style-retro #adminPedidos .page-header h2,
+body.screen-style-retro #adminFinanceiro .page-header h2 {
+    color: #b7791f !important;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5) !important;
+}
+body.screen-style-retro #adminPedidos .filter-bar,
+body.screen-style-retro #adminFinanceiro .filter-bar {
+    background: #f2ecd9 !important;
+    border-color: #c9bfa8 !important;
+}
+body.screen-style-retro #adminPedidos .kanban-col,
+body.screen-style-retro #adminFinanceiro .kanban-col {
+    background: #ded7c3 !important;
+    border-color: #c9bfa8 !important;
+}
+
+/* ========================================================
+   CORES E MODELOS DE CARDS (CARD STYLES)
+   ======================================================== */
+
+/* 1. Borda de Destaque */
+body.card-style-borda-acento .card,
+body.card-style-borda-acento .stat-card,
+body.card-style-borda-acento .item-card {
+    border-top: 3.5px solid var(--primary) !important;
+}
+body.card-style-borda-acento .kanban-col:nth-child(1) .kanban-card {
+    border-top: 3.5px solid var(--warning, #fdcb6e) !important;
+}
+body.card-style-borda-acento .kanban-col:nth-child(2) .kanban-card {
+    border-top: 3.5px solid var(--primary, #6c5ce7) !important;
+}
+body.card-style-borda-acento .kanban-col:nth-child(3) .kanban-card {
+    border-top: 3.5px solid var(--success, #00b894) !important;
+}
+
+/* 2. Papel Creme / Marfim */
+body.card-style-papel-creme .card,
+body.card-style-papel-creme .stat-card,
+body.card-style-papel-creme .kanban-card,
+body.card-style-papel-creme .item-card {
+    background: linear-gradient(160deg, #fffef9 0%, #faf3de 100%) !important;
+    border: 1px solid #d9caa1 !important;
+    box-shadow: 0 2px 7px rgba(100, 80, 40, 0.1) !important;
+    color: #3d3422 !important;
+}
+body.dark.card-style-papel-creme .card,
+body.dark.card-style-papel-creme .stat-card,
+body.dark.card-style-papel-creme .kanban-card,
+body.dark.card-style-papel-creme .item-card {
+    background: #322f22 !important;
+    border-color: #4a4430 !important;
+    color: #e8dfc4 !important;
+}
+
+/* 3. Gradiente Suave Studio */
+body.card-style-gradiente .card,
+body.card-style-gradiente .stat-card,
+body.card-style-gradiente .kanban-card,
+body.card-style-gradiente .item-card {
+    background: linear-gradient(145deg, #ffffff 0%, rgba(var(--primary-rgb, 108, 92, 231), 0.08) 100%) !important;
+    border: 1px solid rgba(var(--primary-rgb, 108, 92, 231), 0.24) !important;
+    box-shadow: 0 4px 16px rgba(var(--primary-rgb, 108, 92, 231), 0.08) !important;
+}
+body.dark.card-style-gradiente .card,
+body.dark.card-style-gradiente .stat-card,
+body.dark.card-style-gradiente .kanban-card,
+body.dark.card-style-gradiente .item-card {
+    background: linear-gradient(145deg, #1e1f33 0%, #151624 100%) !important;
+    border: 1px solid rgba(var(--primary-rgb, 108, 92, 231), 0.3) !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35) !important;
+}
+
+/* 4. Ônix Glass / Glassmorphism */
+body.card-style-onix-glass .card,
+body.card-style-onix-glass .stat-card,
+body.card-style-onix-glass .kanban-card,
+body.card-style-onix-glass .item-card {
+    background: rgba(255, 255, 255, 0.78) !important;
+    backdrop-filter: blur(14px) !important;
+    -webkit-backdrop-filter: blur(14px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.65) !important;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.07) !important;
+}
+body.dark.card-style-onix-glass .card,
+body.dark.card-style-onix-glass .stat-card,
+body.dark.card-style-onix-glass .kanban-card,
+body.dark.card-style-onix-glass .item-card {
+    background: rgba(18, 20, 32, 0.8) !important;
+    backdrop-filter: blur(14px) !important;
+    -webkit-backdrop-filter: blur(14px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45) !important;
+}
+
+/* 5. Status Dinâmico */
+body.card-style-status-color .kanban-col:nth-child(1) .kanban-card {
+    background: rgba(253, 203, 110, 0.18) !important;
+    border: 1px solid rgba(253, 203, 110, 0.45) !important;
+}
+body.card-style-status-color .kanban-col:nth-child(2) .kanban-card {
+    background: rgba(108, 92, 231, 0.12) !important;
+    border: 1px solid rgba(108, 92, 231, 0.38) !important;
+}
+body.card-style-status-color .kanban-col:nth-child(3) .kanban-card {
+    background: rgba(0, 184, 148, 0.15) !important;
+    border: 1px solid rgba(0, 184, 148, 0.45) !important;
+}
+
+/* 6. Cor Personalizada */
+body.card-style-custom .card,
+body.card-style-custom .stat-card,
+body.card-style-custom .kanban-card,
+body.card-style-custom .item-card {
+    background: var(--custom-card-bg, #ffffff) !important;
+    color: var(--custom-card-text, #2d3436) !important;
+    border-color: var(--custom-card-border, rgba(0, 0, 0, 0.12)) !important;
+}
+
+/* ========================================================
+   MODELOS DE DESIGN (RADIUS, DENSITY, SURFACE)
+   ======================================================== */
+
+/* Radius */
+body.design-radius-arredondado {
+    --radius: 16px;
+    --radius-sm: 10px;
+}
+body.design-radius-suave {
+    --radius: 10px;
+    --radius-sm: 6px;
+}
+body.design-radius-reto {
+    --radius: 3px;
+    --radius-sm: 2px;
+}
+body.design-radius-reto .btn,
+body.design-radius-reto input,
+body.design-radius-reto select,
+body.design-radius-reto textarea,
+body.design-radius-reto .badge,
+body.design-radius-reto .status-badge {
+    border-radius: 2px !important;
+}
+body.design-radius-pilula {
+    --radius: 24px;
+    --radius-sm: 14px;
+}
+body.design-radius-pilula .btn,
+body.design-radius-pilula input[type="text"],
+body.design-radius-pilula input[type="email"],
+body.design-radius-pilula input[type="search"],
+body.design-radius-pilula select,
+body.design-radius-pilula .badge,
+body.design-radius-pilula .status-badge {
+    border-radius: 9999px !important;
+}
+
+/* Densidade */
+body.design-density-confortavel .card-body {
+    padding: 22px 26px;
+}
+body.design-density-confortavel .stat-card {
+    padding: 20px 24px;
+}
+body.design-density-confortavel .kanban-card {
+    padding: 16px;
+    margin-bottom: 14px;
+}
+body.design-density-confortavel .data-table th,
+body.design-density-confortavel .data-table td {
+    padding: 14px 18px;
+}
+
+body.design-density-compacto .card-body {
+    padding: 12px 16px;
+}
+body.design-density-compacto .card-header {
+    padding: 10px 16px;
+}
+body.design-density-compacto .stat-card {
+    padding: 8px 12px !important;
+    gap: 8px;
+}
+body.design-density-compacto .stat-icon {
+    width: 32px !important;
+    height: 32px !important;
+    font-size: 14px !important;
+}
+body.design-density-compacto .stat-info h3 {
+    font-size: 16px !important;
+}
+body.design-density-compacto .kanban-card {
+    padding: 8px 10px !important;
+    margin-bottom: 8px !important;
+    font-size: 12px;
+}
+body.design-density-compacto .data-table th,
+body.design-density-compacto .data-table td {
+    padding: 6px 10px !important;
+    font-size: 12px !important;
+}
+body.design-density-compacto .filter-bar {
+    padding: 8px 12px;
+    margin-bottom: 10px;
+}
+
+/* Superfície */
+body.design-surface-flat {
+    --shadow: none;
+    --shadow-lg: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+body.design-surface-flat .card,
+body.design-surface-flat .stat-card,
+body.design-surface-flat .kanban-card,
+body.design-surface-flat .item-card {
+    box-shadow: none !important;
+    border-width: 1px !important;
+}
+
+body.design-surface-elevado {
+    --shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+    --shadow-lg: 0 14px 40px rgba(0, 0, 0, 0.14);
+}
+
+body.design-surface-vidro .card,
+body.design-surface-vidro .stat-card,
+body.design-surface-vidro .kanban-col {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+body.design-surface-glow .card:hover,
+body.design-surface-glow .stat-card:hover,
+body.design-surface-glow .kanban-card:hover {
+    box-shadow: 0 0 18px rgba(var(--primary-rgb, 108, 92, 231), 0.3) !important;
+    border-color: rgba(var(--primary-rgb, 108, 92, 231), 0.5) !important;
+}
+body.design-surface-glow .btn-primary {
+    box-shadow: 0 0 14px rgba(var(--primary-rgb, 108, 92, 231), 0.45) !important;
+}
+
+/* ========================================================
+   SETTINGS UI (CONFIGURAÇÕES: PICKERS, TILES, CHIPS, LIVE PREVIEW)
+   ======================================================== */
+.visual-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+    margin-top: 10px;
+    margin-bottom: 16px;
+}
+
+.visual-picker-tile {
+    position: relative;
+    background: var(--bg);
+    border: 2px solid var(--gray-light);
+    border-radius: var(--radius);
+    padding: 14px 14px;
+    cursor: pointer;
+    transition: all 0.22s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    user-select: none;
+}
+
+.visual-picker-tile:hover {
+    border-color: var(--primary);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.09);
+}
+
+.visual-picker-tile.active {
+    border-color: var(--primary) !important;
+    background: rgba(var(--primary-rgb, 108, 92, 231), 0.09) !important;
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb, 108, 92, 231), 0.25), 0 6px 16px rgba(0, 0, 0, 0.1);
+}
+
+.tile-icon-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.tile-icon-header i.tile-main-icon {
+    font-size: 22px;
+}
+
+.tile-check {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--gray-light);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    transition: all 0.2s ease;
+}
+
+.visual-picker-tile.active .tile-check {
+    background: var(--primary);
+}
+
+.tile-info h4 {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--dark);
+    margin-bottom: 3px;
+}
+
+.tile-info p {
+    font-size: 11px;
+    color: var(--dark-light);
+    line-height: 1.35;
+}
+
+.tile-visual-swatch {
+    height: 22px;
+    border-radius: var(--radius-sm);
+    margin-top: 4px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+/* Palette Swatches */
+.palette-swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 8px;
+    margin-bottom: 12px;
+}
+
+.palette-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 3px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.palette-btn:hover {
+    transform: scale(1.15);
+}
+
+.palette-btn.active {
+    border-color: #fff;
+    box-shadow: 0 0 0 3px var(--primary), 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.palette-btn.active::after {
+    content: "✓";
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* Chips Segmented Selector */
+.chips-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 6px;
+    margin-bottom: 8px;
+}
+
+.chip-btn {
+    padding: 8px 14px;
+    border-radius: var(--radius);
+    background: var(--bg);
+    border: 1.5px solid var(--gray-light);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--dark);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.chip-btn:hover {
+    border-color: var(--primary);
+    background: rgba(var(--primary-rgb, 108, 92, 231), 0.06);
+}
+
+.chip-btn.active {
+    background: var(--primary);
+    color: #fff !important;
+    border-color: var(--primary);
+    box-shadow: 0 2px 10px rgba(var(--primary-rgb, 108, 92, 231), 0.35);
+}
+
+/* Mini Live Preview Stage */
+.settings-preview-card {
+    border: 2px solid rgba(var(--primary-rgb, 108, 92, 231), 0.4) !important;
+    background: var(--bg-card);
+}
+
+.preview-badge {
+    font-size: 12px;
+    padding: 4px 12px;
+    border-radius: 9999px;
+    background: rgba(var(--primary-rgb, 108, 92, 231), 0.12);
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.preview-stage-container {
+    border-radius: var(--radius);
+    padding: 16px;
+    background: #0d0f17;
+    box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+}
+
+.mini-app-screen {
+    border-radius: var(--radius);
+    padding: 16px;
+    background: var(--bg);
+    color: var(--dark);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+    transition: all 0.3s ease;
+}
+
+.mini-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 12px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid var(--gray-light);
+}
+
+.mini-brand {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--primary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.mini-topbar-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.mini-pill {
+    font-size: 11px;
+    padding: 3px 9px;
+    border-radius: 9999px;
+    background: rgba(0, 0, 0, 0.06);
+    color: var(--dark-light);
+    font-weight: 500;
+}
+
+.mini-content-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 14px;
+}
+
+.mini-stat-card {
+    border-radius: var(--radius);
+    padding: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--gray-light);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: var(--shadow);
+}
+
+.mini-stat-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: var(--radius-sm);
+    background: rgba(var(--primary-rgb, 108, 92, 231), 0.14);
+    color: var(--primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+}
+
+.mini-stat-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.mini-stat-label {
+    font-size: 10px;
+    color: var(--dark-light);
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.mini-stat-val {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--dark);
+}
+
+.mini-stat-sub {
+    font-size: 10px;
+    color: var(--success);
+    font-weight: 600;
+}
+
+.mini-kanban-card {
+    border-radius: var(--radius);
+    padding: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--gray-light);
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.mini-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.mini-pedido-id {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--dark-light);
+}
+
+.mini-status-badge {
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: rgba(var(--primary-rgb, 108, 92, 231), 0.15);
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.mini-pedido-titulo {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--dark);
+}
+
+.mini-pedido-cliente {
+    font-size: 11px;
+    color: var(--dark-light);
+}
+
+.mini-card-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px dashed var(--gray-light);
+}
+
+.mini-pedido-valor {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--primary);
+}
+
+.mini-card-btns {
+    display: flex;
+    gap: 4px;
+}
+
+.mini-btn-primary {
+    font-size: 10px;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.mini-btn-secondary {
+    font-size: 10px;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--bg);
+    color: var(--dark);
+    border: 1px solid var(--gray-light);
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.mini-controls-card {
+    border-radius: var(--radius);
+    padding: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--gray-light);
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mini-section-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--dark-light);
+}
+
+.mini-btn-row {
+    display: flex;
+    gap: 6px;
+}
+
+.mini-tag-row {
+    display: flex;
+    gap: 4px;
+}
+
+.mini-tag {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--dark-light);
+    border: 1px solid var(--gray-light);
+}
+
+.mini-tag.active {
+    background: rgba(var(--primary-rgb, 108, 92, 231), 0.15);
+    color: var(--primary);
+    border-color: var(--primary);
+    font-weight: 600;
+}
+
 
