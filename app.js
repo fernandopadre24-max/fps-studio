@@ -1169,8 +1169,11 @@ function renderPedidos() {
                         <h5 style="margin:0 0 4px 0;font-size:14px;color:#1e293b;">${c ? c.nome : 'Cliente Avulso'}</h5>
                         <p style="font-size:12px;color:#64748b;margin:0 0 8px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${servs}</p>
                         <div style="display:flex;justify-content:space-between;align-items:center;">
-                            <span style="font-size:13px;font-weight:700;color:var(--primary);">${formatCurrency(p.total)}</span>
-                            <span style="font-size:11px;color:#64748b;">${(p.audios || []).length} áudio(s)</span>
+                            <span style="font-size:13px;font-weight:700;color:var(--primary);">${formatCurrency(valorEsperadoPedido(p))}</span>
+                            <span style="display:flex;gap:6px;align-items:center;">
+                                <button class="btn-icon text-danger" title="Excluir" onclick="event.stopPropagation(); excluirPedido('${p.id}')" style="background:none;border:none;cursor:pointer;color:#ef4444;padding:2px 4px;"><i class="fas fa-trash"></i></button>
+                                <span style="font-size:11px;color:#64748b;">${(p.audios || []).length} áudio(s)</span>
+                            </span>
                         </div>
                     </div>
                 `;
@@ -1243,12 +1246,23 @@ function editarPedido(id) {
 }
 
 async function excluirPedido(id) {
-    if (!confirm('Excluir este pedido?')) return;
+    if (!confirm('Excluir este pedido? As movimentações financeiras vinculadas também serão removidas.')) return;
     const p = DB.pedidos.find(x => x.id == id);
     DB.pedidos = DB.pedidos.filter(x => x.id != id);
-    if (DBReady && p) await DB_SERVICE.deletePedido(p.docId || p.id);
+    if (p) {
+        const vinculadas = (DB.movimentacoes || []).filter(m => movRefereAoPedido(m, p.id));
+        for (const m of vinculadas) {
+            DB.movimentacoes = DB.movimentacoes.filter(x => x.id !== m.id);
+            if (DBReady && m.docId) {
+                try { await DB_SERVICE.deleteMovimentacao(m.docId); } catch (e) {}
+            }
+        }
+        if (DBReady) await DB_SERVICE.deletePedido(p.docId || p.id);
+    }
+    closeAllModals();
     renderPedidos();
     renderAdminDashboard();
+    renderFinanceiro();
     showToast('Pedido excluído', 'success');
 }
 
@@ -4906,6 +4920,11 @@ function verDetalhesPedido(id) {
             <p style="margin:0; font-size:13px; white-space:pre-wrap;">${p.observacoes || p.descricao || p.detalhes}</p>
         </div>`;
     }
+
+    html += `<div style="display:flex; gap:10px; justify-content:flex-end; margin-top:16px; padding-top:14px; border-top:1px solid rgba(0,0,0,0.08);">
+        <button class="btn-secondary btn-sm" onclick="closeAllModals(); editarPedido('${p.id}')"><i class="fas fa-edit"></i> Editar</button>
+        <button class="btn-danger btn-sm" onclick="excluirPedido('${p.id}')"><i class="fas fa-trash"></i> Excluir Pedido</button>
+    </div>`;
 
     document.getElementById('detalhesPedidoContent').innerHTML = html;
     openModal('detalhesPedidoModal');
