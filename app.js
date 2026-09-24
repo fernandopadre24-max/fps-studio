@@ -731,10 +731,14 @@ function renderizarUltimosPedidosDashboard(pedidos) {
 }
 
 window.aplicarFiltrosDashboard = function() {
+    const periodo = document.getElementById('filtroPeriodoDash')?.value || 'todos';
+    if (typeof renderDashboardSomatorio === 'function') {
+        renderDashboardSomatorio(periodo);
+    }
+
     const container = document.getElementById('ultimasMovimentacoes');
     if (!container) return;
     
-    const periodo = document.getElementById('filtroPeriodoDash')?.value || 'todos';
     const tipo = document.getElementById('filtroTipoDash')?.value || 'todos';
     const busca = (document.getElementById('buscaMovDash')?.value || '').toLowerCase().trim();
     
@@ -803,25 +807,297 @@ window.limparFiltrosDashboard = function() {
     aplicarFiltrosDashboard();
 };
 
-function atualizarTotaisFinanceiro() {
-    const movs = DB.movimentacoes || [];
-    const entradas = movs.filter(m => m.tipo === 'entrada').reduce((s, m) => s + (parseFloat(m.valor) || 0), 0);
-    const saidas = movs.filter(m => m.tipo === 'saida').reduce((s, m) => s + (parseFloat(m.valor) || 0), 0);
-    const saldo = entradas - saidas;
+// ==========================================
+// CÁLCULO FINANCEIRO E SOMATÓRIO CONSOLIDADO
+// ==========================================
+
+function calcularBalancoFinanceiro(periodo = 'todos') {
+    const pedidos = DB.pedidos || [];
+    const movimentacoes = DB.movimentacoes || [];
+    const hoje = new Date();
+
+    function dentroPeriodo(dataStr) {
+        if (!dataStr) return true;
+        if (periodo === 'todos') return true;
+        if (periodo === '7') {
+            const lim = new Date();
+            lim.setDate(hoje.getDate() - 7);
+            return dataStr >= lim.toISOString().split('T')[0];
+        }
+        if (periodo === '30') {
+            const lim = new Date();
+            lim.setDate(hoje.getDate() - 30);
+            return dataStr >= lim.toISOString().split('T')[0];
+        }
+        if (periodo === 'mes') {
+            return dataStr.startsWith(hoje.toISOString().slice(0, 7));
+        }
+        if (periodo === 'ano') {
+            return dataStr.startsWith(String(hoje.getFullYear()));
+        }
+        return true;
+    }
+
+    // Movimentações no período
+    const movsPeriodo = movimentacoes.filter(m => dentroPeriodo(m.data));
+
+    // 1. Entradas Confirmadas (recebidas e quitadas)
+    const entradasConfirmadas = movsPeriodo
+        .filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente')
+        .reduce((s, m) => s + (Number(m.valor) || 0), 0);
+    const qtdPagamentosConfirmados = movsPeriodo
+        .filter(m => m.tipo === 'entrada' && m.pagamento !== 'pendente').length;
+
+    // 2. Saídas / Despesas no período
+    const saidas = movsPeriodo
+        .filter(m => m.tipo === 'saida')
+        .reduce((s, m) => s + (Number(m.valor) || 0), 0);
+    const qtdSaidas = movsPeriodo
+        .filter(m => m.tipo === 'saida').length;
+
+    // 3. Saldo em Caixa Realizado (Entradas - Saídas)
+    const saldoCaixa = Math.round((entradasConfirmadas - saidas) * 100) / 100;
+
+    // 4. Pedidos no período (ou todos se 'todos')
+    const pedidosPeriodo = periodo === 'todos' 
+        ? pedidos 
+        : pedidos.filter(p => dentroPeriodo(p.data));
+
+    let totalAReceberPedidos = 0;
+    let qtdPedidosAReceber = 0;
+    let pedidosPrimeiraParcelaOuIntegral = 0;
+    let totalPrimeiraParcelaOuIntegral = 0;
+    let pedidosSegundaParcela = 0;
+    let totalSegundaParcela = 0;
+    let qtdPedidosQuitados = 0;
+    let totalQuitado = 0;
+    let faturamentoPrevistoPedidos = 0;
+    let pedidosAtivos = 0;
+    let pedidosPendentes = 0;
+    let pedidosEmAndamento = 0;
+    let pedidosConcluidos = 0;
+
+    pedidosPeriodo.forEach(p => {
+        if (p.status === 'cancelado') return;
+
+        if (p.status === 'pendente') {
+            pedidosPendentes++;
+            pedidosAtivos++;
+        } else if (p.status === 'em_andamento') {
+            pedidosEmAndamento++;
+            pedidosAtivos++;
+        } else if (p.status === 'concluido') {
+            pedidosConcluidos++;
+        }
+
+        const esperado = valorEsperadoPedido(p);
+        const jaPago = valorPagoPedido(p);
+        const restante = Math.max(0, Math.round((esperado - jaPago) * 100) / 100);
+
+        faturamentoPrevistoPedidos += esperado;
+        totalQuitado += jaPago;
+
+        if (restante > 0.009) {
+            totalAReceberPedidos += restante;
+            qtdPedidosAReceber++;
+
+            if (jaPago > 0.009) {
+                pedidosSegundaParcela++;
+                totalSegundaParcela += restante;
+            } else {
+                pedidosPrimeiraParcelaOuIntegral++;
+                totalPrimeiraParcelaOuIntegral += restante;
+            }
+        } else if (esperado > 0.009) {
+            qtdPedidosQuitados++;
+        }
+    });
+
+    // 5. Movimentações avulsas a receber (manuais pendentes que não estão associadas a nenhum pedido)
+    const pendentesAvulsas = movsPeriodo
+        .filter(m => m.tipo === 'entrada' && m.pagamento === 'pendente' && (!m.pedidoId || !pedidos.some(p => String(p.id) === String(m.pedidoId))))
+        .reduce((s, m) => s + (Number(m.valor) || 0), 0);
+
+    const totalAReceber = Math.round((totalAReceberPedidos + pendentesAvulsas) * 100) / 100;
+    let faturamentoTotalPrevisto = Math.round((entradasConfirmadas + totalAReceber) * 100) / 100;
+    if (faturamentoPrevistoPedidos > faturamentoTotalPrevisto) {
+        faturamentoTotalPrevisto = Math.round(faturamentoPrevistoPedidos * 100) / 100;
+    }
+
+    const saldoProjetadoFinal = Math.round((faturamentoTotalPrevisto - saidas) * 100) / 100;
+    const taxaRecebimento = faturamentoTotalPrevisto > 0 
+        ? Math.min(100, Math.max(0, Math.round((entradasConfirmadas / faturamentoTotalPrevisto) * 100))) 
+        : (entradasConfirmadas > 0 ? 100 : 0);
+
+    const ticketMedio = (qtdPedidosQuitados + qtdPedidosAReceber) > 0 
+        ? Math.round((faturamentoTotalPrevisto / (qtdPedidosQuitados + qtdPedidosAReceber)) * 100) / 100 
+        : 0;
+
+    return {
+        periodo,
+        entradasConfirmadas,
+        qtdPagamentosConfirmados,
+        saidas,
+        qtdSaidas,
+        saldoCaixa,
+        totalAReceber,
+        totalAReceberPedidos,
+        pendentesAvulsas,
+        qtdPedidosAReceber,
+        pedidosPrimeiraParcelaOuIntegral,
+        totalPrimeiraParcelaOuIntegral,
+        pedidosSegundaParcela,
+        totalSegundaParcela,
+        qtdPedidosQuitados,
+        totalQuitado,
+        faturamentoTotalPrevisto,
+        saldoProjetadoFinal,
+        taxaRecebimento,
+        ticketMedio,
+        pedidosAtivos,
+        pedidosPendentes,
+        pedidosEmAndamento,
+        pedidosConcluidos
+    };
+}
+
+window.verPedidosAReceber = function() {
+    irParaPagina('adminPedidos');
+    const fStatus = document.getElementById('filtroStatusPedido');
+    if (fStatus) {
+        fStatus.value = 'a_receber';
+    }
+    alternarVisaoPedidos('table');
+    renderPedidosAdmin();
+    const tableWrap = document.getElementById('tabelaPedidosWrap');
+    if (tableWrap) {
+        tableWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+};
+
+function renderDashboardSomatorio(periodo) {
+    if (!periodo) {
+        periodo = document.getElementById('filtroPeriodoDash')?.value || 'todos';
+    }
+    const b = calcularBalancoFinanceiro(periodo);
+
+    // 1. Cards do topo do Dashboard
+    const statReceita = document.getElementById('statReceita');
+    if (statReceita) statReceita.textContent = formatCurrency(b.entradasConfirmadas);
     
-    const pendentes = (DB.pedidos || []).filter(p => p.status === 'pendente' || p.status === 'em_andamento').reduce((s, p) => s + (parseFloat(p.total) || 0), 0);
+    const statPeriodoReceita = document.getElementById('statPeriodoReceita');
+    if (statPeriodoReceita) {
+        const rotuloPeriodo = periodo === '7' ? 'Últimos 7 dias' : (periodo === '30' ? 'Últimos 30 dias' : (periodo === 'mes' ? 'Este mês' : (periodo === 'ano' ? 'Este ano' : 'Em caixa')));
+        statPeriodoReceita.textContent = `${b.qtdPagamentosConfirmados} recebimento(s) · ${rotuloPeriodo}`;
+    }
+
+    const statAReceber = document.getElementById('statAReceber');
+    if (statAReceber) statAReceber.textContent = formatCurrency(b.totalAReceber);
+
+    const statAReceberDetalhe = document.getElementById('statAReceberDetalhe');
+    if (statAReceberDetalhe) {
+        statAReceberDetalhe.textContent = `${b.qtdPedidosAReceber} pedido(s) em aberto`;
+    }
+
+    const statSaldoCaixa = document.getElementById('statSaldoCaixa');
+    if (statSaldoCaixa) statSaldoCaixa.textContent = formatCurrency(b.saldoCaixa);
+
+    const statSaldoDesc = document.getElementById('statSaldoDesc');
+    if (statSaldoDesc) {
+        statSaldoDesc.textContent = `${formatCurrency(b.entradasConfirmadas)} - ${formatCurrency(b.saidas)}`;
+    }
+
+    const statDespesas = document.getElementById('statDespesas');
+    if (statDespesas) statDespesas.textContent = formatCurrency(b.saidas);
+
+    const statDespesasDesc = document.getElementById('statDespesasDesc');
+    if (statDespesasDesc) {
+        statDespesasDesc.textContent = `${b.qtdSaidas} saída(s) registrada(s)`;
+    }
+
+    const statPedidos = document.getElementById('statPedidos');
+    if (statPedidos) statPedidos.textContent = b.pedidosAtivos;
+
+    const statPedidosDesc = document.getElementById('statPedidosDesc');
+    if (statPedidosDesc) {
+        statPedidosDesc.textContent = `${b.pedidosPendentes} pend. · ${b.pedidosEmAndamento} em andamento`;
+    }
+
+    const statClientes = document.getElementById('statClientes');
+    if (statClientes) statClientes.textContent = (DB.clientes || []).length;
+
+    const statMateriais = document.getElementById('statMateriais');
+    if (statMateriais) statMateriais.textContent = (DB.materiais || []).length;
+
+    // 2. Painel Consolidado do Dashboard
+    const elFatPrev = document.getElementById('somatorioFaturamentoPrevisto');
+    if (elFatPrev) elFatPrev.textContent = formatCurrency(b.faturamentoTotalPrevisto);
+
+    const elRecConf = document.getElementById('somatorioReceitaConfirmada');
+    if (elRecConf) elRecConf.textContent = formatCurrency(b.entradasConfirmadas);
+
+    const elRecQtd = document.getElementById('somatorioReceitaQtd');
+    if (elRecQtd) elRecQtd.textContent = `${b.qtdPagamentosConfirmados} pagamento(s) confirmado(s)`;
+
+    const elARec = document.getElementById('somatorioAReceber');
+    if (elARec) elARec.textContent = formatCurrency(b.totalAReceber);
+
+    const elARecQtd = document.getElementById('somatorioAReceberQtd');
+    if (elARecQtd) elARecQtd.textContent = `${b.qtdPedidosAReceber} pedido(s) com saldo a receber`;
+
+    const elLucro = document.getElementById('somatorioLucroProjetado');
+    if (elLucro) elLucro.textContent = formatCurrency(b.saldoProjetadoFinal);
+
+    const elLucroDesc = document.getElementById('somatorioLucroDesc');
+    if (elLucroDesc) elLucroDesc.textContent = `Previsto - Saídas (${formatCurrency(b.saidas)})`;
+
+    // 3. Barra de Progresso
+    const elTaxaTxt = document.getElementById('dashTaxaRecebimentoTxt');
+    if (elTaxaTxt) elTaxaTxt.textContent = `${b.taxaRecebimento}% quitado`;
+
+    const elBarra = document.getElementById('dashBarraProgressoRecebimento');
+    if (elBarra) elBarra.style.width = `${Math.min(100, Math.max(0, b.taxaRecebimento))}%`;
+
+    const elProgRec = document.getElementById('dashProgressoRecebido');
+    if (elProgRec) elProgRec.textContent = `Recebido: ${formatCurrency(b.entradasConfirmadas)}`;
+
+    const elProgARec = document.getElementById('dashProgressoAReceber');
+    if (elProgARec) elProgARec.textContent = `A Receber: ${formatCurrency(b.totalAReceber)}`;
+
+    const elProgTot = document.getElementById('dashProgressoTotal');
+    if (elProgTot) elProgTot.textContent = `Total Previsto: ${formatCurrency(b.faturamentoTotalPrevisto)}`;
+
+    // 4. Badges do Somatório
+    const b1a = document.getElementById('somatorioBadge1aParcela');
+    if (b1a) b1a.textContent = `${formatCurrency(b.totalPrimeiraParcelaOuIntegral)} (${b.pedidosPrimeiraParcelaOuIntegral} pedidos)`;
+
+    const b2a = document.getElementById('somatorioBadge2aParcela');
+    if (b2a) b2a.textContent = `${formatCurrency(b.totalSegundaParcela)} (${b.pedidosSegundaParcela} pedidos)`;
+
+    const bQuit = document.getElementById('somatorioBadgeQuitados');
+    if (bQuit) bQuit.textContent = `${formatCurrency(b.totalQuitado)} (${b.qtdPedidosQuitados} pedidos)`;
+
+    const bTicket = document.getElementById('somatorioBadgeTicketMedio');
+    if (bTicket) bTicket.textContent = formatCurrency(b.ticketMedio);
+
+    const bSaidas = document.getElementById('somatorioBadgeSaidas');
+    if (bSaidas) bSaidas.textContent = `${formatCurrency(b.saidas)} (${b.qtdSaidas} saídas)`;
+}
+
+function atualizarTotaisFinanceiro() {
+    const b = calcularBalancoFinanceiro('todos');
     
     const elEntradas = document.getElementById('totalEntradas');
-    if (elEntradas) elEntradas.textContent = formatCurrency(entradas);
+    if (elEntradas) elEntradas.textContent = formatCurrency(b.entradasConfirmadas);
     
     const elSaidas = document.getElementById('totalSaidas');
-    if (elSaidas) elSaidas.textContent = formatCurrency(saidas);
+    if (elSaidas) elSaidas.textContent = formatCurrency(b.saidas);
     
     const elAReceber = document.getElementById('totalAReceber');
-    if (elAReceber) elAReceber.textContent = formatCurrency(pendentes);
+    if (elAReceber) elAReceber.textContent = formatCurrency(b.totalAReceber);
     
     const elSaldo = document.getElementById('saldoGeral');
-    if (elSaldo) elSaldo.textContent = formatCurrency(saldo);
+    if (elSaldo) elSaldo.textContent = formatCurrency(b.saldoCaixa);
 }
 
 function renderAdminDashboard() {
@@ -831,30 +1107,15 @@ function renderAdminDashboard() {
     renderMovimentacoes();
     renderClientes();
     
-    const totalClientes = (DB.clientes || []).length;
-    const totalMateriais = (DB.materiais || []).length;
-    
-    const pedidos = DB.pedidos || [];
-    const pedidosAtivos = pedidos.filter(p => p.status !== 'concluido' && p.status !== 'cancelado').length;
-    
     const movimentacoes = DB.movimentacoes || [];
-    const totalEntradas = movimentacoes.filter(m => m.tipo === 'entrada').reduce((sum, m) => sum + (parseFloat(m.valor) || 0), 0);
-    
-    const statReceita = document.getElementById('statReceita');
-    if (statReceita) statReceita.textContent = formatCurrency(totalEntradas);
-    
-    const statPedidos = document.getElementById('statPedidos');
-    if (statPedidos) statPedidos.textContent = pedidosAtivos;
-    
-    const statClientes = document.getElementById('statClientes');
-    if (statClientes) statClientes.textContent = totalClientes;
-    
-    const statMateriais = document.getElementById('statMateriais');
-    if (statMateriais) statMateriais.textContent = totalMateriais;
+    const pedidos = DB.pedidos || [];
     
     desenharGraficoBarras(movimentacoes);
     renderizarDonutServicos(pedidos, movimentacoes);
     renderizarUltimosPedidosDashboard(pedidos);
+    
+    const periodo = document.getElementById('filtroPeriodoDash')?.value || 'todos';
+    renderDashboardSomatorio(periodo);
     aplicarFiltrosDashboard();
     atualizarTotaisFinanceiro();
 }
@@ -1162,7 +1423,16 @@ function renderPedidos() {
     
     const filtroStatus = document.getElementById('filtroStatusPedido')?.value;
     if (filtroStatus && filtroStatus !== 'todos') {
-        pedidos = pedidos.filter(p => p.status === filtroStatus);
+        if (filtroStatus === 'a_receber') {
+            pedidos = pedidos.filter(p => {
+                if (p.status === 'cancelado') return false;
+                const esp = valorEsperadoPedido(p);
+                const pg = valorPagoPedido(p);
+                return (esp - pg) > 0.009;
+            });
+        } else {
+            pedidos = pedidos.filter(p => p.status === filtroStatus);
+        }
     }
     
     // Sort recent first

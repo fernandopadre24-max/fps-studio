@@ -215,40 +215,172 @@
                 <!-- HOME -->
                 <div class="page active" id="adminHome">
                     <div class="stats-grid">
-                        <div class="stat-card">
-                            <div class="stat-icon" style="background: linear-gradient(135deg, #667eea, #764ba2);">
+                        <div class="stat-card stat-card-clickable" onclick="irParaPagina('adminFinanceiro')" title="Ver fluxo de receitas">
+                            <div class="stat-icon" style="background: linear-gradient(135deg, #10b981, #059669);">
                                 <i class="fas fa-dollar-sign"></i>
                             </div>
                             <div class="stat-info">
                                 <h3 id="statReceita">R$ 0,00</h3>
-                                <p>Receita Confirmada <small class="stat-period" id="statPeriodoReceita"></small></p>
+                                <p>Receita Confirmada <small class="stat-period" id="statPeriodoReceita">Entradas em caixa</small></p>
                             </div>
                         </div>
-                        <div class="stat-card">
+                        <div class="stat-card stat-card-clickable" onclick="verPedidosAReceber()" title="Ver pedidos com valores a receber" style="border: 1px solid rgba(245, 158, 11, 0.4);">
+                            <div class="stat-icon" style="background: linear-gradient(135deg, #fdcb6e, #e17055);">
+                                <i class="fas fa-hourglass-half"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="statAReceber" style="color: #d97706;">R$ 0,00</h3>
+                                <p><strong style="color: #b45309;">A Receber</strong> <small class="stat-period" id="statAReceberDetalhe">0 pedidos com saldo</small></p>
+                            </div>
+                        </div>
+                        <div class="stat-card stat-card-clickable" onclick="irParaPagina('adminFinanceiro')" title="Ver despesas e saídas">
+                            <div class="stat-icon" style="background: linear-gradient(135deg, #f5576c, #ff6b6b);">
+                                <i class="fas fa-arrow-down"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="statDespesas">R$ 0,00</h3>
+                                <p>Total Despesas <small class="stat-period" id="statDespesasDesc">Saídas operacionais</small></p>
+                            </div>
+                        </div>
+                        <div class="stat-card stat-card-clickable" onclick="irParaPagina('adminFinanceiro')" title="Ver saldo em caixa">
+                            <div class="stat-icon" style="background: linear-gradient(135deg, #667eea, #764ba2);">
+                                <i class="fas fa-wallet"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="statSaldoCaixa">R$ 0,00</h3>
+                                <p>Saldo em Caixa <small class="stat-period" id="statSaldoDesc">Recebido - Despesas</small></p>
+                            </div>
+                        </div>
+                        <div class="stat-card stat-card-clickable" onclick="irParaPagina('adminPedidos')" title="Ver todos os pedidos">
                             <div class="stat-icon" style="background: linear-gradient(135deg, #f093fb, #f5576c);">
                                 <i class="fas fa-shopping-cart"></i>
                             </div>
                             <div class="stat-info">
                                 <h3 id="statPedidos">0</h3>
-                                <p>Pedidos Ativos</p>
+                                <p>Pedidos Ativos <small class="stat-period" id="statPedidosDesc">Em produção / pendentes</small></p>
                             </div>
                         </div>
-                        <div class="stat-card">
+                        <div class="stat-card stat-card-clickable" onclick="irParaPagina('adminClientes')" title="Ver carteira de clientes">
                             <div class="stat-icon" style="background: linear-gradient(135deg, #4facfe, #00f2fe);">
                                 <i class="fas fa-users"></i>
                             </div>
                             <div class="stat-info">
                                 <h3 id="statClientes">0</h3>
-                                <p>Clientes</p>
+                                <p>Clientes <small class="stat-period">Cadastrados</small></p>
                             </div>
                         </div>
-                        <div class="stat-card">
+                        <div class="stat-card stat-card-clickable" onclick="irParaPagina('adminMateriais')" title="Ver catálogo e estoque">
                             <div class="stat-icon" style="background: linear-gradient(135deg, #43e97b, #38f9d7);">
                                 <i class="fas fa-boxes"></i>
                             </div>
                             <div class="stat-info">
                                 <h3 id="statMateriais">0</h3>
-                                <p>Materiais</p>
+                                <p>Materiais <small class="stat-period">Em estoque / itens</small></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SOMATÓRIO FINANCEIRO CONSOLIDADO -->
+                    <div class="card dash-somatorio-card">
+                        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:16px 20px;">
+                            <div style="display:flex;align-items:center;gap:12px;">
+                                <div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg, #f59e0b, #ea580c);display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 4px 10px rgba(245,158,11,0.3);">
+                                    <i class="fas fa-file-invoice-dollar" style="font-size:19px;"></i>
+                                </div>
+                                <div>
+                                    <h3 style="margin:0;font-size:17px;font-weight:700;letter-spacing:-0.2px;">Somatório Financeiro Consolidado</h3>
+                                    <span class="card-subtitle" style="font-size:12px;color:var(--text-muted);">Valores a receber, faturamento previsto e projeção líquida em tempo real</span>
+                                </div>
+                            </div>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <button class="btn-secondary btn-sm" onclick="verPedidosAReceber()" title="Filtrar pedidos com valores em aberto">
+                                    <i class="fas fa-hand-holding-usd" style="color:#d97706;"></i> Ver Pedidos a Receber
+                                </button>
+                                <button class="btn-secondary btn-sm" onclick="irParaPagina('adminFinanceiro')" title="Acessar o controle financeiro detalhado">
+                                    <i class="fas fa-chart-line"></i> Painel Financeiro
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body" style="padding:18px 20px;">
+                            <!-- Progresso de Recebimento do Previsto -->
+                            <div style="margin-bottom:18px;">
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:13px;">
+                                    <span style="font-weight:600;display:flex;align-items:center;gap:6px;">
+                                        <i class="fas fa-chart-pie" style="color:var(--primary);"></i> Taxa de Realização / Quitação
+                                    </span>
+                                    <span id="dashTaxaRecebimentoTxt" style="font-weight:700;color:var(--primary);font-size:14px;">0% recebido</span>
+                                </div>
+                                <div style="height:12px;background:rgba(0,0,0,0.06);border-radius:8px;overflow:hidden;position:relative;">
+                                    <div id="dashBarraProgressoRecebimento" style="height:100%;width:0%;background:linear-gradient(90deg, #10b981, #06b6d4);border-radius:8px;transition:width 0.6s ease;"></div>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:11px;color:var(--text-muted);flex-wrap:wrap;gap:6px;">
+                                    <span id="dashProgressoRecebido" style="font-weight:600;color:#059669;">Recebido: R$ 0,00</span>
+                                    <span id="dashProgressoAReceber" style="font-weight:700;color:#d97706;">A Receber: R$ 0,00</span>
+                                    <span id="dashProgressoTotal" style="font-weight:600;">Total Previsto: R$ 0,00</span>
+                                </div>
+                            </div>
+
+                            <!-- Grade com 4 Blocos Principais de Somatório -->
+                            <div class="dash-financeiro-grid">
+                                <!-- Bloco 1: Total Previsto -->
+                                <div class="dash-fin-bloco" style="background:rgba(99, 102, 241, 0.05);border:1px solid rgba(99, 102, 241, 0.2);">
+                                    <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#4f46e5;font-weight:700;margin-bottom:4px;display:flex;align-items:center;gap:5px;">
+                                        <i class="fas fa-calculator"></i> Faturamento Previsto
+                                    </div>
+                                    <div id="somatorioFaturamentoPrevisto" style="font-size:22px;font-weight:800;color:var(--dark);line-height:1.2;">R$ 0,00</div>
+                                    <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Receitas Efetivadas + A Receber</div>
+                                </div>
+
+                                <!-- Bloco 2: Receita em Caixa -->
+                                <div class="dash-fin-bloco" style="background:rgba(16, 185, 129, 0.06);border:1px solid rgba(16, 185, 129, 0.25);">
+                                    <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#059669;font-weight:700;margin-bottom:4px;display:flex;align-items:center;gap:5px;">
+                                        <i class="fas fa-check-circle"></i> Receita em Caixa
+                                    </div>
+                                    <div id="somatorioReceitaConfirmada" style="font-size:22px;font-weight:800;color:#059669;line-height:1.2;">R$ 0,00</div>
+                                    <div id="somatorioReceitaQtd" style="font-size:11px;color:#059669;margin-top:4px;">0 pagamentos confirmados</div>
+                                </div>
+
+                                <!-- Bloco 3: Valor a Receber (Em destaque) -->
+                                <div class="dash-fin-bloco" style="background:rgba(245, 158, 11, 0.08);border:1px solid rgba(245, 158, 11, 0.35);">
+                                    <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#d97706;font-weight:700;margin-bottom:4px;display:flex;align-items:center;gap:5px;">
+                                        <i class="fas fa-hourglass-half"></i> Total a Receber
+                                    </div>
+                                    <div id="somatorioAReceber" style="font-size:22px;font-weight:800;color:#d97706;line-height:1.2;">R$ 0,00</div>
+                                    <div id="somatorioAReceberQtd" style="font-size:11px;color:#b45309;margin-top:4px;font-weight:500;">0 pedidos com saldo pendente</div>
+                                </div>
+
+                                <!-- Bloco 4: Lucro Líquido Projetado -->
+                                <div class="dash-fin-bloco" style="background:rgba(14, 165, 233, 0.06);border:1px solid rgba(14, 165, 233, 0.25);">
+                                    <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#0284c7;font-weight:700;margin-bottom:4px;display:flex;align-items:center;gap:5px;">
+                                        <i class="fas fa-chart-line"></i> Lucro Projetado
+                                    </div>
+                                    <div id="somatorioLucroProjetado" style="font-size:22px;font-weight:800;color:#0284c7;line-height:1.2;">R$ 0,00</div>
+                                    <div id="somatorioLucroDesc" style="font-size:11px;color:#0284c7;margin-top:4px;">Previsto - Despesas atuais</div>
+                                </div>
+                            </div>
+
+                            <!-- Pílulas e Detalhamento da Composição Financeira -->
+                            <div class="dash-somatorio-pilulas">
+                                <div class="somatorio-badge" style="background:rgba(245, 158, 11, 0.12);color:#b45309;border:1px solid rgba(245, 158, 11, 0.2);">
+                                    <i class="fas fa-clock"></i>
+                                    <span>Aguardando 1ª Parcela / À Vista: <strong id="somatorioBadge1aParcela">R$ 0,00 (0)</strong></span>
+                                </div>
+                                <div class="somatorio-badge" style="background:rgba(59, 130, 246, 0.12);color:#1d4ed8;border:1px solid rgba(59, 130, 246, 0.2);">
+                                    <i class="fas fa-percentage"></i>
+                                    <span>Aguardando 2ª Parcela (50%): <strong id="somatorioBadge2aParcela">R$ 0,00 (0)</strong></span>
+                                </div>
+                                <div class="somatorio-badge" style="background:rgba(16, 185, 129, 0.12);color:#047857;border:1px solid rgba(16, 185, 129, 0.2);">
+                                    <i class="fas fa-check-double"></i>
+                                    <span>Pedidos 100% Quitados: <strong id="somatorioBadgeQuitados">R$ 0,00 (0)</strong></span>
+                                </div>
+                                <div class="somatorio-badge" style="background:rgba(107, 114, 128, 0.12);color:#374151;border:1px solid rgba(107, 114, 128, 0.2);">
+                                    <i class="fas fa-receipt"></i>
+                                    <span>Ticket Médio / Pedido: <strong id="somatorioBadgeTicketMedio">R$ 0,00</strong></span>
+                                </div>
+                                <div class="somatorio-badge" style="background:rgba(239, 68, 68, 0.12);color:#b91c1c;border:1px solid rgba(239, 68, 68, 0.2);">
+                                    <i class="fas fa-arrow-down"></i>
+                                    <span>Despesas Realizadas: <strong id="somatorioBadgeSaidas">R$ 0,00</strong></span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -361,7 +493,8 @@
                         <input type="search" id="buscaPedidoAdmin" placeholder="Buscar pedido ou cliente..." oninput="renderPedidosAdmin()">
                         <div id="wrapStatusFiltro" style="display:none">
                             <select id="filtroStatusPedido" onchange="renderPedidosAdmin()">
-                                <option value="todos">Todos</option>
+                                <option value="todos">Todos os status</option>
+                                <option value="a_receber">💰 Com Saldo a Receber</option>
                                 <option value="pendente">Pendente</option>
                                 <option value="em_andamento">Em Andamento</option>
                                 <option value="concluido">Concluído</option>
