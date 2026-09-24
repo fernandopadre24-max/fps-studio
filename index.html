@@ -1309,16 +1309,43 @@
                 <div class="page active" id="clientHome">
                     <div class="welcome-banner">
                         <h2>Bem-vindo ao FPS Studio!</h2>
-                        <p>Gerencie seus pedidos, acompanhe serviços e muito mais.</p>
+                        <p>Gerencie seus pedidos, acompanhe serviços e mantenha seus pagamentos em dia.</p>
                     </div>
                     <div class="stats-grid">
+                        <div class="stat-card stat-card-clickable" onclick="rolarParaPagamentosCliente()" title="Clique para ver o que tem a pagar" style="border: 1px solid rgba(245, 158, 11, 0.45);">
+                            <div class="stat-icon" style="background: linear-gradient(135deg, #fdcb6e, #e17055);">
+                                <i class="fas fa-hourglass-half"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="clientStatAPagar" style="color: #d97706;">R$ 0,00</h3>
+                                <p><strong style="color: #b45309;">A Pagar</strong> <small class="stat-period" id="clientStatAPagarDetalhe">0 pendências</small></p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: linear-gradient(135deg, #10b981, #059669);">
+                                <i class="fas fa-check-circle"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="clientStatPago">R$ 0,00</h3>
+                                <p>Total Já Pago <small class="stat-period" id="clientStatPagoDetalhe">Valores quitados</small></p>
+                            </div>
+                        </div>
                         <div class="stat-card">
                             <div class="stat-icon" style="background: linear-gradient(135deg, #667eea, #764ba2);">
+                                <i class="fas fa-file-invoice-dollar"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="clientStatTotal">R$ 0,00</h3>
+                                <p>Total Contratado <small class="stat-period" id="clientStatTotalDetalhe">Soma dos pedidos</small></p>
+                            </div>
+                        </div>
+                        <div class="stat-card stat-card-clickable" onclick="irParaPagina('clientPedidos')" title="Ver todos os meus pedidos">
+                            <div class="stat-icon" style="background: linear-gradient(135deg, #4facfe, #00f2fe);">
                                 <i class="fas fa-clipboard-list"></i>
                             </div>
                             <div class="stat-info">
                                 <h3 id="clientStatPedidos">0</h3>
-                                <p>Meus Pedidos</p>
+                                <p>Meus Pedidos <small class="stat-period" id="clientStatPedidosDetalhe">Total realizado</small></p>
                             </div>
                         </div>
                         <div class="stat-card">
@@ -1327,27 +1354,37 @@
                             </div>
                             <div class="stat-info">
                                 <h3 id="clientStatPendentes">0</h3>
-                                <p>Pendentes</p>
+                                <p>Em Produção <small class="stat-period">Não finalizados</small></p>
                             </div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-icon" style="background: linear-gradient(135deg, #43e97b, #38f9d7);">
-                                <i class="fas fa-check-circle"></i>
+                                <i class="fas fa-tasks"></i>
                             </div>
                             <div class="stat-info">
                                 <h3 id="clientStatConcluidos">0</h3>
-                                <p>Concluídos</p>
+                                <p>Concluídos <small class="stat-period">Serviços entregues</small></p>
                             </div>
                         </div>
-                        <div class="stat-card">
-                            <div class="stat-icon" style="background: linear-gradient(135deg, #4facfe, #00f2fe);">
-                                <i class="fas fa-dollar-sign"></i>
+                    </div>
+
+                    <!-- SEÇÃO: O QUE TEM A PAGAR -->
+                    <div class="card client-pagamentos-card" id="clientCardAPagar">
+                        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:16px 20px;">
+                            <div style="display:flex;align-items:center;gap:12px;">
+                                <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg, #f59e0b, #ea580c);display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 4px 10px rgba(245,158,11,0.3);">
+                                    <i class="fas fa-credit-card" style="font-size:18px;"></i>
+                                </div>
+                                <div>
+                                    <h3 style="margin:0;font-size:16px;font-weight:700;"><i class="fas fa-wallet" style="color:#d97706;margin-right:6px;"></i> O que você tem A Pagar</h3>
+                                    <span class="card-subtitle" style="font-size:12px;color:var(--text-muted);">Confira seus pedidos com saldo em aberto e quite facilmente via PIX ou Cartão</span>
+                                </div>
                             </div>
-                            <div class="stat-info">
-                                <h3 id="clientStatTotal">R$ 0,00</h3>
-                                <p>Total Investido</p>
+                            <div id="clientBadgeTotalAPagar" style="font-size:13px;font-weight:700;padding:6px 14px;border-radius:20px;background:rgba(245,158,11,0.12);color:#b45309;border:1px solid rgba(245,158,11,0.25);">
+                                Total a Pagar: R$ 0,00
                             </div>
                         </div>
+                        <div class="card-body" id="clientListaAPagar" style="padding:16px 20px;"></div>
                     </div>
                     <div class="dashboard-grid">
                         <div class="card">

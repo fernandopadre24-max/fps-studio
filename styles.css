@@ -5152,4 +5152,52 @@ body.screen-style-papel .dash-somatorio-pilulas {
     border-top-color: #dfd2b2;
 }
 
+/* CLIENT DASHBOARD - PAGAMENTOS PENDENTES (A PAGAR) */
+.client-pagamentos-card {
+    border-radius: var(--radius);
+    background: var(--white);
+    box-shadow: var(--shadow);
+    margin-bottom: 24px;
+    border: 1px solid rgba(0, 0, 0, 0.07);
+    overflow: hidden;
+}
+.client-pagamento-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 16px;
+    border-radius: 10px;
+    background: var(--bg-light, #f8fafc);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.client-pagamento-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+}
+.client-pagamento-item:last-child {
+    margin-bottom: 0;
+}
+
+body.dark .client-pagamentos-card {
+    background: #1e222d;
+    border-color: #2e3446;
+}
+body.dark .client-pagamento-item {
+    background: #181b24;
+    border-color: #2b3040;
+}
+
+body.screen-style-papel .client-pagamentos-card {
+    background: #fffef8;
+    border-color: #dfd2b2;
+}
+body.screen-style-papel .client-pagamento-item {
+    background: #fdfaf1;
+    border-color: #d9c9a3;
+}
+
 

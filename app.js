@@ -2154,42 +2154,210 @@ async function salvarPerfilClient() {
 // ============================================
 // CLIENT DASHBOARD
 // ============================================
+
+window.rolarParaPagamentosCliente = function() {
+    const card = document.getElementById('clientCardAPagar');
+    if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        card.style.transition = 'box-shadow 0.3s ease';
+        card.style.boxShadow = '0 0 0 3px rgba(245, 158, 11, 0.45)';
+        setTimeout(() => {
+            card.style.boxShadow = '';
+        }, 1500);
+    }
+};
+
 function renderClientDashboard() {
     if (!currentUser || currentUser.role !== 'client') return;
-    const meusPedidos = DB.pedidos.filter(p => p.clienteId === currentUser.id);
+    const meusPedidos = (DB.pedidos || []).filter(p => String(p.clienteId) === String(currentUser.id));
 
-    document.getElementById('clientStatPedidos').textContent = meusPedidos.length;
-    document.getElementById('clientStatPendentes').textContent = meusPedidos.filter(p => p.status === 'pendente' || p.status === 'em_andamento').length;
-    document.getElementById('clientStatConcluidos').textContent = meusPedidos.filter(p => p.status === 'concluido').length;
-    document.getElementById('clientStatTotal').textContent = formatCurrency(meusPedidos.reduce((s, p) => s + p.total, 0));
+    let totalContratado = 0;
+    let totalPago = 0;
+    let totalAPagar = 0;
+    let qtdPedidosPendentesPagamento = 0;
+    const pedidosComDebito = [];
+
+    meusPedidos.forEach(p => {
+        if (p.status === 'cancelado') return;
+        const esperado = valorEsperadoPedido(p);
+        const pago = valorPagoPedido(p);
+        const restante = Math.max(0, Math.round((esperado - pago) * 100) / 100);
+
+        totalContratado += esperado;
+        totalPago += pago;
+
+        if (restante > 0.009) {
+            totalAPagar += restante;
+            qtdPedidosPendentesPagamento++;
+            pedidosComDebito.push({
+                pedido: p,
+                esperado,
+                pago,
+                restante,
+                cond: condicaoPagamentoPedido(p)
+            });
+        }
+    });
+
+    totalAPagar = Math.round(totalAPagar * 100) / 100;
+    totalPago = Math.round(totalPago * 100) / 100;
+    totalContratado = Math.round(totalContratado * 100) / 100;
+
+    // Atualiza cards no topo
+    const elAPagar = document.getElementById('clientStatAPagar');
+    if (elAPagar) elAPagar.textContent = formatCurrency(totalAPagar);
+
+    const elAPagarDet = document.getElementById('clientStatAPagarDetalhe');
+    if (elAPagarDet) {
+        elAPagarDet.textContent = qtdPedidosPendentesPagamento === 0 
+            ? 'Tudo em dia!' 
+            : `${qtdPedidosPendentesPagamento} pedido(s) pendente(s)`;
+    }
+
+    const elPago = document.getElementById('clientStatPago');
+    if (elPago) elPago.textContent = formatCurrency(totalPago);
+
+    const elPagoDet = document.getElementById('clientStatPagoDetalhe');
+    if (elPagoDet) {
+        elPagoDet.textContent = totalContratado > 0 
+            ? `${Math.round((totalPago / totalContratado) * 100)}% quitado` 
+            : '100% quitado';
+    }
+
+    const elTotal = document.getElementById('clientStatTotal');
+    if (elTotal) elTotal.textContent = formatCurrency(totalContratado);
+
+    const elTotalDet = document.getElementById('clientStatTotalDetalhe');
+    if (elTotalDet) elTotalDet.textContent = `${meusPedidos.length} pedido(s) no total`;
+
+    const elPedidos = document.getElementById('clientStatPedidos');
+    if (elPedidos) elPedidos.textContent = meusPedidos.length;
+
+    const elPend = document.getElementById('clientStatPendentes');
+    if (elPend) elPend.textContent = meusPedidos.filter(p => p.status === 'pendente' || p.status === 'em_andamento').length;
+
+    const elConc = document.getElementById('clientStatConcluidos');
+    if (elConc) elConc.textContent = meusPedidos.filter(p => p.status === 'concluido').length;
+
+    // Atualiza badge de total a pagar no cabeçalho do card
+    const elBadgeAPagar = document.getElementById('clientBadgeTotalAPagar');
+    if (elBadgeAPagar) {
+        elBadgeAPagar.innerHTML = `<i class="fas fa-hourglass-half" style="margin-right:4px;"></i> Total a Pagar: <strong>${formatCurrency(totalAPagar)}</strong>`;
+    }
+
+    // Renderiza a seção "O que você tem A Pagar"
+    const listaAPagarContainer = document.getElementById('clientListaAPagar');
+    if (listaAPagarContainer) {
+        if (pedidosComDebito.length === 0) {
+            listaAPagarContainer.innerHTML = `
+                <div class="empty-state" style="padding:28px 16px;text-align:center;">
+                    <div style="width:52px;height:52px;border-radius:50%;background:rgba(16,185,129,0.12);display:inline-flex;align-items:center;justify-content:center;color:#10b981;font-size:24px;margin-bottom:10px;">
+                        <i class="fas fa-check-circle"></i>
+                    </div>
+                    <h4 style="margin:0 0 4px 0;font-size:16px;color:var(--text-dark);font-weight:700;">Tudo em dia!</h4>
+                    <p style="margin:0;color:var(--text-muted);font-size:13px;">Você não possui nenhum pagamento em aberto. Todos os seus pedidos estão quitados.</p>
+                </div>
+            `;
+        } else {
+            listaAPagarContainer.innerHTML = pedidosComDebito.map(item => {
+                const p = item.pedido;
+                const servicoNomes = (p.servicos || []).map(id => DB.servicos.find(s => String(s.id) === String(id))?.nome || '').filter(Boolean).join(', ') || 'Serviços do estúdio';
+                const condRotulo = p.parcial ? 'Dividido 50% + 50%' : (item.cond.pct ? `À vista (-${item.cond.pct}%)` : 'Pagamento Integral');
+                const jaPagouAlgo = item.pago > 0;
+                const badgeParcela = p.parcial 
+                    ? (jaPagouAlgo 
+                        ? `<span class="status-badge" style="background:#2563eb;color:#fff;font-size:11px;padding:3px 8px;"><i class="fas fa-adjust"></i> 1ª Parcela Paga · Falta 2ª (50%)</span>`
+                        : `<span class="status-badge status-pendente" style="font-size:11px;padding:3px 8px;"><i class="fas fa-clock"></i> Falta 1ª Parcela (50%)</span>`)
+                    : `<span class="status-badge status-pendente" style="font-size:11px;padding:3px 8px;"><i class="fas fa-clock"></i> Aguardando Pagamento</span>`;
+
+                return `
+                <div class="client-pagamento-item">
+                    <div style="flex:1;min-width:240px;">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">
+                            <strong style="font-size:14px;color:var(--text-dark);">Pedido #${p.id}</strong>
+                            <small style="color:var(--text-muted);">${formatPedidoDataHora(p)}</small>
+                            ${badgeParcela}
+                            <span class="kanban-chip chip-cond" style="font-size:11px;">${condRotulo}</span>
+                        </div>
+                        <p style="font-size:13px;color:var(--text-muted);margin:0 0 6px 0;">${servicoNomes}</p>
+                        <div style="font-size:12px;color:var(--text-muted);display:flex;gap:14px;flex-wrap:wrap;">
+                            <span>Total Previsto: <strong>${formatCurrency(item.esperado)}</strong></span>
+                            ${jaPagouAlgo ? `<span style="color:#059669;">Já Pago: <strong>${formatCurrency(item.pago)}</strong></span>` : ''}
+                        </div>
+                    </div>
+                    <div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:8px;min-width:160px;">
+                        <div>
+                            <span style="font-size:11px;color:#b45309;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;display:block;">Saldo a Pagar</span>
+                            <strong style="font-size:22px;font-weight:800;color:#d97706;">${formatCurrency(item.restante)}</strong>
+                        </div>
+                        <div style="display:flex;gap:6px;">
+                            <button class="btn-primary btn-sm" onclick="abrirPagamento('${p.id}')" style="box-shadow:0 2px 6px rgba(108,92,231,0.3);font-weight:600;">
+                                <i class="fas fa-wallet"></i> Pagar Agora
+                            </button>
+                            <button class="btn-secondary btn-sm" onclick="verDetalhesPedido('${p.id}')" title="Ver Detalhes do Pedido">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                `;
+            }).join('');
+        }
+    }
 
     // Serviços em destaque
-    const destaque = DB.servicos.slice(0, 3);
-    document.getElementById('servicosDestaque').innerHTML = destaque.map(s => `<div class="pedido-item">
-        <div class="pedido-item-info">
-            <h5><i class="fas ${s.icone}" style="color:var(--primary);margin-right:8px;"></i>${s.nome}</h5>
-            <p>${s.descricao.substring(0, 80)}...</p>
-        </div>
-        <div>
-            <strong style="color:var(--primary)">${Number(s.preco) <= 0 ? formatMaterialPrice(s, 'item-price') : formatCurrency(s.preco)}</strong>
-        </div>
-    </div>`).join('');
-
-    // Pedidos recentes
-    const recentes = [...meusPedidos].sort((a, b) => new Date(b.data) - new Date(a.data)).slice(0, 5);
-    const recentesContainer = document.getElementById('meusPedidosRecentes');
-    if (recentes.length === 0) {
-        recentesContainer.innerHTML = '<p class="empty-state">Nenhum pedido realizado</p>';
-    } else {
-        recentesContainer.innerHTML = recentes.map(p => `<div class="pedido-item">
+    const destaque = (DB.servicos || []).slice(0, 3);
+    const destaqueEl = document.getElementById('servicosDestaque');
+    if (destaqueEl) {
+        destaqueEl.innerHTML = destaque.map(s => `<div class="pedido-item">
             <div class="pedido-item-info">
-                <h5>Pedido #${p.id}</h5>
-                <p>${formatPedidoDataHora(p)}</p>
+                <h5><i class="fas ${s.icone || 'fa-music'}" style="color:var(--primary);margin-right:8px;"></i>${s.nome}</h5>
+                <p>${(s.descricao || '').substring(0, 80)}...</p>
             </div>
             <div>
-                <span class="status-badge status-${p.status}">${statusLabel(p.status)}</span>
+                <strong style="color:var(--primary)">${Number(s.preco) <= 0 ? formatMaterialPrice(s, 'item-price') : formatCurrency(s.preco)}</strong>
             </div>
         </div>`).join('');
+    }
+
+    // Pedidos recentes com status de pagamento e botão rápido
+    const recentes = [...meusPedidos].sort((a, b) => new Date(b.data) - new Date(a.data)).slice(0, 5);
+    const recentesContainer = document.getElementById('meusPedidosRecentes');
+    if (recentesContainer) {
+        if (recentes.length === 0) {
+            recentesContainer.innerHTML = '<p class="empty-state">Nenhum pedido realizado</p>';
+        } else {
+            recentesContainer.innerHTML = recentes.map(p => {
+                const pagoTotal = pedidoPagamentoCompleto(p);
+                const jaPago = valorPagoPedido(p);
+                const totalEsp = valorEsperadoPedido(p);
+                const restoPed = Math.max(0, Math.round((totalEsp - jaPago) * 100) / 100);
+                
+                const statusPag = pagoTotal
+                    ? '<span class="status-badge status-concluido" style="font-size:10px;padding:2px 6px;"><i class="fas fa-check-circle"></i> Quitado</span>'
+                    : (jaPago > 0
+                        ? `<span class="status-badge" style="background:#e67e22;color:#fff;font-size:10px;padding:2px 6px;"><i class="fas fa-adjust"></i> 50% Pago</span>`
+                        : '<span class="status-badge status-pendente" style="font-size:10px;padding:2px 6px;"><i class="fas fa-hourglass"></i> A Pagar</span>');
+
+                return `
+                <div class="pedido-item" style="cursor:pointer;" onclick="verDetalhesPedido('${p.id}')">
+                    <div class="pedido-item-info">
+                        <h5>Pedido #${p.id} · <span style="font-weight:700;color:var(--primary);">${formatCurrency(totalEsp)}</span></h5>
+                        <p>${formatPedidoDataHora(p)}</p>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        ${statusPag}
+                        <span class="status-badge status-${p.status}">${statusLabel(p.status)}</span>
+                        ${restoPed > 0 && p.status !== 'cancelado' ? `
+                            <button class="btn-primary btn-sm" onclick="event.stopPropagation();abrirPagamento('${p.id}')" style="padding:3px 8px;font-size:11px;" title="Pagar saldo pendente">
+                                <i class="fas fa-wallet"></i> Pagar
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+                `;
+            }).join('');
+        }
     }
 }
 
