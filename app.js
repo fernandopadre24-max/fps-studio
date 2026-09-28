@@ -1802,6 +1802,7 @@ function renderPedidos() {
                     ${restoPed > 0 && p.status !== 'cancelado' ? `<button class="btn-icon text-success" onclick="confirmarPagamentoPedidoAdmin('${p.id}')" title="Confirmar pagamento (${p.parcial ? (jaPago > 0 ? '2ª parcela 50%' : '1ª parcela 50%') : 'Total'})"><i class="fas fa-check-circle"></i></button>` : ''}
                     <button class="btn-icon" onclick="verDetalhesPedido('${p.id}')" title="Ver Detalhes"><i class="fas fa-eye"></i></button>
                     <button class="btn-icon" onclick="editarPedido('${p.id}')" title="Editar"><i class="fas fa-edit"></i></button>
+                    <button class="btn-icon text-primary" onclick="abrirModalDescontoExtra('${p.id}')" title="Conceder Desconto Extra"><i class="fas fa-tag"></i></button>
                     <button class="btn-icon text-danger" onclick="excluirPedido('${p.id}')" title="Excluir"><i class="fas fa-trash"></i></button>
                 </td>
             </tr>
@@ -1835,7 +1836,8 @@ function editarPedido(id) {
         document.getElementById('pedidoDescontoPct').value = p.descontoPct != null ? p.descontoPct : 10;
     }
 
-    document.getElementById('pedidoDesconto').value = p.desconto ? fmtCalc(p.desconto) : '0,00';
+    const descExtraVal = p.descontoExtra != null ? p.descontoExtra : (p.desconto && !p.descontoPct ? p.desconto : 0);
+    document.getElementById('pedidoDesconto').value = descExtraVal ? fmtCalc(descExtraVal) : '0,00';
     document.getElementById('pedidoQtdFaixas').value = p.qtdFaixas || 1;
     if(document.getElementById('pedidoHoraInicial')) document.getElementById('pedidoHoraInicial').value = p.horaInicial || '';
     if(document.getElementById('pedidoHoraFinal')) document.getElementById('pedidoHoraFinal').value = p.horaFinal || '';
@@ -1925,6 +1927,11 @@ window.updatePedidoTotal = function() {
     const elDesc = document.getElementById('adminResDesconto');
     if (elDesc) elDesc.textContent = '-' + formatCurrency(valorDescontoVista);
 
+    const elDescExtraLinha = document.getElementById('adminResDescExtraLinha');
+    if (elDescExtraLinha) elDescExtraLinha.style.display = descAdicional > 0 ? 'flex' : 'none';
+    const elDescExtra = document.getElementById('adminResDescExtra');
+    if (elDescExtra) elDescExtra.textContent = '-' + formatCurrency(descAdicional);
+
     const elTot = document.getElementById('adminResTotal');
     if (elTot) elTot.textContent = formatCurrency(totalLiquido);
 
@@ -1958,6 +1965,7 @@ window.updatePedidoTotal = function() {
         subTotal,
         total: totalLiquido,
         desconto: descontoTotal,
+        descAdicional,
         descontoPct: descPct,
         parcial: condicao === 'metade' ? 1 : 0,
         entrada,
@@ -1986,6 +1994,7 @@ async function salvarPedido() {
         materiais,
         subtotal: calc.subTotal,
         desconto: calc.desconto,
+        descontoExtra: calc.descAdicional,
         total: calc.total,
         descontoPct: calc.descontoPct,
         parcial: calc.parcial,
@@ -2842,6 +2851,17 @@ function prepareClientPedidoModal() {
     const qtdInput = document.getElementById('clientPedidoQtdFaixas');
     if (qtdInput) qtdInput.value = '1';
 
+    const pId = document.getElementById('clientPedidoId');
+    if (pId) pId.value = '';
+    const tituloModal = document.getElementById('clientPedidoModalTitulo');
+    if (tituloModal) tituloModal.innerHTML = `<i class="fas fa-clipboard-list"></i> Novo Pedido`;
+    const btnSalvar = document.getElementById('clientPedidoBtnSalvar');
+    if (btnSalvar) btnSalvar.innerHTML = `<i class="fas fa-paper-plane"></i> Enviar Pedido`;
+    const descInput = document.getElementById('clientPedidoDesconto');
+    if (descInput) descInput.value = '0,00';
+    const divExistentes = document.getElementById('clientPedidoAudiosExistentes');
+    if (divExistentes) { divExistentes.style.display = 'none'; divExistentes.innerHTML = ''; }
+
     const dp = document.getElementById('clientPedidoDataPref');
     const hp = document.getElementById('clientPedidoHoraPref');
     if (dp) dp.value = '';
@@ -2871,7 +2891,30 @@ function prepareClientPedidoModal() {
         estudioDiv.style.display = 'block';
     }
 
+    atualizarFaixasEEAudiosClient();
     updateClientPedidoTotal();
+}
+
+function atualizarFaixasEEAudiosClient() {
+    const rawQtd = parseInt(document.getElementById('clientPedidoQtdFaixas')?.value, 10);
+    const qtd = isNaN(rawQtd) || rawQtd < 1 ? 1 : rawQtd;
+    
+    const label = document.getElementById('clientPedidoAudiosLabel');
+    if (label) {
+        label.textContent = `Anexar Áudios (até ${qtd} ${qtd === 1 ? 'áudio para 1 faixa' : `áudios para ${qtd} faixas`})`;
+    }
+    const dica = document.getElementById('clientPedidoAudiosDica');
+    if (dica) {
+        dica.textContent = `Selecione até ${qtd} ${qtd === 1 ? 'áudio de referência (1 arquivo por faixa)' : `áudios de referência (máximo 1 arquivo para cada uma das ${qtd} faixas)`}.`;
+    }
+    
+    const input = document.getElementById('clientPedidoAudios');
+    if (input && input.files && input.files.length > qtd) {
+        const dt = new DataTransfer();
+        for (let i = 0; i < qtd; i++) dt.items.add(input.files[i]);
+        input.files = dt.files;
+        showToast(`Limite de áudios ajustado para ${qtd} ${qtd === 1 ? 'áudio' : 'áudios'} (de acordo com as ${qtd} faixas).`, 'warning');
+    }
 }
 
 function valoresPedidoClient() {
@@ -2887,8 +2930,12 @@ function valoresPedidoClient() {
     const rawQtd = parseInt(document.getElementById('clientPedidoQtdFaixas')?.value, 10);
     const qtdFaixas = isNaN(rawQtd) || rawQtd < 1 ? 1 : rawQtd;
     const subTotal = Math.round(itensTotal * qtdFaixas * 100) / 100;
+    
+    const descStr = document.getElementById('clientPedidoDesconto')?.value || '0';
+    const descExtra = Math.max(0, parseFloat(descStr.replace(/\./g, '').replace(',', '.')) || 0);
+
     const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
-    return { itensTotal, qtdFaixas, subTotal, condicao };
+    return { itensTotal, qtdFaixas, subTotal, descExtra, condicao };
 }
 
 function fileToBase64(file) {
@@ -2902,10 +2949,28 @@ function fileToBase64(file) {
 
 function limitAudiosClient(input) {
     if (!input || !input.files) return;
-    if (input.files.length > 10) {
-        showToast('Você pode anexar no máximo 10 áudios.', 'warning');
+    const rawQtd = parseInt(document.getElementById('clientPedidoQtdFaixas')?.value, 10);
+    const maxFaixas = isNaN(rawQtd) || rawQtd < 1 ? 1 : rawQtd;
+    
+    // Check if editing order and already has audios
+    const idExistente = document.getElementById('clientPedidoId')?.value;
+    let audiosExistentes = 0;
+    if (idExistente) {
+        const p = DB.pedidos.find(x => String(x.id) === String(idExistente));
+        if (p && p.audios) audiosExistentes = p.audios.length;
+    }
+    const vagas = Math.max(0, maxFaixas - audiosExistentes);
+
+    if (input.files.length > (idExistente ? vagas : maxFaixas)) {
+        const limiteReal = idExistente ? vagas : maxFaixas;
+        if (limiteReal <= 0) {
+            showToast(`Este pedido já possui ${audiosExistentes} de ${maxFaixas} áudio(s) anexados. Aumente a quantidade de faixas para enviar mais.`, 'warning');
+            input.value = '';
+            return;
+        }
+        showToast(`Você selecionou ${maxFaixas} ${maxFaixas === 1 ? 'faixa' : 'faixas'}, portanto pode anexar no máximo ${limiteReal} novo(s) áudio(s) (1 por faixa).`, 'warning');
         const dt = new DataTransfer();
-        for (let i = 0; i < 10; i++) dt.items.add(input.files[i]);
+        for (let i = 0; i < limiteReal; i++) dt.items.add(input.files[i]);
         input.files = dt.files;
     }
     
@@ -2925,20 +2990,22 @@ function atualizarCondicaoClient() {
 }
 
 function updateClientPedidoTotal() {
-    const { itensTotal, qtdFaixas, subTotal, condicao } = valoresPedidoClient();
+    const { itensTotal, qtdFaixas, subTotal, descExtra, condicao } = valoresPedidoClient();
 
-    const desconto = condicao === 'vista' ? Math.round(subTotal * 0.10 * 100) / 100 : 0;
-    const totalFinal = Math.max(0, Math.round((subTotal - desconto) * 100) / 100);
-    const entrada = condicao === 'metade' ? Math.round((subTotal / 2) * 100) / 100 : totalFinal;
-    const saldo = condicao === 'metade' ? Math.max(0, Math.round((subTotal - entrada) * 100) / 100) : 0;
+    const valorDescontoVista = condicao === 'vista' ? Math.round(subTotal * 0.10 * 100) / 100 : 0;
+    const descontoTotal = valorDescontoVista + descExtra;
+    const totalFinal = Math.max(0, Math.round((subTotal - descontoTotal) * 100) / 100);
+    const entrada = condicao === 'metade' ? Math.round((totalFinal / 2) * 100) / 100 : totalFinal;
+    const saldo = condicao === 'metade' ? Math.max(0, Math.round((totalFinal - entrada) * 100) / 100) : 0;
 
     const elFaixas = document.getElementById('clientResFaixas');
     if (elFaixas) elFaixas.textContent = `${qtdFaixas} ${qtdFaixas === 1 ? 'faixa' : 'faixas'}`;
 
+    const subComDescExtra = Math.max(0, subTotal - descExtra);
     const elVistaVal = document.getElementById('clientCondVistaValor');
-    if (elVistaVal) elVistaVal.textContent = formatCurrency(Math.max(0, Math.round(subTotal * 0.90 * 100) / 100));
+    if (elVistaVal) elVistaVal.textContent = formatCurrency(Math.max(0, Math.round(subComDescExtra * 0.90 * 100) / 100));
     const elMetaVal = document.getElementById('clientCondMetaValor');
-    if (elMetaVal) elMetaVal.textContent = formatCurrency(Math.round((subTotal / 2) * 100) / 100);
+    if (elMetaVal) elMetaVal.textContent = formatCurrency(Math.round((subComDescExtra / 2) * 100) / 100);
 
     const elSub = document.getElementById('clientResSubtotal');
     if (elSub) {
@@ -2950,10 +3017,15 @@ function updateClientPedidoTotal() {
     }
 
     const vistaLinha = document.getElementById('clientResVista');
-    if (vistaLinha) vistaLinha.style.display = condicao === 'vista' ? 'flex' : 'none';
+    if (vistaLinha) vistaLinha.style.display = condicao === 'vista' && valorDescontoVista > 0 ? 'flex' : 'none';
 
     const elDesc = document.getElementById('clientResDesconto');
-    if (elDesc) elDesc.textContent = '-' + formatCurrency(desconto);
+    if (elDesc) elDesc.textContent = '-' + formatCurrency(valorDescontoVista);
+
+    const elDescExtraLinha = document.getElementById('clientResDescExtraLinha');
+    if (elDescExtraLinha) elDescExtraLinha.style.display = descExtra > 0 ? 'flex' : 'none';
+    const elDescExtra = document.getElementById('clientResDescExtra');
+    if (elDescExtra) elDescExtra.textContent = '-' + formatCurrency(descExtra);
 
     const elTot = document.getElementById('clientResTotal');
     if (elTot) elTot.textContent = formatCurrency(totalFinal);
@@ -2970,6 +3042,88 @@ function updateClientPedidoTotal() {
     const elSal = document.getElementById('clientResSaldo');
     if (elSal) elSal.textContent = formatCurrency(saldo);
 }
+
+function editarPedidoClient(id) {
+    const p = DB.pedidos.find(x => String(x.id) === String(id));
+    if (!p) return;
+
+    prepareClientPedidoModal();
+    document.getElementById('clientPedidoId').value = p.id;
+    
+    const tituloModal = document.getElementById('clientPedidoModalTitulo');
+    if (tituloModal) tituloModal.innerHTML = `<i class="fas fa-edit"></i> Editar Pedido #${p.id}`;
+    
+    const btnSalvar = document.getElementById('clientPedidoBtnSalvar');
+    if (btnSalvar) btnSalvar.innerHTML = `<i class="fas fa-save"></i> Atualizar Pedido #${p.id}`;
+
+    // Select services
+    const pServs = (p.servicos || []).map(String);
+    document.querySelectorAll('#clientPedidoServicos input').forEach(cb => {
+        cb.checked = pServs.includes(String(cb.value));
+    });
+
+    // Select materials
+    const pMats = (p.materiais || []).map(String);
+    document.querySelectorAll('#clientPedidoMateriais input').forEach(cb => {
+        cb.checked = pMats.includes(String(cb.value));
+    });
+
+    if (document.getElementById('clientPedidoDataInicial')) document.getElementById('clientPedidoDataInicial').value = p.dataInicial || '';
+    if (document.getElementById('clientPedidoHoraInicial')) document.getElementById('clientPedidoHoraInicial').value = p.horaInicial || '';
+    if (document.getElementById('clientPedidoHoraFinal')) document.getElementById('clientPedidoHoraFinal').value = p.horaFinal || '';
+    if (document.getElementById('clientPedidoQtdFaixas')) document.getElementById('clientPedidoQtdFaixas').value = p.qtdFaixas || 1;
+
+    const descExtraVal = p.descontoExtra != null ? p.descontoExtra : (p.desconto && !p.descontoPct ? p.desconto : 0);
+    if (document.getElementById('clientPedidoDesconto')) {
+        document.getElementById('clientPedidoDesconto').value = descExtraVal ? fmtCalc(descExtraVal) : '0,00';
+    }
+
+    if (p.parcial) {
+        const meta = document.getElementById('clientCondMeta');
+        if (meta) meta.checked = true;
+    } else {
+        const vista = document.getElementById('clientCondVista');
+        if (vista) vista.checked = true;
+    }
+
+    // Show existing audios if any
+    const divExistentes = document.getElementById('clientPedidoAudiosExistentes');
+    if (divExistentes) {
+        const audios = p.audios || [];
+        if (audios.length > 0) {
+            divExistentes.style.display = 'block';
+            divExistentes.innerHTML = `
+                <div style="font-size:12px; font-weight:600; color:var(--text-muted); margin-bottom:4px;">
+                    <i class="fas fa-music"></i> ${audios.length} áudio(s) já anexado(s) para este pedido:
+                </div>
+                <div style="display:flex; flex-direction:column; gap:4px;">
+                    ${audios.map((a, idx) => `
+                        <div style="display:flex; justify-content:space-between; align-items:center; background:#f8fafc; padding:4px 8px; border-radius:4px; font-size:12px;">
+                            <span><i class="fas fa-file-audio text-primary"></i> ${a.nome || a.arquivoNome || `Faixa ${idx+1}`}</span>
+                            <button type="button" class="btn-icon text-danger" style="padding:2px 4px;" onclick="removerAudioExistentePedidoClient('${p.id}', ${idx})" title="Remover áudio"><i class="fas fa-times"></i></button>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        } else {
+            divExistentes.style.display = 'none';
+            divExistentes.innerHTML = '';
+        }
+    }
+
+    atualizarFaixasEEAudiosClient();
+    updateClientPedidoTotal();
+    openModal('novoPedidoClientModal');
+}
+
+window.removerAudioExistentePedidoClient = async function(pedidoId, audioIdx) {
+    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
+    if (!p || !p.audios) return;
+    p.audios.splice(audioIdx, 1);
+    if (DBReady && p.docId) await DB_SERVICE.updatePedido(p.docId, p);
+    showToast('Áudio removido do pedido!', 'info');
+    editarPedidoClient(pedidoId);
+};
 
 async function salvarPedidoClient() {
     if (!currentUser || currentUser.role !== 'client') {
@@ -2995,23 +3149,89 @@ async function salvarPedidoClient() {
         }
     }
 
+    const idExistente = (document.getElementById('clientPedidoId')?.value || '').trim();
+
     const btn = document.querySelector('#novoPedidoClientModal button.btn-primary.btn-full') ||
                 document.querySelector('#novoPedidoClientModal button.btn-primary');
     let originalHtml = '';
     if (btn) {
         originalHtml = btn.innerHTML;
         btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando Pedido...';
+        btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${idExistente ? 'Salvando Alterações...' : 'Enviando Pedido...'}`;
     }
 
     try {
-        const { itensTotal, qtdFaixas, subTotal } = valoresPedidoClient();
+        const { itensTotal, qtdFaixas, subTotal, descExtra } = valoresPedidoClient();
 
         const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
         const descontoPct = condicao === 'vista' ? 10 : 0;
         const parcial = condicao === 'metade' ? 1 : 0;
-        const valorDesconto = condicao === 'vista' ? Math.round(subTotal * 0.10 * 100) / 100 : 0;
-        const totalFinal = condicao === 'vista' ? Math.max(0, Math.round((subTotal - valorDesconto) * 100) / 100) : subTotal;
+        const valorDescontoVista = condicao === 'vista' ? Math.round(subTotal * 0.10 * 100) / 100 : 0;
+        const descontoTotal = valorDescontoVista + descExtra;
+        const totalFinal = Math.max(0, Math.round((subTotal - descontoTotal) * 100) / 100);
+
+        // Processar áudios enviados respeitando a quantidade de faixas
+        const novosAudios = [];
+        const fileInput = document.getElementById('clientPedidoAudios');
+        if (fileInput && fileInput.files && fileInput.files.length > 0) {
+            for (let i = 0; i < Math.min(fileInput.files.length, qtdFaixas); i++) {
+                const f = fileInput.files[i];
+                if (f.size > 15 * 1024 * 1024) {
+                    showToast(`O áudio "${f.name}" ultrapassa 15MB e foi ignorado.`, 'warning');
+                    continue;
+                }
+                try {
+                    if (typeof validateAudioFile === 'function' && !validateAudioFile(f)) continue;
+                    const prep = await prepararAudioPedido(f);
+                    novosAudios.push(prep);
+                } catch(e) {
+                    console.error('Erro ao ler áudio:', e);
+                }
+            }
+        }
+
+        // Se estiver editando pedido existente
+        if (idExistente) {
+            const item = DB.pedidos.find(x => String(x.id) === String(idExistente));
+            if (!item) {
+                showToast('Pedido não encontrado para atualização.', 'error');
+                return;
+            }
+
+            item.servicos = servicos;
+            item.materiais = materiais;
+            item.subtotal = subTotal;
+            item.desconto = descontoTotal;
+            item.descontoExtra = descExtra;
+            item.descontoPct = descontoPct;
+            item.parcial = parcial;
+            item.condicao = condicao === 'metade' ? 'Dividido 50%+50%' : 'À vista -10%';
+            item.dataInicial = dataInicial;
+            item.horaInicial = horaInicial;
+            item.horaFinal = horaFinal;
+            item.qtdFaixas = qtdFaixas;
+            item.total = totalFinal;
+
+            item.audios = item.audios || [];
+            if (novosAudios.length > 0) {
+                // Adiciona novos áudios respeitando o limite total de qtdFaixas
+                const vagasRestantes = Math.max(0, qtdFaixas - item.audios.length);
+                const aInserir = novosAudios.slice(0, vagasRestantes);
+                item.audios.push(...aInserir);
+            }
+
+            if (DBReady && item.docId) {
+                await DB_SERVICE.updatePedido(item.docId, item);
+            }
+            await sincronizarFinanceiroPedido(item);
+
+            closeAllModals();
+            renderPedidosClient();
+            renderClientDashboard();
+            if (typeof renderBiblioteca === 'function') renderBiblioteca();
+            showToast(`Pedido #${item.id} atualizado com sucesso!`, 'success');
+            return;
+        }
 
         let pedidoId = (DB.nextId && DB.nextId.pedido) ? DB.nextId.pedido++ : Date.now();
 
@@ -3021,7 +3241,8 @@ async function salvarPedidoClient() {
             servicos,
             materiais,
             subtotal: subTotal,
-            desconto: valorDesconto,
+            desconto: descontoTotal,
+            descontoExtra: descExtra,
             status: 'pendente',
             data: new Date().toISOString().split('T')[0],
             total: totalFinal,
@@ -3032,7 +3253,7 @@ async function salvarPedidoClient() {
             horaInicial,
             horaFinal,
             qtdFaixas,
-            audios: []
+            audios: novosAudios
         };
 
         // Anexar áudios com proteção de tamanho
