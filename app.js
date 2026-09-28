@@ -1783,6 +1783,7 @@ function renderPedidos() {
             const jaPago = valorPagoPedido(p);
             const totalEsp = valorEsperadoPedido(p);
             const restoPed = Math.max(0, Math.round((totalEsp - jaPago) * 100) / 100);
+            const qtdF = Number(p.qtdFaixas) || 1;
             const statusPag = pagoTotal
                 ? '<span class="status-badge status-concluido" style="font-size:11px; padding:2px 8px;"><i class="fas fa-check-circle"></i> Pago</span>'
                 : (jaPago > 0
@@ -1793,7 +1794,7 @@ function renderPedidos() {
                 <td><strong>#${p.id}</strong></td>
                 <td>${c ? c.nome : 'Cliente #' + p.clienteId}</td>
                 <td><small>${servs}</small></td>
-                <td><strong>${formatCurrency(totalEsp)}</strong>${condRotulo}</td>
+                <td><strong>${formatCurrency(totalEsp)}</strong>${condRotulo}${qtdF > 1 ? `<small style="display:block;font-size:10px;color:var(--text-muted);">${qtdF} faixas</small>` : ''}</td>
                 <td>${statusPag}</td>
                 <td><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></td>
                 <td>${formatDate(p.data)}</td>
@@ -1864,15 +1865,19 @@ async function excluirPedido(id) {
 }
 
 window.updatePedidoTotal = function() {
-    let subTotal = 0;
+    let itensTotal = 0;
     [...document.querySelectorAll('#pedidoServicos input:checked')].forEach(cb => {
         const s = (DB.servicos || []).find(x => String(x.id) === String(cb.value));
-        if(s) subTotal += Number(s.preco || 0);
+        if(s) itensTotal += Number(s.preco || 0);
     });
     [...document.querySelectorAll('#pedidoMateriais input:checked')].forEach(cb => {
         const m = (DB.materiais || []).find(x => String(x.id) === String(cb.value));
-        if(m) subTotal += Number(m.preco || 0);
+        if(m) itensTotal += Number(m.preco || 0);
     });
+
+    const rawQtd = parseInt(document.getElementById('pedidoQtdFaixas')?.value, 10);
+    const qtdFaixas = isNaN(rawQtd) || rawQtd < 1 ? 1 : rawQtd;
+    const subTotal = Math.round(itensTotal * qtdFaixas * 100) / 100;
 
     const condicao = (document.querySelector('input[name="adminPedidoCondicao"]:checked') || {}).value || 'vista';
     const pctInput = document.getElementById('pedidoDescontoPct');
@@ -1888,9 +1893,13 @@ window.updatePedidoTotal = function() {
     const entrada = condicao === 'metade' ? Math.round((totalLiquido / 2) * 100) / 100 : totalLiquido;
     const saldo = condicao === 'metade' ? Math.max(0, Math.round((totalLiquido - entrada) * 100) / 100) : 0;
 
+    // Atualiza linha de faixas
+    const elFaixas = document.getElementById('adminResFaixas');
+    if (elFaixas) elFaixas.textContent = `${qtdFaixas} ${qtdFaixas === 1 ? 'faixa' : 'faixas'}`;
+
     // Atualiza cards de condição
     const elVistaVal = document.getElementById('adminCondVistaValor');
-    if (elVistaVal) elVistaVal.textContent = formatCurrency(Math.max(0, subTotal * (1 - descPct / 100)));
+    if (elVistaVal) elVistaVal.textContent = formatCurrency(Math.max(0, Math.round(subTotal * (1 - descPct / 100) * 100) / 100));
     const elMetaVal = document.getElementById('adminCondMetaValor');
     if (elMetaVal) elMetaVal.textContent = formatCurrency(Math.round((subTotal / 2) * 100) / 100);
     const elIntegVal = document.getElementById('adminCondIntegralValor');
@@ -1901,7 +1910,13 @@ window.updatePedidoTotal = function() {
 
     // Atualiza resumo
     const elSub = document.getElementById('adminResSubtotal');
-    if (elSub) elSub.textContent = formatCurrency(subTotal);
+    if (elSub) {
+        if (qtdFaixas > 1 && itensTotal > 0) {
+            elSub.innerHTML = `${formatCurrency(subTotal)} <small style="display:block; font-size:11px; color:var(--text-muted); font-weight:normal;">(${formatCurrency(itensTotal)} por faixa × ${qtdFaixas} faixas)</small>`;
+        } else {
+            elSub.textContent = formatCurrency(subTotal);
+        }
+    }
 
     const elVistaLinha = document.getElementById('adminResVistaLinha');
     if (elVistaLinha) elVistaLinha.style.display = condicao === 'vista' && valorDescontoVista > 0 ? 'flex' : 'none';
@@ -1938,6 +1953,8 @@ window.updatePedidoTotal = function() {
     if (grupoPct) grupoPct.style.display = condicao === 'vista' ? 'block' : 'none';
 
     return {
+        itensTotal,
+        qtdFaixas,
         subTotal,
         total: totalLiquido,
         desconto: descontoTotal,
@@ -2687,11 +2704,12 @@ function renderPedidosClient() {
 
         const btnPagarLabel = p.parcial ? (jaPago > 0 ? 'Pagar 50%' : 'Pagar Entrada') : 'Pagar';
 
+        const qtdF = Number(p.qtdFaixas) || 1;
         return `<tr>
             <td><strong>#${p.id}</strong></td>
             <td><small>${servicoNomes || '-'}</small></td>
             <td><small>${materialNomes || '-'}</small></td>
-            <td><strong>${formatCurrency(totalExibir)}</strong>${condRotulo ? `<small class="cond-badge" style="display:block; font-size:10px; color:var(--primary);">${condRotulo}</small>` : ''}</td>
+            <td><strong>${formatCurrency(totalExibir)}</strong>${condRotulo ? `<small class="cond-badge" style="display:block; font-size:10px; color:var(--primary);">${condRotulo}</small>` : ''}${qtdF > 1 ? `<small style="display:block; font-size:10px; color:var(--text-muted);">${qtdF} faixas</small>` : ''}</td>
             <td>${statusPag}</td>
             <td><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></td>
             <td>${formatPedidoDataHora(p)}</td>
@@ -2714,11 +2732,13 @@ function verDetalhesPedidoClient(id) {
     const totalEsperado = valorEsperadoPedido(p);
     const jaPago = valorPagoPedido(p);
     const restoPed = Math.max(0, Math.round((totalEsperado - jaPago) * 100) / 100);
+    const qtdF = Number(p.qtdFaixas) || 1;
 
     let html = `
         <div class="detalhe-section">
             <h4><i class="fas fa-info-circle"></i> Informações do Pedido</h4>
             <div class="detalhe-item"><span>Pedido</span><strong>#${p.id}</strong></div>
+            <div class="detalhe-item"><span>Quantidade de faixas</span><strong>${qtdF} ${qtdF === 1 ? 'faixa' : 'faixas'}</strong></div>
             <div class="detalhe-item"><span>Criado em</span><span>${formatDate(p.data)}</span></div>
             ${p.dataInicial ? `<div class="detalhe-item"><span>Início</span><strong>${formatDate(p.dataInicial)} ${p.horaInicial || ''}${p.horaFinal ? ` &rarr; ${p.horaFinal}` : ''}</strong></div>` : ''}
             <div class="detalhe-item"><span>Status</span><span class="status-badge status-${p.status}">${statusLabel(p.status)}</span></div>
@@ -2727,7 +2747,7 @@ function verDetalhesPedidoClient(id) {
     if (servicos.length) {
         html += `<div class="detalhe-section"><h4><i class="fas fa-concierge-bell"></i> Serviços</h4>`;
         servicos.forEach(s => {
-            html += `<div class="detalhe-item"><span>${s.nome}</span>${Number(s.preco) <= 0 ? formatMaterialPrice(s, 'item-price') : `<strong>${formatCurrency(s.preco)}</strong>`}</div>`;
+            html += `<div class="detalhe-item"><span>${s.nome}</span>${Number(s.preco) <= 0 ? formatMaterialPrice(s, 'item-price') : `<strong>${formatCurrency(s.preco)}${qtdF > 1 ? ` <span style="font-size:11px;font-weight:normal;color:var(--text-muted);">(${formatCurrency(s.preco * qtdF)} / ${qtdF} faixas)</span>` : ''}</strong>`}</div>`;
         });
         html += `</div>`;
     }
@@ -2735,14 +2755,14 @@ function verDetalhesPedidoClient(id) {
     if (materiais.length) {
         html += `<div class="detalhe-section"><h4><i class="fas fa-boxes"></i> Materiais</h4>`;
         materiais.forEach(m => {
-            html += `<div class="detalhe-item"><span>${m.nome}</span>${m.preco <= 0 ? formatMaterialPrice(m) : `<strong>${formatCurrency(m.preco)}</strong>`}</div>`;
+            html += `<div class="detalhe-item"><span>${m.nome}</span>${m.preco <= 0 ? formatMaterialPrice(m) : `<strong>${formatCurrency(m.preco)}${qtdF > 1 ? ` <span style="font-size:11px;font-weight:normal;color:var(--text-muted);">(${formatCurrency(m.preco * qtdF)} / ${qtdF} faixas)</span>` : ''}</strong>`}</div>`;
         });
         html += `</div>`;
     }
 
     html += `<div class="detalhe-section" style="border-left:4px solid var(--primary); background:rgba(108,92,231,0.06); border-radius:6px; padding:12px;">
         <h4><i class="fas fa-hand-holding-usd"></i> Condição & Financeiro</h4>
-        <div class="detalhe-item"><span>Subtotal dos itens</span><strong>${formatCurrency(c.base)}</strong></div>`;
+        <div class="detalhe-item"><span>Subtotal dos itens (${qtdF} ${qtdF === 1 ? 'faixa' : 'faixas'})</span><strong>${formatCurrency(c.base)}</strong></div>`;
 
     if (c.parcial) {
         html += `
@@ -2855,17 +2875,20 @@ function prepareClientPedidoModal() {
 }
 
 function valoresPedidoClient() {
-    let total = 0;
+    let itensTotal = 0;
     document.querySelectorAll('#clientPedidoServicos input:checked').forEach(cb => {
         const s = (DB.servicos || []).find(x => x.id == cb.value);
-        if (s) total += Number(s.preco || 0);
+        if (s) itensTotal += Number(s.preco || 0);
     });
     document.querySelectorAll('#clientPedidoMateriais input:checked').forEach(cb => {
         const m = (DB.materiais || []).find(x => x.id == cb.value);
-        if (m) total += Number(m.preco || 0);
+        if (m) itensTotal += Number(m.preco || 0);
     });
+    const rawQtd = parseInt(document.getElementById('clientPedidoQtdFaixas')?.value, 10);
+    const qtdFaixas = isNaN(rawQtd) || rawQtd < 1 ? 1 : rawQtd;
+    const subTotal = Math.round(itensTotal * qtdFaixas * 100) / 100;
     const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
-    return { subTotal: total, condicao };
+    return { itensTotal, qtdFaixas, subTotal, condicao };
 }
 
 function fileToBase64(file) {
@@ -2902,21 +2925,29 @@ function atualizarCondicaoClient() {
 }
 
 function updateClientPedidoTotal() {
-    const { subTotal } = valoresPedidoClient();
-    const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
+    const { itensTotal, qtdFaixas, subTotal, condicao } = valoresPedidoClient();
 
-    const desconto = condicao === 'vista' ? subTotal * 0.10 : 0;
-    const totalFinal = subTotal - desconto;
-    const entrada = condicao === 'metade' ? subTotal / 2 : totalFinal;
-    const saldo = condicao === 'metade' ? subTotal / 2 : 0;
+    const desconto = condicao === 'vista' ? Math.round(subTotal * 0.10 * 100) / 100 : 0;
+    const totalFinal = Math.max(0, Math.round((subTotal - desconto) * 100) / 100);
+    const entrada = condicao === 'metade' ? Math.round((subTotal / 2) * 100) / 100 : totalFinal;
+    const saldo = condicao === 'metade' ? Math.max(0, Math.round((subTotal - entrada) * 100) / 100) : 0;
+
+    const elFaixas = document.getElementById('clientResFaixas');
+    if (elFaixas) elFaixas.textContent = `${qtdFaixas} ${qtdFaixas === 1 ? 'faixa' : 'faixas'}`;
 
     const elVistaVal = document.getElementById('clientCondVistaValor');
-    if (elVistaVal) elVistaVal.textContent = formatCurrency(subTotal * 0.90);
+    if (elVistaVal) elVistaVal.textContent = formatCurrency(Math.max(0, Math.round(subTotal * 0.90 * 100) / 100));
     const elMetaVal = document.getElementById('clientCondMetaValor');
-    if (elMetaVal) elMetaVal.textContent = formatCurrency(subTotal / 2);
+    if (elMetaVal) elMetaVal.textContent = formatCurrency(Math.round((subTotal / 2) * 100) / 100);
 
     const elSub = document.getElementById('clientResSubtotal');
-    if (elSub) elSub.textContent = formatCurrency(subTotal);
+    if (elSub) {
+        if (qtdFaixas > 1 && itensTotal > 0) {
+            elSub.innerHTML = `${formatCurrency(subTotal)} <small style="display:block; font-size:11px; color:var(--text-muted); font-weight:normal;">(${formatCurrency(itensTotal)} por faixa × ${qtdFaixas} faixas)</small>`;
+        } else {
+            elSub.textContent = formatCurrency(subTotal);
+        }
+    }
 
     const vistaLinha = document.getElementById('clientResVista');
     if (vistaLinha) vistaLinha.style.display = condicao === 'vista' ? 'flex' : 'none';
@@ -2974,21 +3005,13 @@ async function salvarPedidoClient() {
     }
 
     try {
-        let total = 0;
-        servicos.forEach(id => {
-            const s = (DB.servicos || []).find(x => x.id == id);
-            if (s) total += Number(s.preco || 0);
-        });
-        materiais.forEach(id => {
-            const m = (DB.materiais || []).find(x => x.id == id);
-            if (m) total += Number(m.preco || 0);
-        });
+        const { itensTotal, qtdFaixas, subTotal } = valoresPedidoClient();
 
         const condicao = (document.querySelector('input[name="clientCondicao"]:checked') || {}).value || 'vista';
         const descontoPct = condicao === 'vista' ? 10 : 0;
         const parcial = condicao === 'metade' ? 1 : 0;
-        const valorDesconto = condicao === 'vista' ? Math.round(total * 0.10 * 100) / 100 : 0;
-        const totalFinal = condicao === 'vista' ? Math.max(0, Math.round((total - valorDesconto) * 100) / 100) : total;
+        const valorDesconto = condicao === 'vista' ? Math.round(subTotal * 0.10 * 100) / 100 : 0;
+        const totalFinal = condicao === 'vista' ? Math.max(0, Math.round((subTotal - valorDesconto) * 100) / 100) : subTotal;
 
         let pedidoId = (DB.nextId && DB.nextId.pedido) ? DB.nextId.pedido++ : Date.now();
 
@@ -2997,7 +3020,7 @@ async function salvarPedidoClient() {
             clienteId: currentUser.id,
             servicos,
             materiais,
-            subtotal: total,
+            subtotal: subTotal,
             desconto: valorDesconto,
             status: 'pendente',
             data: new Date().toISOString().split('T')[0],
@@ -3008,7 +3031,7 @@ async function salvarPedidoClient() {
             dataInicial,
             horaInicial,
             horaFinal,
-            qtdFaixas: parseInt(document.getElementById('clientPedidoQtdFaixas')?.value) || 1,
+            qtdFaixas,
             audios: []
         };
 
@@ -5781,7 +5804,7 @@ function verDetalhesPedido(id) {
                     <div style="font-weight:600;">${s.nome}</div>
                     ${s.descricao ? `<small style="color:var(--text-muted); display:block; white-space:normal;">${s.descricao}</small>` : ''}
                 </div>
-                ${Number(s.preco) <= 0 ? formatMaterialPrice(s, 'item-price') : `<strong>${formatCurrency(s.preco)}</strong>`}
+                ${Number(s.preco) <= 0 ? formatMaterialPrice(s, 'item-price') : `<strong>${formatCurrency(s.preco)}${qtdF > 1 ? ` <span style="font-size:11px;font-weight:normal;color:var(--text-muted);">(${formatCurrency(s.preco * qtdF)} / ${qtdF} faixas)</span>` : ''}</strong>`}
             </div>`;
         });
     }
@@ -5793,7 +5816,7 @@ function verDetalhesPedido(id) {
                     <div style="font-weight:600;">${m.nome}</div>
                     ${m.descricao ? `<small style="color:var(--text-muted); display:block; white-space:normal;">${m.descricao}</small>` : ''}
                 </div>
-                ${m.preco <= 0 ? formatMaterialPrice(m) : `<strong>${formatCurrency(m.preco)}</strong>`}
+                ${m.preco <= 0 ? formatMaterialPrice(m) : `<strong>${formatCurrency(m.preco)}${qtdF > 1 ? ` <span style="font-size:11px;font-weight:normal;color:var(--text-muted);">(${formatCurrency(m.preco * qtdF)} / ${qtdF} faixas)</span>` : ''}</strong>`}
             </div>`;
         });
     }
@@ -5804,10 +5827,10 @@ function verDetalhesPedido(id) {
     let html = `
         <div class="detalhe-section" style="border-left:4px solid var(--primary); background:rgba(108,92,231,0.06); border-radius:6px; padding:12px;">
             <h4><i class="fas fa-clipboard-list"></i> O que foi pedido</h4>
-            <div class="detalhe-item"><span>Faixas solicitadas</span><strong>${qtdF}</strong></div>
+            <div class="detalhe-item"><span>Faixas solicitadas</span><strong>${qtdF} ${qtdF === 1 ? 'faixa' : 'faixas'}</strong></div>
             ${itensHtml}
             <div class="detalhe-item" style="margin-top:8px; border-top:1px dashed rgba(0,0,0,0.12); padding-top:8px;">
-                <span>Subtotal dos itens</span>
+                <span>Subtotal dos itens (${qtdF} ${qtdF === 1 ? 'faixa' : 'faixas'})</span>
                 <strong>${formatCurrency(c.base)}</strong>
             </div>`;
 

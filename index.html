@@ -1768,7 +1768,7 @@
                     </div>
                     <div class="form-group">
                         <label>Qtd de Faixas</label>
-                        <input type="number" id="pedidoQtdFaixas" min="1" value="1">
+                        <input type="number" id="pedidoQtdFaixas" min="1" value="1" oninput="updatePedidoTotal()" onchange="updatePedidoTotal()">
                     </div>
                     <div class="form-group">
                         <label>Status</label>
@@ -1798,6 +1798,7 @@
                     </div>
                 </div>
                 <div class="pedido-resumo" id="adminPedidoResumo" style="margin:16px 0;">
+                    <div class="resumo-linha" id="adminResFaixasLinha"><span>Quantidade de faixas</span><strong id="adminResFaixas">1 faixa</strong></div>
                     <div class="resumo-linha"><span>Subtotal dos itens</span><strong id="adminResSubtotal">R$ 0,00</strong></div>
                     <div class="resumo-linha resumo-vista" id="adminResVistaLinha" style="display:none">
                         <span id="adminResVistaRotulo">Desconto à vista (10%)</span><strong class="texto-positivo" id="adminResDesconto">-R$ 0,00</strong>
@@ -1864,7 +1865,7 @@
                 </div>
                 <div class="form-group">
                     <label>Quantidade de Faixas</label>
-                    <input type="number" id="clientPedidoQtdFaixas" min="1" value="1">
+                    <input type="number" id="clientPedidoQtdFaixas" min="1" value="1" oninput="updateClientPedidoTotal()" onchange="updateClientPedidoTotal()">
                 </div>
                 <div class="form-group">
                     <label>Anexar Áudios (MP3, até 10 arquivos)</label>
@@ -1893,6 +1894,7 @@
                     </div>
                 </div>
                 <div class="pedido-resumo" id="clientPedidoResumo">
+                    <div class="resumo-linha" id="clientResFaixasLinha"><span>Quantidade de faixas</span><strong id="clientResFaixas">1 faixa</strong></div>
                     <div class="resumo-linha"><span>Subtotal</span><strong id="clientResSubtotal">R$ 0,00</strong></div>
                     <div class="resumo-linha resumo-vista" id="clientResVista" style="display:none">
                         <span>Desconto à vista (10%)</span><strong class="texto-positivo" id="clientResDesconto">-R$ 0,00</strong>
