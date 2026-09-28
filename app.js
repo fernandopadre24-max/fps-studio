@@ -74,6 +74,7 @@ let DB = {
     bibliotecas: [],
     nextId: { servico: 1, material: 1, cliente: 1, pedido: 1, movimentacao: 1 }
 };
+window.DB = DB;
 
 function initNextIds() {
     if (!DB.nextId) DB.nextId = { servico: 1, material: 1, cliente: 1, pedido: 1, movimentacao: 1 };
@@ -335,6 +336,41 @@ async function loadDB() {
         DB.movimentacoes = movimentacoes || [];
         DB.config = config || {};
         DB.bibliotecas = bibliotecas || [];
+
+        // Se o IndexedDB inicializou vazio, sincronizar dados iniciais do backend SQLite
+        if (usingIDB && DB.servicos.length === 0) {
+            try {
+                const [apiServ, apiMat, apiCli, apiPed, apiMov] = await Promise.all([
+                    fetch('/api/servicos').then(r => r.ok ? r.json() : []).catch(() => []),
+                    fetch('/api/materiais').then(r => r.ok ? r.json() : []).catch(() => []),
+                    fetch('/api/clientes').then(r => r.ok ? r.json() : []).catch(() => []),
+                    fetch('/api/pedidos').then(r => r.ok ? r.json() : []).catch(() => []),
+                    fetch('/api/movimentacoes').then(r => r.ok ? r.json() : []).catch(() => [])
+                ]);
+                if (Array.isArray(apiServ) && apiServ.length > 0) {
+                    DB.servicos = apiServ;
+                    if (window.IDB_SERVICE?.salvarBloco) await window.IDB_SERVICE.salvarBloco('servicos', apiServ);
+                }
+                if (Array.isArray(apiMat) && apiMat.length > 0) {
+                    DB.materiais = apiMat;
+                    if (window.IDB_SERVICE?.salvarBloco) await window.IDB_SERVICE.salvarBloco('materiais', apiMat);
+                }
+                if (Array.isArray(apiCli) && apiCli.length > 0) {
+                    DB.clientes = apiCli;
+                    if (window.IDB_SERVICE?.salvarBloco) await window.IDB_SERVICE.salvarBloco('clientes', apiCli);
+                }
+                if (Array.isArray(apiPed) && apiPed.length > 0) {
+                    DB.pedidos = apiPed;
+                    if (window.IDB_SERVICE?.salvarBloco) await window.IDB_SERVICE.salvarBloco('pedidos', apiPed);
+                }
+                if (Array.isArray(apiMov) && apiMov.length > 0) {
+                    DB.movimentacoes = apiMov;
+                    if (window.IDB_SERVICE?.salvarBloco) await window.IDB_SERVICE.salvarBloco('movimentacoes', apiMov);
+                }
+            } catch (syncErr) {
+                console.warn('[SYNC] Falha ao sincronizar dados iniciais do backend:', syncErr);
+            }
+        }
         
         // Normalizar IDs
         DB.servicos.forEach(x => { x.docId = x.id; });
@@ -1153,30 +1189,146 @@ function abrirNovaMovimentacaoModal() {
     openModal('movimentacaoModal');
 }
 
-function renderServicos() {
-    const list = document.getElementById('listaServicosAdmin') || document.getElementById('adminServicosList');
-    if (!list) return;
-    if (!DB.servicos || DB.servicos.length === 0) {
-        list.innerHTML = '<div class="empty-state" style="grid-column:1/-1;text-align:center;padding:30px;"><p>Nenhum serviço cadastrado.</p></div>';
-        return;
-    }
-    list.innerHTML = DB.servicos.map(s => `
-        <div class="card item-card">
-            <div class="item-card-image" style="height:140px;position:relative;background:#f1f5f9;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:8px 8px 0 0;">
-                ${s.imagem ? `<img src="${s.imagem}" alt="${s.nome}" style="width:100%;height:100%;object-fit:cover;">` : `<i class="fas ${s.icone || 'fa-music'}" style="font-size:36px;color:#94a3b8;"></i>`}
-            </div>
-            <div class="card-body" style="padding:16px;">
-                <h4 style="margin:0 0 6px 0;font-size:16px;">${s.nome}</h4>
-                <p style="font-size:13px;color:var(--text-light);min-height:38px;line-height:1.4;margin:0 0 10px 0;">${s.descricao || 'Sem descrição'}</p>
-                <div style="font-size:16px;font-weight:700;color:var(--primary);margin-bottom:12px;">${Number(s.preco) <= 0 ? formatMaterialPrice(s, 'item-price') : formatCurrency(s.preco)} ${s.duracao ? `<small style="font-size:12px;font-weight:400;color:#64748b;">· ${s.duracao}</small>` : ''}</div>
-                <div style="display:flex;gap:8px;">
-                    <button class="btn-secondary btn-sm" style="flex:1;" onclick="editarServico('${s.id}')"><i class="fas fa-edit"></i> Editar</button>
-                    <button class="btn-danger btn-sm" style="flex:1;" onclick="excluirServico('${s.id}')"><i class="fas fa-trash"></i> Excluir</button>
-                </div>
+// ==========================================
+// SERVIÇOS & CATÁLOGO
+// ==========================================
+
+const filtroServicosState = {
+    admin: { cat: 'todos', termo: '' },
+    client: { cat: 'todos', termo: '' }
+};
+
+function servicoCardHtml(s, isAdmin = true) {
+    const catNome = (s.categoria || 'Serviço').toUpperCase();
+    const duracaoBadge = s.duracao ? `<span class="item-card-duration-badge"><i class="fas fa-clock"></i> ${s.duracao}</span>` : '';
+    const precoTxt = Number(s.preco) <= 0 
+        ? '<span class="badge-incluso"><i class="fas fa-gift"></i> INCLUSO</span>' 
+        : `<span class="item-card-price">${formatCurrency(s.preco)}</span>`;
+
+    const acoes = isAdmin ? `
+        <div class="item-card-actions">
+            <button class="btn-secondary btn-sm" onclick="editarServico('${s.id}')"><i class="fas fa-edit"></i> Editar</button>
+            <button class="btn-danger btn-sm" onclick="excluirServico('${s.id}')"><i class="fas fa-trash"></i> Excluir</button>
+        </div>
+    ` : `
+        <div class="item-card-actions">
+            <button class="btn-primary btn-sm btn-full" onclick="solicitarServicoClient('${s.id}')" style="box-shadow:0 3px 10px rgba(108,92,231,0.3);font-weight:600;width:100%;">
+                <i class="fas fa-plus-circle"></i> Solicitar Serviço
+            </button>
+        </div>
+    `;
+
+    const imgTag = s.imagem 
+        ? `<img src="${s.imagem}" alt="${s.nome}" loading="lazy">` 
+        : `<div class="placeholder-icon"><i class="fas ${s.icone || 'fa-music'}"></i><span>${s.nome}</span></div>`;
+
+    return `
+    <div class="item-card item-card-catalogo">
+        <div class="item-card-image">
+            ${imgTag}
+            <div class="item-card-overlay-gradient"></div>
+            <div class="item-card-badges-top">
+                <span class="item-card-tag-badge"><i class="fas fa-tag"></i> ${catNome}</span>
+                ${duracaoBadge}
             </div>
         </div>
-    `).join('');
+        <div class="item-card-body">
+            <h4 class="item-card-title">${s.nome}</h4>
+            <p class="item-card-desc">${s.descricao || 'Serviço profissional de produção musical e gravação de alta definição no FPS Studio.'}</p>
+            <div class="item-card-meta">
+                ${precoTxt}
+                <span class="item-card-duracao-pill"><i class="fas fa-stopwatch"></i> ${s.duracao || 'Sessão padrão'}</span>
+            </div>
+        </div>
+        ${acoes}
+    </div>
+    `;
 }
+
+function renderServicos(tela = 'admin') {
+    const listId = tela === 'admin' ? 'listaServicosAdmin' : 'listaServicosClient';
+    const container = document.getElementById(listId) || document.getElementById('adminServicosList');
+    if (!container) return;
+
+    const countEl = document.getElementById(tela === 'admin' ? 'contagemServicosAdmin' : 'contagemServicosClient');
+    if (countEl) countEl.textContent = (DB.servicos || []).length;
+
+    let itens = DB.servicos || [];
+    const st = filtroServicosState[tela] || { cat: 'todos', termo: '' };
+
+    if (st.cat && st.cat !== 'todos') {
+        itens = itens.filter(s => {
+            const cat = (s.categoria || '').toLowerCase();
+            const nome = (s.nome || '').toLowerCase();
+            if (st.cat === 'producao') return cat.includes('producao') || nome.includes('autoral') || nome.includes('arranjo');
+            if (st.cat === 'gravacao') return cat.includes('gravacao') || nome.includes('comum') || nome.includes('sem arranjo');
+            if (st.cat === 'edicao') return cat.includes('edicao') || nome.includes('bateria') || nome.includes('video') || nome.includes('afinacao');
+            if (st.cat === 'mixagem') return cat.includes('mix') || nome.includes('mixagem');
+            if (st.cat === 'masterizacao') return cat.includes('master') || nome.includes('masterizacao');
+            if (st.cat === 'vocal') return cat.includes('vocal') || nome.includes('voz') || nome.includes('locucao');
+            return cat.includes(st.cat);
+        });
+    }
+
+    if (st.termo) {
+        const t = st.termo.toLowerCase().trim();
+        itens = itens.filter(s => (s.nome || '').toLowerCase().includes(t) || (s.descricao || '').toLowerCase().includes(t) || (s.categoria || '').toLowerCase().includes(t));
+    }
+
+    if (itens.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state" style="grid-column:1/-1;text-align:center;padding:40px 20px;">
+                <div style="font-size:36px;color:var(--text-muted);margin-bottom:12px;"><i class="fas fa-search"></i></div>
+                <h4 style="margin:0 0 6px 0;font-size:16px;">Nenhum serviço encontrado</h4>
+                <p style="margin:0;color:var(--text-muted);font-size:13px;">Tente ajustar os filtros ou a busca digitada.</p>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = itens.map(s => servicoCardHtml(s, tela === 'admin')).join('');
+}
+
+function renderServicosAdmin() {
+    renderServicos('admin');
+}
+
+function renderServicosClient() {
+    renderServicos('client');
+}
+
+function selecionarFiltroCategoriaServico(cat, tela = 'admin') {
+    filtroServicosState[tela].cat = cat;
+    const barId = tela === 'admin' ? 'filtroCatServicosAdmin' : 'filtroCatServicosClient';
+    document.querySelectorAll(`#${barId} .cat-chip-btn`).forEach(b => {
+        b.classList.toggle('active', b.dataset.cat === cat);
+    });
+    renderServicos(tela);
+}
+
+function filtrarServicos(tela = 'admin') {
+    const inputId = tela === 'admin' ? 'buscaServicosAdmin' : 'buscaServicosClient';
+    const val = (document.getElementById(inputId)?.value || '').trim();
+    filtroServicosState[tela].termo = val;
+    renderServicos(tela);
+}
+
+window.filtrarServicos = filtrarServicos;
+window.selecionarFiltroCategoriaServico = selecionarFiltroCategoriaServico;
+window.renderServicos = renderServicos;
+window.renderServicosAdmin = renderServicosAdmin;
+window.renderServicosClient = renderServicosClient;
+
+window.solicitarServicoClient = function(id) {
+    openModal('novoPedidoClientModal');
+    setTimeout(() => {
+        const cb = document.querySelector(`#clientPedidoServicos input[value="${id}"]`);
+        if (cb) {
+            cb.checked = true;
+            cb.dispatchEvent(new Event('change'));
+        }
+    }, 150);
+};
 
 function editarServico(id) {
     const s = DB.servicos.find(x => x.id === parseInt(id) || x.id === id);
@@ -1275,30 +1427,161 @@ async function salvarServico() {
 // ==========================================
 // MATERIAIS
 // ==========================================
-function renderMateriais() {
-    const list = document.getElementById('listaMateriaisAdmin') || document.getElementById('adminMateriaisList');
-    if (!list) return;
-    if (!DB.materiais || DB.materiais.length === 0) {
-        list.innerHTML = '<div class="empty-state" style="grid-column:1/-1;text-align:center;padding:30px;"><p>Nenhum material cadastrado.</p></div>';
-        return;
-    }
-    list.innerHTML = DB.materiais.map(m => `
-        <div class="card item-card">
-            <div class="item-card-image" style="height:140px;position:relative;background:#f1f5f9;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:8px 8px 0 0;">
-                ${m.imagem ? `<img src="${m.imagem}" alt="${m.nome}" style="width:100%;height:100%;object-fit:cover;">` : `<i class="fas ${getCategoriaIcon(m.categoria)}" style="font-size:36px;color:#94a3b8;"></i>`}
-            </div>
-            <div class="card-body" style="padding:16px;">
-                <h4 style="margin:0 0 6px 0;font-size:16px;">${m.nome}</h4>
-                <p style="font-size:13px;color:var(--text-light);min-height:38px;line-height:1.4;margin:0 0 10px 0;">${m.descricao || 'Sem descrição'}</p>
-                <div style="font-size:16px;font-weight:700;color:var(--primary);margin-bottom:12px;">${formatCurrency(m.preco)}</div>
-                <div style="display:flex;gap:8px;">
-                    <button class="btn-secondary btn-sm" style="flex:1;" onclick="editarMaterial('${m.id}')"><i class="fas fa-edit"></i> Editar</button>
-                    <button class="btn-danger btn-sm" style="flex:1;" onclick="excluirMaterial('${m.id}')"><i class="fas fa-trash"></i> Excluir</button>
-                </div>
+// ==========================================
+// MATERIAIS & ACERVO
+// ==========================================
+
+const filtroMateriaisState = {
+    admin: { cat: 'todos', termo: '' },
+    client: { cat: 'todos', termo: '' }
+};
+
+function materialCardHtml(m, isAdmin = true) {
+    const catNome = (m.categoria || 'Equipamento').toUpperCase();
+    const tagPill = m.tag ? `<span class="mat-brand-tag"><i class="fas fa-certificate"></i> ${m.tag}</span>` : '';
+    const specBox = m.especificacao ? `
+        <div class="mat-spec-pill">
+            <i class="fas fa-check-circle"></i>
+            <span>${m.especificacao}</span>
+        </div>
+    ` : '';
+    const precoTxt = Number(m.preco) <= 0 
+        ? '<span class="badge-incluso"><i class="fas fa-check-circle"></i> INCLUSO NA SESSÃO</span>' 
+        : `<span class="item-card-price">${formatCurrency(m.preco)}</span>`;
+
+    const acoes = isAdmin ? `
+        <div class="item-card-actions">
+            <button class="btn-secondary btn-sm" onclick="editarMaterial('${m.id}')"><i class="fas fa-edit"></i> Editar</button>
+            <button class="btn-danger btn-sm" onclick="excluirMaterial('${m.id}')"><i class="fas fa-trash"></i> Excluir</button>
+        </div>
+    ` : `
+        <div class="item-card-actions">
+            <button class="btn-primary btn-sm btn-full" onclick="adicionarMaterialClient('${m.id}')" style="box-shadow:0 3px 10px rgba(16,185,129,0.3);background:linear-gradient(135deg, #10b981, #059669);font-weight:600;width:100%;">
+                <i class="fas fa-plus"></i> Adicionar ao Pedido
+            </button>
+        </div>
+    `;
+
+    const imgTag = m.imagem 
+        ? `<img src="${m.imagem}" alt="${m.nome}" loading="lazy">` 
+        : `<div class="placeholder-icon"><i class="fas ${getCategoriaIcon(m.categoria)}"></i><span>${m.nome}</span></div>`;
+
+    return `
+    <div class="item-card item-card-catalogo ${Number(m.preco) <= 0 ? 'item-card-incluso' : ''}">
+        <div class="item-card-image">
+            ${imgTag}
+            <div class="item-card-overlay-gradient"></div>
+            <div class="item-card-badges-top">
+                <span class="item-card-tag-badge mat-tag-badge"><i class="fas fa-music"></i> ${catNome}</span>
+                ${tagPill}
             </div>
         </div>
-    `).join('');
+        <div class="item-card-body">
+            <h4 class="item-card-title">${m.nome}</h4>
+            ${specBox}
+            <p class="item-card-desc">${m.descricao || 'Equipamento e instrumento de alta fidelidade para captação e produção.'}</p>
+            <div class="item-card-meta">
+                ${precoTxt}
+                <span class="item-card-categoria-meta"><i class="fas fa-layer-group"></i> ${capitalize(m.categoria || 'Geral')}</span>
+            </div>
+        </div>
+        ${acoes}
+    </div>
+    `;
 }
+
+function renderMateriais(tela = 'admin') {
+    const listId = tela === 'admin' ? 'listaMateriaisAdmin' : 'listaMateriaisClient';
+    const container = document.getElementById(listId) || document.getElementById('adminMateriaisList');
+    if (!container) return;
+
+    const countEl = document.getElementById(tela === 'admin' ? 'contagemMateriaisAdmin' : 'contagemMateriaisClient');
+    if (countEl) countEl.textContent = (DB.materiais || []).length;
+
+    let itens = DB.materiais || [];
+    const st = filtroMateriaisState[tela] || { cat: 'todos', termo: '' };
+
+    if (st.cat && st.cat !== 'todos') {
+        itens = itens.filter(m => {
+            const cat = (m.categoria || '').toLowerCase();
+            const tag = (m.tag || '').toLowerCase();
+            const nome = (m.nome || '').toLowerCase();
+            const preco = Number(m.preco) || 0;
+
+            if (st.cat === 'inclusos') return preco <= 0;
+            if (st.cat === 'cordas') return cat.includes('corda') || nome.includes('guitarra') || nome.includes('baixo') || nome.includes('violao');
+            if (st.cat === 'percussao') return cat.includes('percuss') || cat.includes('bateria') || nome.includes('bateria') || nome.includes('percussao');
+            if (st.cat === 'teclados') return cat.includes('teclado') || cat.includes('fx') || tag.includes('midi') || nome.includes('midi');
+            if (st.cat === 'especiais') return cat.includes('especia') || nome.includes('sanfona') || nome.includes('violino');
+            return cat.includes(st.cat);
+        });
+    }
+
+    if (st.termo) {
+        const t = st.termo.toLowerCase().trim();
+        itens = itens.filter(m => 
+            (m.nome || '').toLowerCase().includes(t) || 
+            (m.descricao || '').toLowerCase().includes(t) || 
+            (m.categoria || '').toLowerCase().includes(t) ||
+            (m.tag || '').toLowerCase().includes(t) ||
+            (m.especificacao || '').toLowerCase().includes(t)
+        );
+    }
+
+    if (itens.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state" style="grid-column:1/-1;text-align:center;padding:40px 20px;">
+                <div style="font-size:36px;color:var(--text-muted);margin-bottom:12px;"><i class="fas fa-search"></i></div>
+                <h4 style="margin:0 0 6px 0;font-size:16px;">Nenhum material encontrado</h4>
+                <p style="margin:0;color:var(--text-muted);font-size:13px;">Tente ajustar os filtros de categoria ou a busca.</p>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = itens.map(m => materialCardHtml(m, tela === 'admin')).join('');
+}
+
+function renderMateriaisAdmin() {
+    renderMateriais('admin');
+}
+
+function renderMateriaisClient() {
+    renderMateriais('client');
+}
+
+function selecionarFiltroCategoriaMaterial(cat, tela = 'admin') {
+    filtroMateriaisState[tela].cat = cat;
+    const barId = tela === 'admin' ? 'filtroCatMateriaisAdmin' : 'filtroCatMateriaisClient';
+    document.querySelectorAll(`#${barId} .cat-chip-btn`).forEach(b => {
+        b.classList.toggle('active', b.dataset.cat === cat);
+    });
+    renderMateriais(tela);
+}
+
+function filtrarMateriais(tela = 'admin') {
+    const inputId = tela === 'admin' ? 'buscaMateriaisAdmin' : 'buscaMateriaisClient';
+    const val = (document.getElementById(inputId)?.value || '').trim();
+    filtroMateriaisState[tela].termo = val;
+    renderMateriais(tela);
+}
+
+window.filtrarMateriais = filtrarMateriais;
+window.selecionarFiltroCategoriaMaterial = selecionarFiltroCategoriaMaterial;
+window.renderMateriais = renderMateriais;
+window.renderMateriaisAdmin = renderMateriaisAdmin;
+window.renderMateriaisClient = renderMateriaisClient;
+
+window.adicionarMaterialClient = function(id) {
+    openModal('novoPedidoClientModal');
+    setTimeout(() => {
+        const cb = document.querySelector(`#clientPedidoMateriais input[value="${id}"]`);
+        if (cb) {
+            cb.checked = true;
+            cb.dispatchEvent(new Event('change'));
+        }
+    }, 150);
+};
 
 function editarMaterial(id) {
     const m = DB.materiais.find(x => x.id === parseInt(id) || x.id === id);
@@ -2365,37 +2648,11 @@ function renderClientDashboard() {
 // CLIENT SERVICES / MATERIALS
 // ============================================
 function renderServicosClient() {
-    const container = document.getElementById('listaServicosClient');
-    container.innerHTML = DB.servicos.map(s => `<div class="item-card">
-        <div class="item-card-image">
-            ${s.imagem ? `<img src="${s.imagem}" alt="${s.nome}">` : `<div class="placeholder-icon"><i class="fas ${s.icone}"></i><span>${s.duracao}</span></div>`}
-        </div>
-        <div class="item-card-body">
-            <h4>${s.nome}</h4>
-            <p>${s.descricao}</p>
-            <div class="item-card-meta">
-                <span class="item-card-price">${Number(s.preco) <= 0 ? formatMaterialPrice(s) : formatCurrency(s.preco)}</span>
-                <span class="item-card-badge badge-estoque">${s.duracao}</span>
-            </div>
-        </div>
-    </div>`).join('');
+    renderServicos('client');
 }
 
 function renderMateriaisClient() {
-    const container = document.getElementById('listaMateriaisClient');
-    container.innerHTML = DB.materiais.map(m => `<div class="item-card">
-        <div class="item-card-image">
-            ${m.imagem ? `<img src="${m.imagem}" alt="${m.nome}">` : `<div class="placeholder-icon"><i class="fas ${getCategoriaIcon(m.categoria)}"></i><span>${capitalize(m.categoria)}</span></div>`}
-        </div>
-        <div class="item-card-body">
-            <h4>${m.nome}</h4>
-            <p>${m.descricao}</p>
-            <div class="item-card-meta">
-                ${formatMaterialPrice(m)}
-                
-            </div>
-        </div>
-    </div>`).join('');
+    renderMateriais('client');
 }
 
 // ============================================
@@ -5031,47 +5288,12 @@ function renderKanbanPedidos(pedidos) {
 
 // [restore b03a43a] renderMateriaisAdmin
 function renderMateriaisAdmin() {
-    const container = document.getElementById('listaMateriaisAdmin');
-    container.innerHTML = DB.materiais.map(m => `<div class="item-card">
-        <div class="item-card-image">
-            ${m.imagem ? `<img src="${m.imagem}" alt="${m.nome}">` : `<div class="placeholder-icon"><i class="fas ${getCategoriaIcon(m.categoria)}"></i><span>${capitalize(m.categoria)}</span></div>`}
-        </div>
-        <div class="item-card-body">
-            <h4>${m.nome}</h4>
-            <p>${m.descricao}</p>
-            <div class="item-card-meta">
-                ${formatMaterialPrice(m)}
-                <span class="item-card-badge badge-estoque"><i class="fas fa-tag"></i> ${m.categoria || 'outro'}</span>
-            </div>
-        </div>
-        <div class="item-card-actions">
-            <button class="btn-secondary btn-sm" onclick="editarMaterial(${m.id})"><i class="fas fa-edit"></i> Editar</button>
-            <button class="btn-danger btn-sm" onclick="excluirMaterial(${m.id})"><i class="fas fa-trash"></i> Excluir</button>
-        </div>
-    </div>`).join('');
+    renderMateriais('admin');
 }
 
 // [restore b03a43a] renderServicosAdmin
 function renderServicosAdmin() {
-    const container = document.getElementById('listaServicosAdmin');
-    container.innerHTML = DB.servicos.map(s => `<div class="item-card">
-        <div class="item-card-image">
-            ${s.imagem ? `<img src="${s.imagem}" alt="${s.nome}">` : `<div class="placeholder-icon"><i class="fas ${s.icone}"></i><span>${s.duracao}</span></div>`}
-        </div>
-        <div class="item-card-body">
-            <h4>${s.nome}</h4>
-            <small class="item-card-categoria"><i class="fas fa-tag"></i> ${s.categoria || 'outro'}</small>
-            <p>${s.descricao}</p>
-            <div class="item-card-meta">
-                <span class="item-card-price">${Number(s.preco) <= 0 ? formatMaterialPrice(s) : formatCurrency(s.preco)}</span>
-                <span class="item-card-badge badge-estoque">${s.duracao}</span>
-            </div>
-        </div>
-        <div class="item-card-actions">
-            <button class="btn-secondary btn-sm" onclick="editarServico(${s.id})"><i class="fas fa-edit"></i> Editar</button>
-            <button class="btn-danger btn-sm" onclick="excluirServico(${s.id})"><i class="fas fa-trash"></i> Excluir</button>
-        </div>
-    </div>`).join('');
+    renderServicos('admin');
 }
 
 // [restore b03a43a] restaurarAutoBackupLocal

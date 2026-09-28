@@ -92,6 +92,9 @@ function idbListarBlocos() {
 // ---------- objeto com a MESMA interface do DB_SERVICE ----------
 const IDB_SERVICE = {
 
+    salvarBloco: idbSalvarBloco,
+    carregarBloco: idbCarregarBloco,
+
     async init() {
         try { await idbOpen(); return true; }
         catch (e) { console.warn('[IDB] falha ao abrir:', e); return false; }

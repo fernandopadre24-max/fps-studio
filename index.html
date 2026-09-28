@@ -454,23 +454,62 @@
 
                 <!-- SERVIÇOS -->
                 <div class="page" id="adminServicos">
-                    <div class="page-header">
-                        <h2>Gerenciar Serviços</h2>
-                        <button class="btn-primary" onclick="openModal('servicoModal')">
+                    <div class="page-header" style="flex-wrap:wrap;gap:12px;">
+                        <div>
+                            <h2><i class="fas fa-concierge-bell" style="color:var(--primary);margin-right:8px;"></i> Catálogo de Serviços</h2>
+                            <p class="section-desc" style="color:var(--text-muted);font-size:13px;margin:3px 0 0 0;">Gravações autorais, produções completas, edições, mixagem e masterização de alta fidelidade.</p>
+                        </div>
+                        <button class="btn-primary" onclick="abrirNovoServicoModal()">
                             <i class="fas fa-plus"></i> Novo Serviço
                         </button>
                     </div>
+
+                    <div class="catalogo-filter-bar">
+                        <div class="catalogo-search-wrap">
+                            <i class="fas fa-search"></i>
+                            <input type="search" id="buscaServicosAdmin" placeholder="Buscar serviço por nome ou tipo..." oninput="filtrarServicos('admin')">
+                        </div>
+                        <div class="catalogo-chips-bar" id="filtroCatServicosAdmin">
+                            <button class="cat-chip-btn active" data-cat="todos" onclick="selecionarFiltroCategoriaServico('todos', 'admin')">Todos (<span id="contagemServicosAdmin">0</span>)</button>
+                            <button class="cat-chip-btn" data-cat="producao" onclick="selecionarFiltroCategoriaServico('producao', 'admin')">Produção</button>
+                            <button class="cat-chip-btn" data-cat="gravacao" onclick="selecionarFiltroCategoriaServico('gravacao', 'admin')">Gravação</button>
+                            <button class="cat-chip-btn" data-cat="edicao" onclick="selecionarFiltroCategoriaServico('edicao', 'admin')">Edição</button>
+                            <button class="cat-chip-btn" data-cat="mixagem" onclick="selecionarFiltroCategoriaServico('mixagem', 'admin')">Mixagem</button>
+                            <button class="cat-chip-btn" data-cat="masterizacao" onclick="selecionarFiltroCategoriaServico('masterizacao', 'admin')">Masterização</button>
+                            <button class="cat-chip-btn" data-cat="vocal" onclick="selecionarFiltroCategoriaServico('vocal', 'admin')">Vocal</button>
+                        </div>
+                    </div>
+
                     <div class="grid-cards" id="listaServicosAdmin"></div>
                 </div>
 
                 <!-- MATERIAIS -->
                 <div class="page" id="adminMateriais">
-                    <div class="page-header">
-                        <h2>Gerenciar Materiais</h2>
-                        <button class="btn-primary" onclick="openModal('materialModal')">
+                    <div class="page-header" style="flex-wrap:wrap;gap:12px;">
+                        <div>
+                            <h2><i class="fas fa-boxes" style="color:var(--primary);margin-right:8px;"></i> Acervo & Equipamentos</h2>
+                            <p class="section-desc" style="color:var(--text-muted);font-size:13px;margin:3px 0 0 0;">Instrumentos musicais profissionais, bateria acústica, microfonação condensadora e monitores.</p>
+                        </div>
+                        <button class="btn-primary" onclick="abrirNovoMaterialModal()">
                             <i class="fas fa-plus"></i> Novo Material
                         </button>
                     </div>
+
+                    <div class="catalogo-filter-bar">
+                        <div class="catalogo-search-wrap">
+                            <i class="fas fa-search"></i>
+                            <input type="search" id="buscaMateriaisAdmin" placeholder="Buscar por instrumento, marca (Ibanez, Todeschini...) ou especificação..." oninput="filtrarMateriais('admin')">
+                        </div>
+                        <div class="catalogo-chips-bar" id="filtroCatMateriaisAdmin">
+                            <button class="cat-chip-btn active" data-cat="todos" onclick="selecionarFiltroCategoriaMaterial('todos', 'admin')">Todos (<span id="contagemMateriaisAdmin">0</span>)</button>
+                            <button class="cat-chip-btn" data-cat="cordas" onclick="selecionarFiltroCategoriaMaterial('cordas', 'admin')">Cordas</button>
+                            <button class="cat-chip-btn" data-cat="percussao" onclick="selecionarFiltroCategoriaMaterial('percussao', 'admin')">Bateria & Percussão</button>
+                            <button class="cat-chip-btn" data-cat="teclados" onclick="selecionarFiltroCategoriaMaterial('teclados', 'admin')">Teclados & FX</button>
+                            <button class="cat-chip-btn" data-cat="especiais" onclick="selecionarFiltroCategoriaMaterial('especiais', 'admin')">Instrumentos Especiais</button>
+                            <button class="cat-chip-btn" data-cat="inclusos" onclick="selecionarFiltroCategoriaMaterial('inclusos', 'admin')">Inclusos no Estúdio</button>
+                        </div>
+                    </div>
+
                     <div class="grid-cards" id="listaMateriaisAdmin"></div>
                 </div>
 
@@ -1406,17 +1445,62 @@
 
                 <!-- CLIENT SERVIÇOS -->
                 <div class="page" id="clientServicos">
-                    <div class="page-header">
-                        <h2>Nossos Serviços</h2>
+                    <div class="page-header" style="flex-wrap:wrap;gap:12px;">
+                        <div>
+                            <h2><i class="fas fa-concierge-bell" style="color:var(--primary);margin-right:8px;"></i> Nossos Serviços</h2>
+                            <p class="section-desc" style="color:var(--text-muted);font-size:13px;margin:3px 0 0 0;">Escolha os serviços para sua produção e solicite diretamente no estúdio.</p>
+                        </div>
+                        <button class="btn-primary" onclick="openModal('novoPedidoClientModal')">
+                            <i class="fas fa-plus"></i> Fazer Pedido
+                        </button>
                     </div>
+
+                    <div class="catalogo-filter-bar">
+                        <div class="catalogo-search-wrap">
+                            <i class="fas fa-search"></i>
+                            <input type="search" id="buscaServicosClient" placeholder="Buscar serviço por nome ou tipo..." oninput="filtrarServicos('client')">
+                        </div>
+                        <div class="catalogo-chips-bar" id="filtroCatServicosClient">
+                            <button class="cat-chip-btn active" data-cat="todos" onclick="selecionarFiltroCategoriaServico('todos', 'client')">Todos (<span id="contagemServicosClient">0</span>)</button>
+                            <button class="cat-chip-btn" data-cat="producao" onclick="selecionarFiltroCategoriaServico('producao', 'client')">Produção</button>
+                            <button class="cat-chip-btn" data-cat="gravacao" onclick="selecionarFiltroCategoriaServico('gravacao', 'client')">Gravação</button>
+                            <button class="cat-chip-btn" data-cat="edicao" onclick="selecionarFiltroCategoriaServico('edicao', 'client')">Edição</button>
+                            <button class="cat-chip-btn" data-cat="mixagem" onclick="selecionarFiltroCategoriaServico('mixagem', 'client')">Mixagem</button>
+                            <button class="cat-chip-btn" data-cat="masterizacao" onclick="selecionarFiltroCategoriaServico('masterizacao', 'client')">Masterização</button>
+                            <button class="cat-chip-btn" data-cat="vocal" onclick="selecionarFiltroCategoriaServico('vocal', 'client')">Vocal</button>
+                        </div>
+                    </div>
+
                     <div class="grid-cards" id="listaServicosClient"></div>
                 </div>
 
                 <!-- CLIENT MATERIAIS -->
                 <div class="page" id="clientMateriais">
-                    <div class="page-header">
-                        <h2>Materiais Disponíveis</h2>
+                    <div class="page-header" style="flex-wrap:wrap;gap:12px;">
+                        <div>
+                            <h2><i class="fas fa-boxes" style="color:var(--primary);margin-right:8px;"></i> Materiais & Instrumentos Disponíveis</h2>
+                            <p class="section-desc" style="color:var(--text-muted);font-size:13px;margin:3px 0 0 0;">Instrumentos e equipamentos disponíveis para uso nas suas gravações no estúdio.</p>
+                        </div>
+                        <button class="btn-primary" onclick="openModal('novoPedidoClientModal')">
+                            <i class="fas fa-plus"></i> Fazer Pedido
+                        </button>
                     </div>
+
+                    <div class="catalogo-filter-bar">
+                        <div class="catalogo-search-wrap">
+                            <i class="fas fa-search"></i>
+                            <input type="search" id="buscaMateriaisClient" placeholder="Buscar por instrumento, marca ou especificação..." oninput="filtrarMateriais('client')">
+                        </div>
+                        <div class="catalogo-chips-bar" id="filtroCatMateriaisClient">
+                            <button class="cat-chip-btn active" data-cat="todos" onclick="selecionarFiltroCategoriaMaterial('todos', 'client')">Todos (<span id="contagemMateriaisClient">0</span>)</button>
+                            <button class="cat-chip-btn" data-cat="cordas" onclick="selecionarFiltroCategoriaMaterial('cordas', 'client')">Cordas</button>
+                            <button class="cat-chip-btn" data-cat="percussao" onclick="selecionarFiltroCategoriaMaterial('percussao', 'client')">Bateria & Percussão</button>
+                            <button class="cat-chip-btn" data-cat="teclados" onclick="selecionarFiltroCategoriaMaterial('teclados', 'client')">Teclados & FX</button>
+                            <button class="cat-chip-btn" data-cat="especiais" onclick="selecionarFiltroCategoriaMaterial('especiais', 'client')">Instrumentos Especiais</button>
+                            <button class="cat-chip-btn" data-cat="inclusos" onclick="selecionarFiltroCategoriaMaterial('inclusos', 'client')">Inclusos no Estúdio</button>
+                        </div>
+                    </div>
+
                     <div class="grid-cards" id="listaMateriaisClient"></div>
                 </div>
 
