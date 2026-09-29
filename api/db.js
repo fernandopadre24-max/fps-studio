@@ -191,6 +191,7 @@ async function initDb() {
             dataFinal TEXT DEFAULT '',
             horaFinal TEXT DEFAULT '',
             subtotal REAL DEFAULT 0,
+            descontoExtra REAL DEFAULT 0,
             total REAL DEFAULT 0,
             parcial INTEGER DEFAULT 0,
             descontoPct REAL DEFAULT 0,
@@ -201,6 +202,7 @@ async function initDb() {
     `);
 
     try { db.run('ALTER TABLE pedidos ADD COLUMN subtotal REAL DEFAULT 0'); } catch(e) {}
+    try { db.run('ALTER TABLE pedidos ADD COLUMN descontoExtra REAL DEFAULT 0'); } catch(e) {}
     try { db.run('ALTER TABLE pedidos ADD COLUMN parcial INTEGER DEFAULT 0'); } catch(e) {}
     try { db.run('ALTER TABLE pedidos ADD COLUMN descontoPct REAL DEFAULT 0'); } catch(e) {}
     try { db.run('ALTER TABLE pedidos ADD COLUMN dataPref TEXT DEFAULT ""'); } catch(e) {}

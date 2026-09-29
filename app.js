@@ -1820,12 +1820,12 @@ function editarPedido(id) {
     document.getElementById('pedidoCliente').value = p.clienteId;
     document.getElementById('pedidoStatus').value = p.status;
     
-    const pServs = p.servicos || [];
-    const pMats = p.materiais || [];
-    const servicosHtml = (DB.servicos || []).map(s => `<label><input type="checkbox" value="${s.id}" ${pServs.includes(s.id) ? 'checked' : ''} onchange="updatePedidoTotal()"> ${s.nome} (${Number(s.preco) <= 0 ? 'INCLUSO' : formatCurrency(s.preco)})</label>`).join('');
+    const pServs = (p.servicos || []).map(String);
+    const pMats = (p.materiais || []).map(String);
+    const servicosHtml = (DB.servicos || []).map(s => `<label><input type="checkbox" value="${s.id}" ${pServs.includes(String(s.id)) ? 'checked' : ''} onchange="updatePedidoTotal()"> ${s.nome} (${Number(s.preco) <= 0 ? 'INCLUSO' : formatCurrency(s.preco)})</label>`).join('');
     document.getElementById('pedidoServicos').innerHTML = servicosHtml;
     
-    const materiaisHtml = (DB.materiais || []).map(m => `<label><input type="checkbox" value="${m.id}" ${pMats.includes(m.id) ? 'checked' : ''} onchange="updatePedidoTotal()"> ${m.nome} (${Number(m.preco) <= 0 ? 'INCLUSO' : formatCurrency(m.preco)})</label>`).join('');
+    const materiaisHtml = (DB.materiais || []).map(m => `<label><input type="checkbox" value="${m.id}" ${pMats.includes(String(m.id)) ? 'checked' : ''} onchange="updatePedidoTotal()"> ${m.nome} (${Number(m.preco) <= 0 ? 'INCLUSO' : formatCurrency(m.preco)})</label>`).join('');
     document.getElementById('pedidoMateriais').innerHTML = materiaisHtml;
     
     const condRadioId = p.parcial ? 'adminCondMeta' : ((p.descontoPct > 0 || (p.desconto > 0 && !p.subtotal)) ? 'adminCondVista' : (p.desconto > 0 ? 'adminCondVista' : 'adminCondIntegral'));
@@ -2603,9 +2603,10 @@ function renderClientDashboard() {
                             <button class="btn-primary btn-sm" onclick="abrirPagamento('${p.id}')" style="box-shadow:0 2px 6px rgba(108,92,231,0.3);font-weight:600;">
                                 <i class="fas fa-wallet"></i> Pagar Agora
                             </button>
-                            <button class="btn-secondary btn-sm" onclick="verDetalhesPedido('${p.id}')" title="Ver Detalhes do Pedido">
+                            <button class="btn-secondary btn-sm" onclick="verDetalhesPedidoClient('${p.id}')" title="Ver Detalhes do Pedido">
                                 <i class="fas fa-eye"></i>
                             </button>
+                            ${p.status !== 'cancelado' ? `<button class="btn-secondary btn-sm" onclick="editarPedidoClient('${p.id}')" title="Editar Pedido"><i class="fas fa-edit"></i></button>` : ''}
                         </div>
                     </div>
                 </div>
@@ -2726,6 +2727,7 @@ function renderPedidosClient() {
                 <div class="table-actions" style="display:flex; gap:6px; align-items:center;">
                     ${restoPed > 0 && p.status !== 'cancelado' ? `<button class="btn-primary btn-sm" onclick="abrirPagamento('${p.id}')" title="Realizar pagamento"><i class="fas fa-credit-card"></i> ${btnPagarLabel}</button>` : ''}
                     <button class="btn-icon" onclick="verDetalhesPedidoClient('${p.id}')" title="Ver Detalhes"><i class="fas fa-eye"></i></button>
+                    ${p.status !== 'cancelado' ? `<button class="btn-icon text-primary" onclick="editarPedidoClient('${p.id}')" title="Editar Pedido"><i class="fas fa-edit"></i></button>` : ''}
                 </div>
             </td>
         </tr>`;
@@ -2742,6 +2744,7 @@ function verDetalhesPedidoClient(id) {
     const jaPago = valorPagoPedido(p);
     const restoPed = Math.max(0, Math.round((totalEsperado - jaPago) * 100) / 100);
     const qtdF = Number(p.qtdFaixas) || 1;
+    const audios = p.audios || [];
 
     let html = `
         <div class="detalhe-section">
@@ -2772,6 +2775,10 @@ function verDetalhesPedidoClient(id) {
     html += `<div class="detalhe-section" style="border-left:4px solid var(--primary); background:rgba(108,92,231,0.06); border-radius:6px; padding:12px;">
         <h4><i class="fas fa-hand-holding-usd"></i> Condição & Financeiro</h4>
         <div class="detalhe-item"><span>Subtotal dos itens (${qtdF} ${qtdF === 1 ? 'faixa' : 'faixas'})</span><strong>${formatCurrency(c.base)}</strong></div>`;
+
+    if (p.descontoExtra > 0) {
+        html += `<div class="detalhe-item"><span>Desconto extra / Cupom</span><strong style="color:var(--success);">-${formatCurrency(p.descontoExtra)}</strong></div>`;
+    }
 
     if (c.parcial) {
         html += `
@@ -2805,16 +2812,48 @@ function verDetalhesPedidoClient(id) {
     }
     html += `</div>`;
 
+    // Seção de Áudios de Referência
+    html += `<div class="detalhe-section">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <h4><i class="fas fa-music"></i> Áudios de Referência (${audios.length} de ${qtdF} faixas)</h4>
+            ${audios.length < qtdF && p.status !== 'cancelado' ? `<button class="btn-primary btn-sm" onclick="abrirUploadAudioClient('${p.id}')"><i class="fas fa-upload"></i> Enviar Áudio</button>` : ''}
+        </div>`;
+    if (audios.length > 0) {
+        html += `<div style="display:flex; flex-direction:column; gap:6px;">`;
+        audios.forEach((a, idx) => {
+            const src = audioSrc(a);
+            const nome = a.nome || a.arquivoNome || `Faixa ${idx+1}.mp3`;
+            html += `
+            <div style="display:flex; align-items:center; justify-content:space-between; background:var(--bg-lighter, #f1f2f6); padding:6px 12px; border-radius:6px; font-size:12px; gap:8px;">
+                <span style="display:flex; align-items:center; gap:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><i class="fas fa-file-audio text-primary"></i> <strong>${nome}</strong></span>
+                ${src ? `<audio controls src="${src}" style="height:28px; max-width:180px;"></audio>` : ''}
+            </div>`;
+        });
+        html += `</div>`;
+    } else {
+        html += `<p style="font-size:12px; color:var(--text-muted); margin:0;">Nenhum áudio anexado ainda. Você pode enviar até ${qtdF} áudio(s) para este pedido.</p>`;
+    }
+    html += `</div>`;
+
+    let botoesAcao = '';
     if (restoPed > 0 && p.status !== 'cancelado') {
         const btnTexto = p.parcial
             ? (jaPago > 0 ? `Pagar 2ª Parcela (${formatCurrency(restoPed)})` : `Pagar Entrada de 50% (${formatCurrency(Math.min(c.totalFinal / 2, restoPed))})`)
             : `Pagar Pedido (${formatCurrency(restoPed)})`;
-        html += `
-        <div style="margin-top:16px;">
-            <button class="btn-primary btn-full" onclick="closeAllModals(); abrirPagamento('${p.id}')">
-                <i class="fas fa-credit-card"></i> ${btnTexto}
-            </button>
-        </div>`;
+        botoesAcao += `
+        <button class="btn-primary btn-full" onclick="closeAllModals(); abrirPagamento('${p.id}')">
+            <i class="fas fa-credit-card"></i> ${btnTexto}
+        </button>`;
+    }
+    if (p.status !== 'cancelado') {
+        botoesAcao += `
+        <button class="btn-secondary btn-full" style="margin-top:8px;" onclick="closeAllModals(); editarPedidoClient('${p.id}')">
+            <i class="fas fa-edit"></i> Editar Este Pedido
+        </button>`;
+    }
+
+    if (botoesAcao) {
+        html += `<div style="margin-top:16px;">${botoesAcao}</div>`;
     }
 
     document.getElementById('pedidoDetalhesClientContent').innerHTML = html;
@@ -3255,25 +3294,6 @@ async function salvarPedidoClient() {
             qtdFaixas,
             audios: novosAudios
         };
-
-        // Anexar áudios com proteção de tamanho
-        const fileInput = document.getElementById('clientPedidoAudios');
-        if (fileInput && fileInput.files && fileInput.files.length > 0) {
-            for (let i = 0; i < Math.min(fileInput.files.length, 10); i++) {
-                const f = fileInput.files[i];
-                if (f.size > 15 * 1024 * 1024) {
-                    showToast(`O áudio "${f.name}" ultrapassa 15MB e foi ignorado.`, 'warning');
-                    continue;
-                }
-                try {
-                    if (typeof validateAudioFile === 'function' && !validateAudioFile(f)) continue;
-                    const prep = await prepararAudioPedido(f);
-                    novoPedido.audios.push(prep);
-                } catch(e) {
-                    console.error('Erro ao ler áudio:', e);
-                }
-            }
-        }
 
         if (DBReady) {
             try {
@@ -4422,18 +4442,25 @@ async function enviarPagamentoClient() {
 // MODALS
 // ============================================
 function openModal(id) {
-    if (id === 'novoPedidoClientModal') {
-        const fileInput = document.getElementById('clientPedidoAudios');
-        if (fileInput) fileInput.value = '';
-        const qtdInput = document.getElementById('clientPedidoQtdFaixas');
-        if (qtdInput) qtdInput.value = '1';
-    }
     document.getElementById('modalOverlay').classList.add('active');
     document.querySelectorAll('.modal').forEach(m => m.style.display = 'none');
     document.getElementById(id).style.display = 'block';
 
-    if (id === 'pedidoModal') preparePedidoModal();
-    if (id === 'novoPedidoClientModal') prepareClientPedidoModal();
+    if (id === 'pedidoModal') {
+        if (!document.getElementById('pedidoId')?.value) {
+            preparePedidoModal();
+        }
+    }
+    if (id === 'novoPedidoClientModal') {
+        const isEditing = !!document.getElementById('clientPedidoId')?.value;
+        if (!isEditing) {
+            const fileInput = document.getElementById('clientPedidoAudios');
+            if (fileInput) fileInput.value = '';
+            const qtdInput = document.getElementById('clientPedidoQtdFaixas');
+            if (qtdInput) qtdInput.value = '1';
+            prepareClientPedidoModal();
+        }
+    }
     if (id === 'movimentacaoModal') {
         document.getElementById('movData').value = new Date().toISOString().split('T')[0];
     }
@@ -4457,6 +4484,10 @@ function closeAllModals() {
     clearForm('mov');
     clearForm('comprovante');
     clearForm('orcamento');
+    const pId = document.getElementById('pedidoId');
+    if (pId) pId.value = '';
+    const cpId = document.getElementById('clientPedidoId');
+    if (cpId) cpId.value = '';
     document.querySelectorAll('.imagem-preview').forEach(img => { img.src = ''; img.style.display = 'none'; });
 }
 
@@ -5938,6 +5969,7 @@ function condicaoPagamentoPedido(p) {
     const parcial = !!p.parcial;
     const pct = Number(p.descontoPct) || 0;
     const desc = Number(p.desconto) || 0;
+    const descExtra = Number(p.descontoExtra) || 0;
     const rawTotal = Number(p.total) || 0;
     let subtotal = Number(p.subtotal) || 0;
 
@@ -5955,20 +5987,9 @@ function condicaoPagamentoPedido(p) {
         }
     }
 
-    let totalFinal = rawTotal;
-    if (pct > 0 && !parcial) {
-        totalFinal = Math.max(0, Math.round(subtotal * (1 - pct / 100) * 100) / 100);
-    } else if (parcial) {
-        totalFinal = Math.max(0, Math.round((subtotal - (p.subtotal ? desc : 0)) * 100) / 100);
-        if (totalFinal === 0 && rawTotal > 0) totalFinal = rawTotal;
-    } else {
-        totalFinal = Math.max(0, Math.round((subtotal - (p.subtotal ? desc : 0)) * 100) / 100);
-        if (totalFinal === 0 && rawTotal > 0) totalFinal = rawTotal;
-    }
-
-    const valorDesconto = (pct > 0 && !parcial)
-        ? Math.round(subtotal * (pct / 100) * 100) / 100 + (desc > 0 && p.subtotal ? desc : 0)
-        : desc;
+    const valorDescVista = (pct > 0 && !parcial) ? Math.round(subtotal * (pct / 100) * 100) / 100 : 0;
+    let totalFinal = (rawTotal > 0 && (p.subtotal || !descExtra)) ? rawTotal : Math.max(0, Math.round((subtotal - valorDescVista - descExtra) * 100) / 100);
+    const valorDesconto = (desc > 0) ? desc : (valorDescVista + descExtra);
 
     return {
         base: subtotal || totalFinal,
@@ -5977,6 +5998,7 @@ function condicaoPagamentoPedido(p) {
         parcial,
         orc: null,
         desconto: valorDesconto,
+        descontoExtra: descExtra,
         totalFinal
     };
 }
@@ -6054,6 +6076,14 @@ function verDetalhesPedido(id) {
                 <span>Subtotal dos itens (${qtdF} ${qtdF === 1 ? 'faixa' : 'faixas'})</span>
                 <strong>${formatCurrency(c.base)}</strong>
             </div>`;
+
+    if (p.descontoExtra > 0) {
+        html += `
+            <div class="detalhe-item">
+                <span>Desconto extra concedido</span>
+                <strong style="color:var(--danger); font-weight:700;">-${formatCurrency(p.descontoExtra)}</strong>
+            </div>`;
+    }
 
     if (c.parcial) {
         html += `
@@ -6142,6 +6172,7 @@ function verDetalhesPedido(id) {
 
     html += `<div style="display:flex; gap:10px; justify-content:flex-end; align-items:center; flex-wrap:wrap; margin-top:16px; padding-top:14px; border-top:1px solid rgba(0,0,0,0.08);">
         ${btnConfirmarPag}
+        <button class="btn-secondary btn-sm" onclick="abrirModalDescontoExtra('${p.id}')"><i class="fas fa-tag"></i> Desconto Extra</button>
         <button class="btn-secondary btn-sm" onclick="closeAllModals(); editarPedido('${p.id}')"><i class="fas fa-edit"></i> Editar</button>
         <button class="btn-danger btn-sm" onclick="excluirPedido('${p.id}')"><i class="fas fa-trash"></i> Excluir Pedido</button>
     </div>`;
@@ -7335,31 +7366,52 @@ window.renderBiblioteca = function() {
 
 window.excluirAudioPedido = async function(pedidoId, audioIdx) {
     if (!confirm('Excluir este áudio?')) return;
-    const p = DB.pedidos.find(x => x.id === pedidoId);
+    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
     if (p && p.audios) {
         p.audios.splice(audioIdx, 1);
         if (DBReady && p.docId) await DB_SERVICE.updatePedido(p.docId, p);
-        renderBiblioteca();
-        showToast('Áudio excluído!', 'success');
+        if (typeof renderBiblioteca === 'function') renderBiblioteca();
+        if (document.getElementById('detalhesPedidoModal')?.classList.contains('active')) {
+            verDetalhesPedido(p.id);
+        }
+        if (document.getElementById('pedidoDetalhesClientModal')?.classList.contains('active')) {
+            verDetalhesPedidoClient(p.id);
+        }
+        showToast('Áudio excluído do pedido!', 'success');
     }
 };
 
 window.abrirUploadAudioAdmin = function(pedidoId) {
-    const p = DB.pedidos.find(x => x.id === pedidoId);
+    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
     if(!p) return;
+    
+    const qtdFaixas = Number(p.qtdFaixas) || 1;
+    const audiosAtuais = (p.audios || []).length;
+    const vagas = Math.max(0, qtdFaixas - audiosAtuais);
+
+    if (vagas <= 0) {
+        showToast(`Este pedido já atingiu o limite de ${qtdFaixas} áudio(s) correspondente(s) às faixas. Para enviar mais áudios, edite a quantidade de faixas do pedido.`, 'warning');
+        return;
+    }
     
     // We'll create a hidden file input on the fly
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'audio/*';
-    input.multiple = true;
+    input.multiple = vagas > 1;
     
     input.onchange = async (e) => {
-        if (!e.target.files || e.target.files.length === 0) return;
+        const files = Array.from(e.target.files || []);
+        if (files.length === 0) return;
         
+        if (files.length > vagas) {
+            showToast(`Limite respeitado: selecionados ${files.length} áudio(s), mas este pedido permite mais ${vagas} áudio(s) (de acordo com as ${qtdFaixas} faixas).`, 'warning');
+        }
+        
+        const aProcessar = files.slice(0, vagas);
         const novosAudios = [];
-        for (let i = 0; i < e.target.files.length; i++) {
-            const file = e.target.files[i];
+        for (let i = 0; i < aProcessar.length; i++) {
+            const file = aProcessar[i];
             if (typeof validateAudioFile === 'function' && !validateAudioFile(file)) continue;
             try {
                 const prep = await prepararAudioPedido(file);
@@ -7369,15 +7421,178 @@ window.abrirUploadAudioAdmin = function(pedidoId) {
             }
         }
         
+        if (novosAudios.length === 0) return;
         p.audios = p.audios || [];
         p.audios.push(...novosAudios);
         
         if (DBReady && p.docId) await DB_SERVICE.updatePedido(p.docId, p);
-        renderBiblioteca();
-        showToast('Áudios enviados com sucesso!', 'success');
+        if (typeof renderBiblioteca === 'function') renderBiblioteca();
+        if (document.getElementById('detalhesPedidoModal')?.classList.contains('active')) {
+            verDetalhesPedido(p.id);
+        }
+        showToast(`${novosAudios.length} áudio(s) enviado(s) com sucesso de acordo com a quantidade de faixas!`, 'success');
     };
     
     input.click();
+};
+
+window.abrirUploadAudioClient = function(pedidoId) {
+    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
+    if (!p) return;
+    
+    const qtdFaixas = Number(p.qtdFaixas) || 1;
+    const audiosAtuais = (p.audios || []).length;
+    const vagas = Math.max(0, qtdFaixas - audiosAtuais);
+
+    if (vagas <= 0) {
+        showToast(`Este pedido já possui ${qtdFaixas} de ${qtdFaixas} áudio(s) anexados (1 por faixa). Para enviar mais, edite o pedido aumentando a quantidade de faixas.`, 'warning');
+        return;
+    }
+    
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'audio/*';
+    input.multiple = vagas > 1;
+    
+    input.onchange = async (e) => {
+        const files = Array.from(e.target.files || []);
+        if (files.length === 0) return;
+        
+        if (files.length > vagas) {
+            showToast(`Você selecionou ${files.length} áudios, mas este pedido só tem ${vagas} vaga(s) restante(s) para atingir as ${qtdFaixas} faixas.`, 'warning');
+        }
+        
+        const aProcessar = files.slice(0, vagas);
+        const novosAudios = [];
+        for (let i = 0; i < aProcessar.length; i++) {
+            const file = aProcessar[i];
+            if (typeof validateAudioFile === 'function' && !validateAudioFile(file)) continue;
+            try {
+                const prep = await prepararAudioPedido(file);
+                novosAudios.push(prep);
+            } catch (err) {
+                console.error('Falha ao processar áudio', file.name, err);
+            }
+        }
+        
+        if (novosAudios.length === 0) return;
+        p.audios = p.audios || [];
+        p.audios.push(...novosAudios);
+        
+        if (DBReady && p.docId) await DB_SERVICE.updatePedido(p.docId, p);
+        if (typeof renderBiblioteca === 'function') renderBiblioteca();
+        renderPedidosClient();
+        if (document.getElementById('pedidoDetalhesClientModal')?.classList.contains('active')) {
+            verDetalhesPedidoClient(p.id);
+        }
+        showToast(`${novosAudios.length} áudio(s) enviado(s) com sucesso de acordo com a quantidade de faixas!`, 'success');
+    };
+    
+    input.click();
+};
+
+window.abrirModalDescontoExtra = function(pedidoId) {
+    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
+    if (!p) {
+        showToast('Pedido não encontrado.', 'error');
+        return;
+    }
+    const c = (DB.clientes || []).find(x => String(x.id) === String(p.clienteId));
+    const cond = condicaoPagamentoPedido(p);
+    const totalAtual = valorEsperadoPedido(p);
+
+    const elId = document.getElementById('descExtraPedidoId');
+    if (elId) elId.value = p.id;
+    const elNum = document.getElementById('descExtraPedidoNum');
+    if (elNum) elNum.textContent = `Pedido #${p.id}`;
+    const elCli = document.getElementById('descExtraClienteNome');
+    if (elCli) elCli.textContent = c ? c.nome : `Cliente #${p.clienteId}`;
+    const elSub = document.getElementById('descExtraSubtotalAtual');
+    if (elSub) elSub.textContent = formatCurrency(cond.base);
+    const elTot = document.getElementById('descExtraTotalAtual');
+    if (elTot) elTot.textContent = formatCurrency(totalAtual);
+
+    const descAtual = Number(p.descontoExtra) || 0;
+    const inputVal = document.getElementById('descExtraValor');
+    if (inputVal) inputVal.value = descAtual > 0 ? fmtCalc(descAtual) : '0,00';
+    const inputPct = document.getElementById('descExtraPct');
+    if (inputPct) inputPct.value = '';
+
+    simularDescontoExtraModal();
+    openModal('modalDescontoExtra');
+};
+
+window.simularDescontoExtraModal = function() {
+    const pedidoId = document.getElementById('descExtraPedidoId')?.value;
+    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
+    if (!p) return;
+
+    const valStr = document.getElementById('descExtraValor')?.value || '0';
+    const descExtra = Math.max(0, parseFloat(valStr.replace(/\./g, '').replace(',', '.')) || 0);
+
+    const cond = condicaoPagamentoPedido(p);
+    const subtotal = cond.base;
+    const descVista = (cond.pct > 0 && !cond.parcial) ? Math.round(subtotal * (cond.pct / 100) * 100) / 100 : 0;
+    const novoTotal = Math.max(0, Math.round((subtotal - descVista - descExtra) * 100) / 100);
+
+    const elNovoTotal = document.getElementById('descExtraNovoTotal');
+    if (elNovoTotal) elNovoTotal.textContent = formatCurrency(novoTotal);
+};
+
+window.simularDescontoExtraPctModal = function() {
+    const pedidoId = document.getElementById('descExtraPedidoId')?.value;
+    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
+    if (!p) return;
+
+    const pct = Math.max(0, Math.min(100, parseFloat(document.getElementById('descExtraPct')?.value) || 0));
+    const cond = condicaoPagamentoPedido(p);
+    const subtotal = cond.base;
+    const valorDesc = Math.round(subtotal * (pct / 100) * 100) / 100;
+
+    const inputVal = document.getElementById('descExtraValor');
+    if (inputVal) inputVal.value = fmtCalc(valorDesc);
+
+    simularDescontoExtraModal();
+};
+
+window.confirmarDescontoExtraModal = async function() {
+    const pedidoId = document.getElementById('descExtraPedidoId')?.value;
+    const p = DB.pedidos.find(x => String(x.id) === String(pedidoId));
+    if (!p) {
+        showToast('Pedido não encontrado.', 'error');
+        return;
+    }
+
+    const valStr = document.getElementById('descExtraValor')?.value || '0';
+    const descExtra = Math.max(0, parseFloat(valStr.replace(/\./g, '').replace(',', '.')) || 0);
+
+    const cond = condicaoPagamentoPedido(p);
+    const subtotal = cond.base;
+    const descVista = (cond.pct > 0 && !cond.parcial) ? Math.round(subtotal * (cond.pct / 100) * 100) / 100 : 0;
+    const descontoTotal = descVista + descExtra;
+    const novoTotal = Math.max(0, Math.round((subtotal - descontoTotal) * 100) / 100);
+
+    p.descontoExtra = descExtra;
+    p.desconto = descontoTotal;
+    p.total = novoTotal;
+
+    if (DBReady && p.docId) {
+        await DB_SERVICE.updatePedido(p.docId, {
+            descontoExtra: descExtra,
+            desconto: descontoTotal,
+            total: novoTotal
+        });
+    }
+
+    await sincronizarFinanceiroPedido(p);
+    closeAllModals();
+    renderPedidos();
+    renderAdminDashboard();
+    renderFinanceiro();
+    if (document.getElementById('detalhesPedidoModal')?.classList.contains('active')) {
+        verDetalhesPedido(p.id);
+    }
+    showToast(`Desconto extra de ${formatCurrency(descExtra)} aplicado ao Pedido #${p.id}! Novo total: ${formatCurrency(novoTotal)}`, 'success');
 };
 
 
@@ -7443,8 +7658,15 @@ window.atualizarCondicaoClient = atualizarCondicaoClient;
 window.verDetalhesPedidoClient = verDetalhesPedidoClient;
 window.verDetalhesPedido = verDetalhesPedido;
 window.editarPedido = editarPedido;
+window.editarPedidoClient = editarPedidoClient;
 window.excluirPedido = excluirPedido;
 window.salvarPedido = salvarPedido;
 window.limitAudiosClient = limitAudiosClient;
 window.valoresPedidoClient = valoresPedidoClient;
+window.abrirModalDescontoExtra = abrirModalDescontoExtra;
+window.simularDescontoExtraModal = simularDescontoExtraModal;
+window.simularDescontoExtraPctModal = simularDescontoExtraPctModal;
+window.confirmarDescontoExtraModal = confirmarDescontoExtraModal;
+window.abrirUploadAudioClient = abrirUploadAudioClient;
+window.removerAudioExistentePedidoClient = removerAudioExistentePedidoClient;
 
