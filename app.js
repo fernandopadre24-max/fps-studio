@@ -30,16 +30,20 @@ const CONFIG_DEFAULT = {
         superficie: 'elevado'
     },
     studio: {
-        nome: '',
-        telefone: '',
-        email: '',
+        nome: 'FP STUDIO',
+        subtitulo: '(PRODUÇÃO MUSICAL)',
+        telefone: '(71) 9 8118–4589',
+        email: 'fpstudio2027@gmail.com',
         instagram: '',
-        endereco: '',
-        cidade: '',
+        endereco: 'Travessa Dois Leões, 19',
+        bairro: 'Pernambués',
+        cidade: 'Salvador - BA',
+        cep: '41110-050',
         cnpj: '',
-        pixChave: '',
-        pixTipo: 'email',
-        pixBeneficiario: ''
+        pixChave: '36790486534',
+        pixBanco: 'Nubank',
+        pixTipo: 'telefone',
+        pixBeneficiario: 'Fernando Padre'
     }
 };
 
@@ -1245,6 +1249,88 @@ function servicoCardHtml(s, isAdmin = true) {
     `;
 }
 
+/* ============================================================
+   PREFERÊNCIAS DE VISUALIZAÇÃO E TAMANHO DOS CARDS DO CATÁLOGO
+   ============================================================ */
+window.catalogoViewPrefs = (function() {
+    const padrao = {
+        adminServicos: { mode: 'grid', size: 'md' },
+        adminMateriais: { mode: 'grid', size: 'md' },
+        clientServicos: { mode: 'grid', size: 'md' },
+        clientMateriais: { mode: 'grid', size: 'md' }
+    };
+    try {
+        const salvo = localStorage.getItem('fps_catalogo_view_prefs');
+        if (salvo) return { ...padrao, ...JSON.parse(salvo) };
+    } catch(e) {}
+    return padrao;
+})();
+
+function salvarCatalogoViewPrefs() {
+    try {
+        localStorage.setItem('fps_catalogo_view_prefs', JSON.stringify(window.catalogoViewPrefs));
+    } catch(e) {}
+}
+
+function aplicarEstilosCatalogo(secao) {
+    const mapContainer = {
+        adminServicos: 'listaServicosAdmin',
+        adminMateriais: 'listaMateriaisAdmin',
+        clientServicos: 'listaServicosClient',
+        clientMateriais: 'listaMateriaisClient'
+    };
+    const containerId = mapContainer[secao];
+    if (!containerId) return;
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    if (!window.catalogoViewPrefs[secao]) {
+        window.catalogoViewPrefs[secao] = { mode: 'grid', size: 'md' };
+    }
+    const pref = window.catalogoViewPrefs[secao];
+
+    container.classList.remove('view-grid', 'view-list', 'view-compact', 'size-sm', 'size-md', 'size-lg');
+    container.classList.add(`view-${pref.mode}`, `size-${pref.size}`);
+
+    // Atualiza botões ativos na barra de ferramentas desta seção
+    const bar = document.getElementById(`ctrlView_${secao}`);
+    if (bar) {
+        bar.querySelectorAll('.btn-ctrl-view').forEach(b => {
+            b.classList.toggle('active', b.dataset.view === pref.mode);
+        });
+        bar.querySelectorAll('.btn-ctrl-size[data-size]').forEach(b => {
+            b.classList.toggle('active', b.dataset.size === pref.size);
+        });
+    }
+}
+
+window.definirModoVisualizacao = function(modo, secao) {
+    if (!['grid', 'list', 'compact'].includes(modo)) modo = 'grid';
+    if (!window.catalogoViewPrefs[secao]) window.catalogoViewPrefs[secao] = { mode: 'grid', size: 'md' };
+    window.catalogoViewPrefs[secao].mode = modo;
+    salvarCatalogoViewPrefs();
+    aplicarEstilosCatalogo(secao);
+};
+
+window.definirTamanhoCards = function(tamanho, secao) {
+    if (!['sm', 'md', 'lg'].includes(tamanho)) tamanho = 'md';
+    if (!window.catalogoViewPrefs[secao]) window.catalogoViewPrefs[secao] = { mode: 'grid', size: 'md' };
+    window.catalogoViewPrefs[secao].size = tamanho;
+    salvarCatalogoViewPrefs();
+    aplicarEstilosCatalogo(secao);
+};
+
+window.alterarTamanhoCardsRelativo = function(delta, secao) {
+    const sizes = ['sm', 'md', 'lg'];
+    const current = (window.catalogoViewPrefs[secao] && window.catalogoViewPrefs[secao].size) || 'md';
+    let idx = sizes.indexOf(current);
+    if (idx === -1) idx = 1;
+    const nextIdx = Math.max(0, Math.min(sizes.length - 1, idx + delta));
+    window.definirTamanhoCards(sizes[nextIdx], secao);
+};
+
+window.aplicarEstilosCatalogo = aplicarEstilosCatalogo;
+
 function renderServicos(tela = 'admin') {
     const listId = tela === 'admin' ? 'listaServicosAdmin' : 'listaServicosClient';
     const container = document.getElementById(listId) || document.getElementById('adminServicosList');
@@ -1283,10 +1369,12 @@ function renderServicos(tela = 'admin') {
                 <p style="margin:0;color:var(--text-muted);font-size:13px;">Tente ajustar os filtros ou a busca digitada.</p>
             </div>
         `;
+        aplicarEstilosCatalogo(tela === 'admin' ? 'adminServicos' : 'clientServicos');
         return;
     }
 
     container.innerHTML = itens.map(s => servicoCardHtml(s, tela === 'admin')).join('');
+    aplicarEstilosCatalogo(tela === 'admin' ? 'adminServicos' : 'clientServicos');
 }
 
 function renderServicosAdmin() {
@@ -1536,10 +1624,12 @@ function renderMateriais(tela = 'admin') {
                 <p style="margin:0;color:var(--text-muted);font-size:13px;">Tente ajustar os filtros de categoria ou a busca.</p>
             </div>
         `;
+        aplicarEstilosCatalogo(tela === 'admin' ? 'adminMateriais' : 'clientMateriais');
         return;
     }
 
     container.innerHTML = itens.map(m => materialCardHtml(m, tela === 'admin')).join('');
+    aplicarEstilosCatalogo(tela === 'admin' ? 'adminMateriais' : 'clientMateriais');
 }
 
 function renderMateriaisAdmin() {
@@ -2815,23 +2905,31 @@ function verDetalhesPedidoClient(id) {
     // Seção de Áudios de Referência
     html += `<div class="detalhe-section">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <h4><i class="fas fa-music"></i> Áudios de Referência (${audios.length} de ${qtdF} faixas)</h4>
+            <h4><i class="fas fa-compact-disc"></i> Áudios das Trilhas (${audios.length} de ${qtdF} faixas)</h4>
             ${audios.length < qtdF && p.status !== 'cancelado' ? `<button class="btn-primary btn-sm" onclick="abrirUploadAudioClient('${p.id}')"><i class="fas fa-upload"></i> Enviar Áudio</button>` : ''}
         </div>`;
     if (audios.length > 0) {
         html += `<div style="display:flex; flex-direction:column; gap:6px;">`;
         audios.forEach((a, idx) => {
             const src = audioSrc(a);
-            const nome = a.nome || a.arquivoNome || `Faixa ${idx+1}.mp3`;
+            const trilhaLabel = a.trilha ? `Trilha ${a.trilha}` : (a.trilhaNome || `Trilha ${idx+1}`);
+            const nome = a.nome || a.arquivoNome || `${trilhaLabel}.mp3`;
             html += `
-            <div style="display:flex; align-items:center; justify-content:space-between; background:var(--bg-lighter, #f1f2f6); padding:6px 12px; border-radius:6px; font-size:12px; gap:8px;">
-                <span style="display:flex; align-items:center; gap:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><i class="fas fa-file-audio text-primary"></i> <strong>${nome}</strong></span>
-                ${src ? `<audio controls src="${src}" style="height:28px; max-width:180px;"></audio>` : ''}
+            <div style="display:flex; align-items:center; justify-content:space-between; background:var(--bg-lighter, #f1f2f6); padding:8px 12px; border-radius:6px; font-size:12px; gap:8px;">
+                <span style="display:flex; align-items:center; gap:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;">
+                    <span style="background:var(--primary); color:#fff; font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; flex-shrink:0;">${trilhaLabel}</span>
+                    <i class="fas fa-file-audio text-primary" style="flex-shrink:0;"></i>
+                    <strong style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${nome}">${nome}</strong>
+                </span>
+                ${src ? `<audio controls src="${src}" style="height:28px; max-width:180px; flex-shrink:0;"></audio>` : ''}
             </div>`;
         });
+        if (audios.length < qtdF) {
+            html += `<p style="font-size:11px; color:var(--text-muted); margin:4px 0 0 0;"><i class="fas fa-info-circle"></i> Faltam ${qtdF - audios.length} áudio(s) para completar as ${qtdF} faixas deste pedido.</p>`;
+        }
         html += `</div>`;
     } else {
-        html += `<p style="font-size:12px; color:var(--text-muted); margin:0;">Nenhum áudio anexado ainda. Você pode enviar até ${qtdF} áudio(s) para este pedido.</p>`;
+        html += `<p style="font-size:12px; color:var(--text-muted); margin:0;">Nenhum áudio anexado ainda. Você pode enviar até ${qtdF} áudio(s) para este pedido (1 por trilha).</p>`;
     }
     html += `</div>`;
 
@@ -2934,27 +3032,223 @@ function prepareClientPedidoModal() {
     updateClientPedidoTotal();
 }
 
+window.clientTrilhasState = [];
+
+function formatBytes(bytes) {
+    if (!bytes || bytes <= 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+window.ajustarQtdFaixasClient = function(delta) {
+    const input = document.getElementById('clientPedidoQtdFaixas');
+    if (!input) return;
+    let val = parseInt(input.value, 10) || 1;
+    val = Math.max(1, Math.min(50, val + delta));
+    input.value = val;
+    atualizarFaixasEEAudiosClient();
+    updateClientPedidoTotal();
+};
+
 function atualizarFaixasEEAudiosClient() {
     const rawQtd = parseInt(document.getElementById('clientPedidoQtdFaixas')?.value, 10);
     const qtd = isNaN(rawQtd) || rawQtd < 1 ? 1 : rawQtd;
     
+    const badge = document.getElementById('clientFaixasBadge');
+    if (badge) {
+        badge.textContent = `${qtd} ${qtd === 1 ? 'faixa' : 'faixas'}`;
+    }
+
     const label = document.getElementById('clientPedidoAudiosLabel');
     if (label) {
-        label.textContent = `Anexar Áudios (até ${qtd} ${qtd === 1 ? 'áudio para 1 faixa' : `áudios para ${qtd} faixas`})`;
+        label.innerHTML = `<i class="fas fa-compact-disc" style="color:var(--primary); font-size:16px;"></i> <span>Anexar Áudios MP3 das Trilhas</span>`;
     }
     const dica = document.getElementById('clientPedidoAudiosDica');
     if (dica) {
-        dica.textContent = `Selecione até ${qtd} ${qtd === 1 ? 'áudio de referência (1 arquivo por faixa)' : `áudios de referência (máximo 1 arquivo para cada uma das ${qtd} faixas)`}.`;
+        dica.textContent = `Você escolheu ${qtd} ${qtd === 1 ? 'faixa' : 'faixas'}. Veja abaixo ${qtd === 1 ? 'a opção para anexar o MP3 da Trilha 1' : `as ${qtd} opções para anexar os MP3s (Trilha 1, Trilha 2, etc.)`}:`;
+    }
+
+    renderizarSlotsTrilhasClient();
+}
+
+window.renderizarSlotsTrilhasClient = function() {
+    const container = document.getElementById('clientTrilhasSlotsContainer');
+    if (!container) return;
+
+    const rawQtd = parseInt(document.getElementById('clientPedidoQtdFaixas')?.value, 10);
+    const qtdFaixas = isNaN(rawQtd) || rawQtd < 1 ? 1 : rawQtd;
+
+    if (!window.clientTrilhasState) window.clientTrilhasState = [];
+    while (window.clientTrilhasState.length < qtdFaixas) {
+        window.clientTrilhasState.push({
+            trilhaNumero: window.clientTrilhasState.length + 1,
+            file: null,
+            fileDataUrl: null,
+            existing: null
+        });
+    }
+
+    let html = '';
+    let anexadosCount = 0;
+
+    for (let i = 0; i < qtdFaixas; i++) {
+        const num = i + 1;
+        const slot = window.clientTrilhasState[i] || { trilhaNumero: num, file: null, existing: null };
+        const hasFile = !!slot.file;
+        const hasExisting = !!slot.existing;
+        const isAnexado = hasFile || hasExisting;
+        if (isAnexado) anexadosCount++;
+
+        let nomeArquivo = '';
+        let tamanhoTexto = '';
+        let audioPlaySrc = '';
+
+        if (hasFile) {
+            nomeArquivo = slot.file.name;
+            tamanhoTexto = formatBytes(slot.file.size);
+            audioPlaySrc = slot.fileDataUrl || '';
+        } else if (hasExisting) {
+            nomeArquivo = slot.existing.nome || slot.existing.arquivoNome || `Trilha ${num}.mp3`;
+            tamanhoTexto = slot.existing.tamanho ? formatBytes(slot.existing.tamanho) : 'Áudio gravado';
+            audioPlaySrc = audioSrc(slot.existing);
+        }
+
+        html += `
+        <div class="trilha-slot-card ${isAnexado ? 'anexado' : ''}" id="trilhaSlotCard_${num}">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; background:${isAnexado ? '#10b981' : 'var(--primary)'}; color:#fff; font-weight:700; font-size:12px; border-radius:50%;">
+                        ${num}
+                    </span>
+                    <strong style="font-size:13px; color:var(--text, #1e293b);">Trilha ${num}</strong>
+                </div>
+                ${isAnexado ? `
+                    <span style="display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; color:#10b981; background:rgba(16,185,129,0.12); padding:3px 8px; border-radius:12px;">
+                        <i class="fas fa-check-circle"></i> MP3 Anexado
+                    </span>
+                ` : `
+                    <span style="display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:600; color:var(--text-muted); background:rgba(0,0,0,0.06); padding:3px 8px; border-radius:12px;">
+                        <i class="fas fa-clock"></i> Aguardando MP3
+                    </span>
+                `}
+            </div>
+
+            ${isAnexado ? `
+                <div style="background:#fff; border:1px solid rgba(0,0,0,0.08); border-radius:8px; padding:10px; box-shadow:0 1px 3px rgba(0,0,0,0.02);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                        <div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;">
+                            <i class="fas fa-file-audio" style="font-size:22px; color:var(--primary); flex-shrink:0;"></i>
+                            <div style="min-width:0; flex:1;">
+                                <div style="font-weight:600; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;" title="${nomeArquivo}">${nomeArquivo}</div>
+                                <div style="font-size:11px; color:var(--text-muted);">${tamanhoTexto} ${hasExisting ? '· <span style="color:var(--primary); font-weight:600;">Gravado no pedido</span>' : '· <span style="color:#10b981; font-weight:600;">Novo arquivo</span>'}</div>
+                            </div>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+                            <button type="button" class="btn-secondary btn-sm" onclick="document.getElementById('trilhaFileInput_${num}').click()" style="padding:4px 8px; font-size:11px; display:inline-flex; align-items:center; gap:4px;" title="Substituir por outro MP3">
+                                <i class="fas fa-sync-alt"></i> Trocar
+                            </button>
+                            <button type="button" class="btn-icon text-danger" onclick="removerAudioTrilhaSlot(${num})" style="padding:4px 6px;" title="Remover este áudio">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                    ${audioPlaySrc ? `
+                        <div style="margin-top:8px; padding-top:6px; border-top:1px dashed rgba(0,0,0,0.08);">
+                            <audio controls src="${audioPlaySrc}" style="width:100%; height:30px;"></audio>
+                        </div>
+                    ` : ''}
+                </div>
+            ` : `
+                <div class="trilha-upload-btn" onclick="document.getElementById('trilhaFileInput_${num}').click()">
+                    <i class="fas fa-cloud-upload-alt text-primary" style="font-size:22px;"></i>
+                    <div style="font-size:13px; font-weight:700; color:var(--primary);">
+                        Anexar MP3 da Trilha ${num}
+                    </div>
+                    <div style="font-size:11px; color:var(--text-muted);">
+                        Clique para selecionar o áudio MP3 da faixa ${num}
+                    </div>
+                </div>
+            `}
+            <input type="file" id="trilhaFileInput_${num}" accept="audio/mpeg, .mp3, audio/*" style="display:none;" onchange="aoSelecionarAudioTrilha(${num}, this)">
+        </div>
+        `;
+    }
+
+    container.innerHTML = html;
+
+    const statusGeral = document.getElementById('clientTrilhasStatusGeral');
+    if (statusGeral) {
+        statusGeral.textContent = `${anexadosCount} de ${qtdFaixas} ${qtdFaixas === 1 ? 'anexado' : 'anexados'}`;
+        if (anexadosCount === qtdFaixas && qtdFaixas > 0) {
+            statusGeral.style.background = 'rgba(16,185,129,0.15)';
+            statusGeral.style.color = '#10b981';
+            statusGeral.innerHTML = `<i class="fas fa-check"></i> Todas as ${qtdFaixas} trilhas anexadas`;
+        } else {
+            statusGeral.style.background = 'rgba(0,0,0,0.05)';
+            statusGeral.style.color = 'var(--text-muted)';
+        }
+    }
+};
+
+window.aoSelecionarAudioTrilha = function(num, input) {
+    if (!input || !input.files || input.files.length === 0) return;
+    const file = input.files[0];
+    
+    // Validação de arquivo de áudio
+    const isAudio = file.type.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg|flac|wma)$/i.test(file.name);
+    if (!isAudio) {
+        showToast(`O arquivo "${file.name}" não é um áudio válido. Por favor, envie um arquivo MP3.`, 'error');
+        input.value = '';
+        return;
     }
     
-    const input = document.getElementById('clientPedidoAudios');
-    if (input && input.files && input.files.length > qtd) {
-        const dt = new DataTransfer();
-        for (let i = 0; i < qtd; i++) dt.items.add(input.files[i]);
-        input.files = dt.files;
-        showToast(`Limite de áudios ajustado para ${qtd} ${qtd === 1 ? 'áudio' : 'áudios'} (de acordo com as ${qtd} faixas).`, 'warning');
+    // Limite de 15MB por áudio
+    if (file.size > 15 * 1024 * 1024) {
+        showToast(`O áudio "${file.name}" ultrapassa 15MB. Por favor, envie um arquivo menor.`, 'warning');
+        input.value = '';
+        return;
     }
-}
+
+    if (typeof validateAudioFile === 'function' && !validateAudioFile(file)) {
+        input.value = '';
+        return;
+    }
+
+    const idx = num - 1;
+    if (!window.clientTrilhasState) window.clientTrilhasState = [];
+    while (window.clientTrilhasState.length <= idx) {
+        window.clientTrilhasState.push({ trilhaNumero: window.clientTrilhasState.length + 1, file: null, fileDataUrl: null, existing: null });
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+    window.clientTrilhasState[idx] = {
+        trilhaNumero: num,
+        file: file,
+        fileDataUrl: previewUrl,
+        existing: null
+    };
+
+    renderizarSlotsTrilhasClient();
+    showToast(`MP3 da Trilha ${num} anexado com sucesso!`, 'success');
+};
+
+window.removerAudioTrilhaSlot = function(num) {
+    const idx = num - 1;
+    if (window.clientTrilhasState && window.clientTrilhasState[idx]) {
+        if (window.clientTrilhasState[idx].fileDataUrl && window.clientTrilhasState[idx].fileDataUrl.startsWith('blob:')) {
+            try { URL.revokeObjectURL(window.clientTrilhasState[idx].fileDataUrl); } catch(e){}
+        }
+        window.clientTrilhasState[idx].file = null;
+        window.clientTrilhasState[idx].fileDataUrl = null;
+        window.clientTrilhasState[idx].existing = null;
+    }
+    const input = document.getElementById(`trilhaFileInput_${num}`);
+    if (input) input.value = '';
+    renderizarSlotsTrilhasClient();
+    showToast(`Áudio da Trilha ${num} removido.`, 'info');
+};
 
 function valoresPedidoClient() {
     let itensTotal = 0;
@@ -3110,7 +3404,21 @@ function editarPedidoClient(id) {
     if (document.getElementById('clientPedidoDataInicial')) document.getElementById('clientPedidoDataInicial').value = p.dataInicial || '';
     if (document.getElementById('clientPedidoHoraInicial')) document.getElementById('clientPedidoHoraInicial').value = p.horaInicial || '';
     if (document.getElementById('clientPedidoHoraFinal')) document.getElementById('clientPedidoHoraFinal').value = p.horaFinal || '';
-    if (document.getElementById('clientPedidoQtdFaixas')) document.getElementById('clientPedidoQtdFaixas').value = p.qtdFaixas || 1;
+    const qtdF = Math.max(1, p.qtdFaixas || (p.audios ? p.audios.length : 1));
+    if (document.getElementById('clientPedidoQtdFaixas')) document.getElementById('clientPedidoQtdFaixas').value = qtdF;
+
+    // Popula o estado de cada trilha com os áudios já gravados neste pedido
+    window.clientTrilhasState = [];
+    const audiosExistentes = p.audios || [];
+    for (let i = 0; i < qtdF; i++) {
+        const audioExistente = audiosExistentes[i] || null;
+        window.clientTrilhasState.push({
+            trilhaNumero: i + 1,
+            file: null,
+            fileDataUrl: null,
+            existing: audioExistente
+        });
+    }
 
     const descExtraVal = p.descontoExtra != null ? p.descontoExtra : (p.desconto && !p.descontoPct ? p.desconto : 0);
     if (document.getElementById('clientPedidoDesconto')) {
@@ -3209,20 +3517,48 @@ async function salvarPedidoClient() {
         const descontoTotal = valorDescontoVista + descExtra;
         const totalFinal = Math.max(0, Math.round((subTotal - descontoTotal) * 100) / 100);
 
-        // Processar áudios enviados respeitando a quantidade de faixas
-        const novosAudios = [];
+        // Coleta e processa os áudios individuais de cada uma das trilhas (Trilha 1, Trilha 2, etc.)
+        const audiosFinais = [];
+        if (window.clientTrilhasState && window.clientTrilhasState.length > 0) {
+            for (let i = 0; i < qtdFaixas; i++) {
+                const slot = window.clientTrilhasState[i];
+                if (!slot) continue;
+                if (slot.file) {
+                    if (slot.file.size > 15 * 1024 * 1024) {
+                        showToast(`O áudio da Trilha ${i+1} ultrapassa 15MB e foi ignorado.`, 'warning');
+                        continue;
+                    }
+                    try {
+                        if (typeof validateAudioFile === 'function' && !validateAudioFile(slot.file)) continue;
+                        const prep = await prepararAudioPedido(slot.file);
+                        prep.trilha = i + 1;
+                        prep.trilhaNome = `Trilha ${i + 1}`;
+                        audiosFinais.push(prep);
+                    } catch(e) {
+                        console.error(`Erro ao ler áudio da Trilha ${i+1}:`, e);
+                    }
+                } else if (slot.existing) {
+                    audiosFinais.push({
+                        ...slot.existing,
+                        trilha: i + 1,
+                        trilhaNome: `Trilha ${i + 1}`
+                    });
+                }
+            }
+        }
+
+        // Suporte legado: se usou o input tradicional e não os slots
         const fileInput = document.getElementById('clientPedidoAudios');
-        if (fileInput && fileInput.files && fileInput.files.length > 0) {
+        if (fileInput && fileInput.files && fileInput.files.length > 0 && audiosFinais.length === 0) {
             for (let i = 0; i < Math.min(fileInput.files.length, qtdFaixas); i++) {
                 const f = fileInput.files[i];
-                if (f.size > 15 * 1024 * 1024) {
-                    showToast(`O áudio "${f.name}" ultrapassa 15MB e foi ignorado.`, 'warning');
-                    continue;
-                }
+                if (f.size > 15 * 1024 * 1024) continue;
                 try {
                     if (typeof validateAudioFile === 'function' && !validateAudioFile(f)) continue;
                     const prep = await prepararAudioPedido(f);
-                    novosAudios.push(prep);
+                    prep.trilha = i + 1;
+                    prep.trilhaNome = `Trilha ${i + 1}`;
+                    audiosFinais.push(prep);
                 } catch(e) {
                     console.error('Erro ao ler áudio:', e);
                 }
@@ -3250,14 +3586,7 @@ async function salvarPedidoClient() {
             item.horaFinal = horaFinal;
             item.qtdFaixas = qtdFaixas;
             item.total = totalFinal;
-
-            item.audios = item.audios || [];
-            if (novosAudios.length > 0) {
-                // Adiciona novos áudios respeitando o limite total de qtdFaixas
-                const vagasRestantes = Math.max(0, qtdFaixas - item.audios.length);
-                const aInserir = novosAudios.slice(0, vagasRestantes);
-                item.audios.push(...aInserir);
-            }
+            item.audios = audiosFinais;
 
             if (DBReady && item.docId) {
                 await DB_SERVICE.updatePedido(item.docId, item);
@@ -3265,10 +3594,11 @@ async function salvarPedidoClient() {
             await sincronizarFinanceiroPedido(item);
 
             closeAllModals();
+            window.clientTrilhasState = [];
             renderPedidosClient();
             renderClientDashboard();
             if (typeof renderBiblioteca === 'function') renderBiblioteca();
-            showToast(`Pedido #${item.id} atualizado com sucesso!`, 'success');
+            showToast(`Pedido #${item.id} atualizado com sucesso com as ${qtdFaixas} faixas!`, 'success');
             return;
         }
 
@@ -3292,7 +3622,7 @@ async function salvarPedidoClient() {
             horaInicial,
             horaFinal,
             qtdFaixas,
-            audios: novosAudios
+            audios: audiosFinais
         };
 
         if (DBReady) {
@@ -6141,10 +6471,12 @@ function verDetalhesPedido(id) {
         html += `<div style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;">`;
         audios.forEach((a, idx) => {
             const src = audioSrc(a);
-            const nome = a.nome || a.arquivoNome || 'audio.mp3';
+            const trilhaLabel = a.trilha ? `Trilha ${a.trilha}` : (a.trilhaNome || `Trilha ${idx+1}`);
+            const nome = a.nome || a.arquivoNome || `${trilhaLabel}.mp3`;
             html += `
             <div style="display:flex; align-items:center; gap:10px; background:var(--bg-lighter, #f1f2f6); padding:8px 12px; border-radius:6px;">
-                <i class="fas fa-file-audio" style="color:var(--primary-color, #6c5ce7); font-size:20px;"></i>
+                <span style="background:var(--primary); color:#fff; font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; flex-shrink:0;">${trilhaLabel}</span>
+                <i class="fas fa-file-audio" style="color:var(--primary-color, #6c5ce7); font-size:18px; flex-shrink:0;"></i>
                 <div style="flex:1; min-width:0;">
                     <div style="font-weight:600; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;" title="${nome}">${nome}${a.origem === 'chat' ? ' <small style="color:var(--text-muted);">(chat)</small>' : ''}</div>
                     <audio controls src="${src}" style="height:28px; width:100%; margin-top:4px;"></audio>
@@ -6353,27 +6685,85 @@ function preparePedidoModal() {
     updatePedidoTotal();
 }
 
+window.copiarTexto = function(texto, msgSucesso) {
+    if (!texto) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(texto).then(() => {
+            showToast(msgSucesso || 'Copiado para a área de transferência!', 'success');
+        }).catch(() => {
+            copiarTextoFallback(texto, msgSucesso);
+        });
+    } else {
+        copiarTextoFallback(texto, msgSucesso);
+    }
+};
+
+function copiarTextoFallback(texto, msgSucesso) {
+    const ta = document.createElement('textarea');
+    ta.value = texto;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try {
+        document.execCommand('copy');
+        showToast(msgSucesso || 'Copiado para a área de transferência!', 'success');
+    } catch (e) {
+        showToast('Não foi possível copiar automaticamente.', 'warning');
+    }
+    document.body.removeChild(ta);
+}
+
+window.abrirMapaAmpliado = function() {
+    openModal('modalMapaAmpliado');
+};
+
 function renderFooterStudio() {
     const st = studioDados();
-    const enderecoCompleto = [st.endereco, st.cidade].filter(Boolean).join(', ');
-    ['', 'Client'].forEach(sfx => {
-        const nomeEl = document.getElementById('footerStudioNome' + sfx);
-        if (!nomeEl) return;
-        nomeEl.textContent = st.nome || 'FPS Studio';
-        const linhas = { footerStudioEndereco: st.endereco, footerStudioCidade: st.cidade, footerStudioTelefone: st.telefone, footerStudioEmail: st.email };
-        Object.keys(linhas).forEach(base => {
-            const el = document.getElementById(base + sfx);
-            if (!el) return;
-            const val = linhas[base];
-            if (val) { el.style.display = ''; el.querySelector('span').textContent = val; }
-            else el.style.display = 'none';
-        });
-        const maps = document.getElementById('rotaGoogle' + sfx);
-        const waze = document.getElementById('rotaWaze' + sfx);
-        if (maps) maps.href = 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(enderecoCompleto);
-        if (waze) waze.href = 'https://waze.com/ul?q=' + encodeURIComponent(enderecoCompleto) + '&navigate=yes';
-        const rotas = document.getElementById('footerRotas' + sfx);
-        if (rotas) rotas.style.display = enderecoCompleto ? '' : 'none';
+    const endereco = st.endereco || 'Travessa Dois Leões, 19';
+    const bairro = st.bairro || 'Pernambués';
+    const cidade = st.cidade || 'Salvador - BA';
+    const cep = st.cep || '41110-050';
+    const telefone = st.telefone || '(71) 9 8118–4589';
+    const whatsapp = st.whatsapp || '5571981184589';
+    const email = st.email || 'fpstudio2027@gmail.com';
+    const pixChave = st.pixChave || '36790486534';
+    const pixBanco = st.pixBanco || 'Nubank';
+    const enderecoGps = `${endereco}, ${cidade}`;
+
+    // Atualiza links e textos em todos os footers do estúdio
+    document.querySelectorAll('.fp-btn-gps.maps, a[id^="rotaGoogle"]').forEach(el => {
+        el.href = 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(enderecoGps);
+    });
+    document.querySelectorAll('.fp-btn-gps.waze, a[id^="rotaWaze"]').forEach(el => {
+        el.href = 'https://waze.com/ul?q=' + encodeURIComponent(enderecoGps) + '&navigate=yes';
+    });
+    document.querySelectorAll('.fp-btn-whatsapp-pill').forEach(el => {
+        el.href = 'https://wa.me/' + whatsapp.replace(/\D/g, '');
+    });
+    document.querySelectorAll('.fp-card-value-white').forEach(el => {
+        if (el.tagName === 'A') el.href = 'mailto:' + email;
+        el.textContent = email;
+    });
+    document.querySelectorAll('.fp-card-value-neon').forEach(el => {
+        el.textContent = telefone;
+    });
+    document.querySelectorAll('.fp-pix-key-val').forEach(el => {
+        el.textContent = pixChave;
+    });
+    document.querySelectorAll('.fp-pix-bank-badge').forEach(el => {
+        el.textContent = pixBanco;
+    });
+    document.querySelectorAll('.fp-address-street').forEach(el => {
+        el.textContent = endereco;
+    });
+    document.querySelectorAll('.fp-address-sub').forEach(el => {
+        el.textContent = `${bairro}, ${cidade}`;
+    });
+    document.querySelectorAll('.fp-address-cep strong').forEach(el => {
+        el.textContent = cep;
     });
 }
 
@@ -7227,6 +7617,7 @@ document.addEventListener('DOMContentLoaded', function() {
     updateChatBadge();
     setupDragDrop();
     iniciarFerramentas();
+    ['adminServicos', 'adminMateriais', 'clientServicos', 'clientMateriais'].forEach(aplicarEstilosCatalogo);
     let dashResizeTimer;
     window.addEventListener('resize', function() {
         clearTimeout(dashResizeTimer);
@@ -7410,11 +7801,15 @@ window.abrirUploadAudioAdmin = function(pedidoId) {
         
         const aProcessar = files.slice(0, vagas);
         const novosAudios = [];
+        const baseAdminOffset = (p.audios || []).length;
         for (let i = 0; i < aProcessar.length; i++) {
             const file = aProcessar[i];
             if (typeof validateAudioFile === 'function' && !validateAudioFile(file)) continue;
             try {
                 const prep = await prepararAudioPedido(file);
+                const tNum = baseAdminOffset + i + 1;
+                prep.trilha = tNum;
+                prep.trilhaNome = `Trilha ${tNum}`;
                 novosAudios.push(prep);
             } catch (err) {
                 console.error('Falha ao processar áudio', file.name, err);
@@ -7464,11 +7859,15 @@ window.abrirUploadAudioClient = function(pedidoId) {
         
         const aProcessar = files.slice(0, vagas);
         const novosAudios = [];
+        const baseClientOffset = (p.audios || []).length;
         for (let i = 0; i < aProcessar.length; i++) {
             const file = aProcessar[i];
             if (typeof validateAudioFile === 'function' && !validateAudioFile(file)) continue;
             try {
                 const prep = await prepararAudioPedido(file);
+                const tNum = baseClientOffset + i + 1;
+                prep.trilha = tNum;
+                prep.trilhaNome = `Trilha ${tNum}`;
                 novosAudios.push(prep);
             } catch (err) {
                 console.error('Falha ao processar áudio', file.name, err);
@@ -7669,4 +8068,16 @@ window.simularDescontoExtraPctModal = simularDescontoExtraPctModal;
 window.confirmarDescontoExtraModal = confirmarDescontoExtraModal;
 window.abrirUploadAudioClient = abrirUploadAudioClient;
 window.removerAudioExistentePedidoClient = removerAudioExistentePedidoClient;
+window.copiarTexto = copiarTexto;
+window.abrirMapaAmpliado = abrirMapaAmpliado;
+window.ajustarQtdFaixasClient = ajustarQtdFaixasClient;
+window.atualizarFaixasEEAudiosClient = atualizarFaixasEEAudiosClient;
+window.renderizarSlotsTrilhasClient = renderizarSlotsTrilhasClient;
+window.aoSelecionarAudioTrilha = aoSelecionarAudioTrilha;
+window.removerAudioTrilhaSlot = removerAudioTrilhaSlot;
+window.definirModoVisualizacao = definirModoVisualizacao;
+window.definirTamanhoCards = definirTamanhoCards;
+window.alterarTamanhoCardsRelativo = alterarTamanhoCardsRelativo;
+window.aplicarEstilosCatalogo = aplicarEstilosCatalogo;
+
 

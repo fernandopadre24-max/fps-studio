@@ -478,6 +478,42 @@
                             <button class="cat-chip-btn" data-cat="masterizacao" onclick="selecionarFiltroCategoriaServico('masterizacao', 'admin')">Masterização</button>
                             <button class="cat-chip-btn" data-cat="vocal" onclick="selecionarFiltroCategoriaServico('vocal', 'admin')">Vocal</button>
                         </div>
+                        <div class="catalogo-toolbar-bar" id="ctrlView_adminServicos">
+                            <div class="catalogo-toolbar-group">
+                                <span class="toolbar-label"><i class="fas fa-eye"></i> Visualização:</span>
+                                <div class="view-toggle-btns">
+                                    <button type="button" class="btn-ctrl-view active" data-view="grid" onclick="definirModoVisualizacao('grid', 'adminServicos')" title="Visualização em Grade de Cards">
+                                        <i class="fas fa-th-large"></i> <span>Grade</span>
+                                    </button>
+                                    <button type="button" class="btn-ctrl-view" data-view="list" onclick="definirModoVisualizacao('list', 'adminServicos')" title="Visualização em Lista Horizontal">
+                                        <i class="fas fa-list"></i> <span>Lista</span>
+                                    </button>
+                                    <button type="button" class="btn-ctrl-view" data-view="compact" onclick="definirModoVisualizacao('compact', 'adminServicos')" title="Visualização Compacta">
+                                        <i class="fas fa-bars"></i> <span>Compacto</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="catalogo-toolbar-group">
+                                <span class="toolbar-label"><i class="fas fa-images"></i> Tamanho dos Cards:</span>
+                                <div class="size-toggle-btns">
+                                    <button type="button" class="btn-ctrl-size" onclick="alterarTamanhoCardsRelativo(-1, 'adminServicos')" title="Diminuir Cards (A−)">
+                                        <i class="fas fa-minus"></i>
+                                    </button>
+                                    <button type="button" class="btn-ctrl-size" data-size="sm" onclick="definirTamanhoCards('sm', 'adminServicos')" title="Cards Pequenos (P)">
+                                        P
+                                    </button>
+                                    <button type="button" class="btn-ctrl-size active" data-size="md" onclick="definirTamanhoCards('md', 'adminServicos')" title="Cards Médios (M)">
+                                        M
+                                    </button>
+                                    <button type="button" class="btn-ctrl-size" data-size="lg" onclick="definirTamanhoCards('lg', 'adminServicos')" title="Cards Grandes (G)">
+                                        G
+                                    </button>
+                                    <button type="button" class="btn-ctrl-size" onclick="alterarTamanhoCardsRelativo(1, 'adminServicos')" title="Aumentar Cards (A+)">
+                                        <i class="fas fa-plus"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="grid-cards" id="listaServicosAdmin"></div>
@@ -507,6 +543,42 @@
                             <button class="cat-chip-btn" data-cat="teclados" onclick="selecionarFiltroCategoriaMaterial('teclados', 'admin')">Teclados & FX</button>
                             <button class="cat-chip-btn" data-cat="especiais" onclick="selecionarFiltroCategoriaMaterial('especiais', 'admin')">Instrumentos Especiais</button>
                             <button class="cat-chip-btn" data-cat="inclusos" onclick="selecionarFiltroCategoriaMaterial('inclusos', 'admin')">Inclusos no Estúdio</button>
+                        </div>
+                        <div class="catalogo-toolbar-bar" id="ctrlView_adminMateriais">
+                            <div class="catalogo-toolbar-group">
+                                <span class="toolbar-label"><i class="fas fa-eye"></i> Visualização:</span>
+                                <div class="view-toggle-btns">
+                                    <button type="button" class="btn-ctrl-view active" data-view="grid" onclick="definirModoVisualizacao('grid', 'adminMateriais')" title="Visualização em Grade de Cards">
+                                        <i class="fas fa-th-large"></i> <span>Grade</span>
+                                    </button>
+                                    <button type="button" class="btn-ctrl-view" data-view="list" onclick="definirModoVisualizacao('list', 'adminMateriais')" title="Visualização em Lista Horizontal">
+                                        <i class="fas fa-list"></i> <span>Lista</span>
+                                    </button>
+                                    <button type="button" class="btn-ctrl-view" data-view="compact" onclick="definirModoVisualizacao('compact', 'adminMateriais')" title="Visualização Compacta">
+                                        <i class="fas fa-bars"></i> <span>Compacto</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="catalogo-toolbar-group">
+                                <span class="toolbar-label"><i class="fas fa-images"></i> Tamanho dos Cards:</span>
+                                <div class="size-toggle-btns">
+                                    <button type="button" class="btn-ctrl-size" onclick="alterarTamanhoCardsRelativo(-1, 'adminMateriais')" title="Diminuir Cards (A−)">
+                                        <i class="fas fa-minus"></i>
+                                    </button>
+                                    <button type="button" class="btn-ctrl-size" data-size="sm" onclick="definirTamanhoCards('sm', 'adminMateriais')" title="Cards Pequenos (P)">
+                                        P
+                                    </button>
+                                    <button type="button" class="btn-ctrl-size active" data-size="md" onclick="definirTamanhoCards('md', 'adminMateriais')" title="Cards Médios (M)">
+                                        M
+                                    </button>
+                                    <button type="button" class="btn-ctrl-size" data-size="lg" onclick="definirTamanhoCards('lg', 'adminMateriais')" title="Cards Grandes (G)">
+                                        G
+                                    </button>
+                                    <button type="button" class="btn-ctrl-size" onclick="alterarTamanhoCardsRelativo(1, 'adminMateriais')" title="Aumentar Cards (A+)">
+                                        <i class="fas fa-plus"></i>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -1227,21 +1299,148 @@
                         </div>
                     </div>
                 </div>
+                <!-- FOOTER FP STUDIO LUXURY (MODELO DA FOTO) -->
+                <footer class="fp-studio-footer" id="fpStudioFooterAdmin">
+                    <div class="fp-footer-inner">
+                        <div class="fp-footer-grid">
+                            <!-- COLUNA 1: BRAND & SOBRE -->
+                            <div class="fp-footer-col fp-col-brand">
+                                <div class="fp-brand-header">
+                                    <div class="fp-logo-glow-box">
+                                        <img src="/fpstudio_logo.jpg" alt="FP Studio" class="fp-logo-img" onerror="this.src='/src/assets/images/fpstudio_logo_1790805374686.jpg'">
+                                    </div>
+                                    <div class="fp-brand-titles">
+                                        <h2 class="fp-brand-main-title">FP <span class="text-neon">STUDIO</span></h2>
+                                        <div class="fp-brand-subtitle">(PRODUÇÃO MUSICAL)</div>
+                                        <div class="fp-badge-city">SALVADOR – BA</div>
+                                    </div>
+                                </div>
+                                <p class="fp-brand-desc">
+                                    Estúdio profissional de alta tecnologia em Salvador - BA. Especializado em gravação e afinação de voz, edição de bateria, mixagem, masterização e produção audiovisual em 4K operado diretamente por Fernando Padre.
+                                </p>
+                                <div class="fp-tags-row">
+                                    <span class="fp-tag-pill"><i class="fas fa-music"></i> Áudio Pro Tools</span>
+                                    <span class="fp-tag-pill"><i class="fas fa-video"></i> Edição 4K</span>
+                                    <span class="fp-tag-pill"><i class="fas fa-shield-alt"></i> Atendimento VIP</span>
+                                </div>
+                            </div>
+
+                            <!-- COLUNA 2: MODO DE CHEGAR (GPS) -->
+                            <div class="fp-footer-col fp-col-gps">
+                                <div class="fp-col-header">
+                                    <div class="fp-title-group">
+                                        <div class="fp-icon-circle green"><i class="fas fa-map-marker-alt"></i></div>
+                                        <h3 class="fp-col-heading">Modo de Chegar (GPS)</h3>
+                                    </div>
+                                    <button type="button" class="fp-btn-ampliar" onclick="abrirMapaAmpliado()" title="Ampliar mapa">
+                                        <i class="fas fa-expand-arrows-alt"></i> Ampliar
+                                    </button>
+                                </div>
+
+                                <div class="fp-map-card">
+                                    <iframe 
+                                        title="Mapa FP Studio"
+                                        class="fp-map-iframe"
+                                        src="https://maps.google.com/maps?q=Travessa+Dois+Le%C3%B5es,+19+-+Pernambu%C3%A9s,+Salvador+-+BA,+41110-050&t=&z=16&ie=UTF8&iwloc=&output=embed"
+                                        loading="lazy">
+                                    </iframe>
+                                    <div class="fp-map-overlay">
+                                        <a href="https://www.google.com/maps/search/?api=1&query=Travessa+Dois+Le%C3%B5es+19+Pernambu%C3%A9s+Salvador+BA" target="_blank" rel="noopener" class="fp-btn-ver-mapa">
+                                            <i class="fas fa-map-marker-alt"></i> Ver Mapa Ampliado
+                                        </a>
+                                        <a href="https://www.google.com/maps/search/?api=1&query=Travessa+Dois+Le%C3%B5es+19+Pernambu%C3%A9s+Salvador+BA" target="_blank" rel="noopener" class="fp-map-link-badge">
+                                            Maps <i class="fas fa-external-link-alt"></i>
+                                        </a>
+                                    </div>
+                                </div>
+
+                                <div class="fp-address-box">
+                                    <div class="fp-address-icon"><i class="fas fa-building"></i></div>
+                                    <div class="fp-address-info">
+                                        <span class="fp-address-label">ENDEREÇO COMPLETO</span>
+                                        <strong class="fp-address-street">Travessa Dois Leões, 19</strong>
+                                        <span class="fp-address-sub">Pernambués, Salvador - BA</span>
+                                        <span class="fp-address-cep">CEP: <strong class="text-neon">41110-050</strong></span>
+                                    </div>
+                                </div>
+
+                                <div class="fp-gps-actions">
+                                    <div class="fp-gps-row">
+                                        <a href="https://www.google.com/maps/dir/?api=1&destination=Travessa+Dois+Le%C3%B5es+19+Pernambu%C3%A9s+Salvador+BA" target="_blank" rel="noopener" class="fp-btn-gps maps" id="rotaGoogle">
+                                            <i class="fas fa-location-arrow"></i> Google Maps <i class="fas fa-external-link-alt mini"></i>
+                                        </a>
+                                        <a href="https://waze.com/ul?q=Travessa+Dois+Le%C3%B5es+19+Pernambu%C3%A9s+Salvador+BA&navigate=yes" target="_blank" rel="noopener" class="fp-btn-gps waze" id="rotaWaze">
+                                            <i class="fab fa-waze"></i> Waze <i class="fas fa-external-link-alt mini"></i>
+                                        </a>
+                                    </div>
+                                    <button type="button" class="fp-btn-copy-address" onclick="copiarTexto('Travessa Dois Leões, 19, Pernambués, Salvador - BA, CEP: 41110-050', 'Endereço completo copiado!')">
+                                        <i class="far fa-copy"></i> Copiar Endereço Completo
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- COLUNA 3: CONTATO & PAGAMENTOS -->
+                            <div class="fp-footer-col fp-col-contact">
+                                <div class="fp-col-header">
+                                    <div class="fp-title-group">
+                                        <div class="fp-icon-circle green"><i class="fas fa-phone-alt"></i></div>
+                                        <h3 class="fp-col-heading">Contato & Pagamentos</h3>
+                                    </div>
+                                </div>
+
+                                <div class="fp-contact-card">
+                                    <div class="fp-contact-icon-box green">
+                                        <i class="fas fa-phone-alt"></i>
+                                    </div>
+                                    <div class="fp-contact-content">
+                                        <span class="fp-card-caption">WHATSAPP & TELEFONE</span>
+                                        <strong class="fp-card-value-neon">(71) 9 8118–4589</strong>
+                                    </div>
+                                    <a href="https://wa.me/5571981184589" target="_blank" rel="noopener" class="fp-btn-whatsapp-pill">
+                                        WhatsApp
+                                    </a>
+                                </div>
+
+                                <div class="fp-contact-card">
+                                    <div class="fp-contact-icon-box muted">
+                                        <i class="far fa-envelope"></i>
+                                    </div>
+                                    <div class="fp-contact-content">
+                                        <span class="fp-card-caption">E-MAIL OFICIAL</span>
+                                        <a href="mailto:fpstudio2027@gmail.com" class="fp-card-value-white">fpstudio2027@gmail.com</a>
+                                    </div>
+                                </div>
+
+                                <div class="fp-contact-card fp-card-pix">
+                                    <div class="fp-pix-header">
+                                        <div class="fp-pix-title">
+                                            <i class="fas fa-qrcode text-neon"></i>
+                                            <strong>Chave PIX Studio</strong>
+                                        </div>
+                                        <span class="fp-pix-bank-badge">Nubank</span>
+                                    </div>
+                                    <div class="fp-pix-body">
+                                        <span class="fp-pix-key-val">36790486534</span>
+                                        <button type="button" class="fp-btn-copy-pix" onclick="copiarTexto('36790486534', 'Chave PIX copiada!')">
+                                            <i class="far fa-copy"></i> Copiar
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- BARRA INFERIOR -->
+                        <div class="fp-footer-bottom-bar">
+                            <div class="fp-footer-copy">
+                                FPStudio © 2026 <span class="fp-dot">•</span> Gravações, Produção Musical & Edição de Vídeo
+                            </div>
+                            <div class="fp-footer-hours">
+                                <i class="far fa-clock text-neon"></i> Seg – Sáb: 08:00 – 22:00 <span class="fp-dot">•</span> Salvador – BA
+                            </div>
+                        </div>
+                    </div>
+                </footer>
             </div>
-            <footer class="app-footer">
-                <div class="footer-bloco">
-                    <div class="footer-brand"><i class="fas fa-microphone-alt"></i><strong id="footerStudioNome">FPS Studio</strong></div>
-                    <div class="footer-linha" id="footerStudioEndereco" style="display:none;"><i class="fas fa-map-marker-alt"></i><span></span></div>
-                    <div class="footer-linha" id="footerStudioCidade" style="display:none;"><i class="fas fa-city"></i><span></span></div>
-                    <div class="footer-linha" id="footerStudioTelefone" style="display:none;"><i class="fas fa-phone"></i><span></span></div>
-                    <div class="footer-linha" id="footerStudioEmail" style="display:none;"><i class="fas fa-envelope"></i><span></span></div>
-                </div>
-                <div class="footer-rotas" id="footerRotas" style="display:none;">
-                    <span class="footer-rotas-label"><i class="fas fa-location-arrow"></i> Como chegar:</span>
-                    <a class="btn-rota btn-rota-google" id="rotaGoogle" target="_blank" rel="noopener"><i class="fa-brands fa-google"></i> Google Maps</a>
-                    <a class="btn-rota btn-rota-waze" id="rotaWaze" target="_blank" rel="noopener"><i class="fa-brands fa-waze"></i> Waze</a>
-                </div>
-            </footer>
         </main>
     </div>
 
@@ -1469,6 +1668,42 @@
                             <button class="cat-chip-btn" data-cat="masterizacao" onclick="selecionarFiltroCategoriaServico('masterizacao', 'client')">Masterização</button>
                             <button class="cat-chip-btn" data-cat="vocal" onclick="selecionarFiltroCategoriaServico('vocal', 'client')">Vocal</button>
                         </div>
+                        <div class="catalogo-toolbar-bar" id="ctrlView_clientServicos">
+                            <div class="catalogo-toolbar-group">
+                                <span class="toolbar-label"><i class="fas fa-eye"></i> Visualização:</span>
+                                <div class="view-toggle-btns">
+                                    <button type="button" class="btn-ctrl-view active" data-view="grid" onclick="definirModoVisualizacao('grid', 'clientServicos')" title="Visualização em Grade de Cards">
+                                        <i class="fas fa-th-large"></i> <span>Grade</span>
+                                    </button>
+                                    <button type="button" class="btn-ctrl-view" data-view="list" onclick="definirModoVisualizacao('list', 'clientServicos')" title="Visualização em Lista Horizontal">
+                                        <i class="fas fa-list"></i> <span>Lista</span>
+                                    </button>
+                                    <button type="button" class="btn-ctrl-view" data-view="compact" onclick="definirModoVisualizacao('compact', 'clientServicos')" title="Visualização Compacta">
+                                        <i class="fas fa-bars"></i> <span>Compacto</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="catalogo-toolbar-group">
+                                <span class="toolbar-label"><i class="fas fa-images"></i> Tamanho dos Cards:</span>
+                                <div class="size-toggle-btns">
+                                    <button type="button" class="btn-ctrl-size" onclick="alterarTamanhoCardsRelativo(-1, 'clientServicos')" title="Diminuir Cards (A−)">
+                                        <i class="fas fa-minus"></i>
+                                    </button>
+                                    <button type="button" class="btn-ctrl-size" data-size="sm" onclick="definirTamanhoCards('sm', 'clientServicos')" title="Cards Pequenos (P)">
+                                        P
+                                    </button>
+                                    <button type="button" class="btn-ctrl-size active" data-size="md" onclick="definirTamanhoCards('md', 'clientServicos')" title="Cards Médios (M)">
+                                        M
+                                    </button>
+                                    <button type="button" class="btn-ctrl-size" data-size="lg" onclick="definirTamanhoCards('lg', 'clientServicos')" title="Cards Grandes (G)">
+                                        G
+                                    </button>
+                                    <button type="button" class="btn-ctrl-size" onclick="alterarTamanhoCardsRelativo(1, 'clientServicos')" title="Aumentar Cards (A+)">
+                                        <i class="fas fa-plus"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="grid-cards" id="listaServicosClient"></div>
@@ -1498,6 +1733,42 @@
                             <button class="cat-chip-btn" data-cat="teclados" onclick="selecionarFiltroCategoriaMaterial('teclados', 'client')">Teclados & FX</button>
                             <button class="cat-chip-btn" data-cat="especiais" onclick="selecionarFiltroCategoriaMaterial('especiais', 'client')">Instrumentos Especiais</button>
                             <button class="cat-chip-btn" data-cat="inclusos" onclick="selecionarFiltroCategoriaMaterial('inclusos', 'client')">Inclusos no Estúdio</button>
+                        </div>
+                        <div class="catalogo-toolbar-bar" id="ctrlView_clientMateriais">
+                            <div class="catalogo-toolbar-group">
+                                <span class="toolbar-label"><i class="fas fa-eye"></i> Visualização:</span>
+                                <div class="view-toggle-btns">
+                                    <button type="button" class="btn-ctrl-view active" data-view="grid" onclick="definirModoVisualizacao('grid', 'clientMateriais')" title="Visualização em Grade de Cards">
+                                        <i class="fas fa-th-large"></i> <span>Grade</span>
+                                    </button>
+                                    <button type="button" class="btn-ctrl-view" data-view="list" onclick="definirModoVisualizacao('list', 'clientMateriais')" title="Visualização em Lista Horizontal">
+                                        <i class="fas fa-list"></i> <span>Lista</span>
+                                    </button>
+                                    <button type="button" class="btn-ctrl-view" data-view="compact" onclick="definirModoVisualizacao('compact', 'clientMateriais')" title="Visualização Compacta">
+                                        <i class="fas fa-bars"></i> <span>Compacto</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="catalogo-toolbar-group">
+                                <span class="toolbar-label"><i class="fas fa-images"></i> Tamanho dos Cards:</span>
+                                <div class="size-toggle-btns">
+                                    <button type="button" class="btn-ctrl-size" onclick="alterarTamanhoCardsRelativo(-1, 'clientMateriais')" title="Diminuir Cards (A−)">
+                                        <i class="fas fa-minus"></i>
+                                    </button>
+                                    <button type="button" class="btn-ctrl-size" data-size="sm" onclick="definirTamanhoCards('sm', 'clientMateriais')" title="Cards Pequenos (P)">
+                                        P
+                                    </button>
+                                    <button type="button" class="btn-ctrl-size active" data-size="md" onclick="definirTamanhoCards('md', 'clientMateriais')" title="Cards Médios (M)">
+                                        M
+                                    </button>
+                                    <button type="button" class="btn-ctrl-size" data-size="lg" onclick="definirTamanhoCards('lg', 'clientMateriais')" title="Cards Grandes (G)">
+                                        G
+                                    </button>
+                                    <button type="button" class="btn-ctrl-size" onclick="alterarTamanhoCardsRelativo(1, 'clientMateriais')" title="Aumentar Cards (A+)">
+                                        <i class="fas fa-plus"></i>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -1567,21 +1838,148 @@
                         </div>
                     </div>
                 </div>
+                <!-- FOOTER FP STUDIO LUXURY (MODELO DA FOTO) -->
+                <footer class="fp-studio-footer" id="fpStudioFooterClient">
+                    <div class="fp-footer-inner">
+                        <div class="fp-footer-grid">
+                            <!-- COLUNA 1: BRAND & SOBRE -->
+                            <div class="fp-footer-col fp-col-brand">
+                                <div class="fp-brand-header">
+                                    <div class="fp-logo-glow-box">
+                                        <img src="/fpstudio_logo.jpg" alt="FP Studio" class="fp-logo-img" onerror="this.src='/src/assets/images/fpstudio_logo_1790805374686.jpg'">
+                                    </div>
+                                    <div class="fp-brand-titles">
+                                        <h2 class="fp-brand-main-title">FP <span class="text-neon">STUDIO</span></h2>
+                                        <div class="fp-brand-subtitle">(PRODUÇÃO MUSICAL)</div>
+                                        <div class="fp-badge-city">SALVADOR – BA</div>
+                                    </div>
+                                </div>
+                                <p class="fp-brand-desc">
+                                    Estúdio profissional de alta tecnologia em Salvador - BA. Especializado em gravação e afinação de voz, edição de bateria, mixagem, masterização e produção audiovisual em 4K operado diretamente por Fernando Padre.
+                                </p>
+                                <div class="fp-tags-row">
+                                    <span class="fp-tag-pill"><i class="fas fa-music"></i> Áudio Pro Tools</span>
+                                    <span class="fp-tag-pill"><i class="fas fa-video"></i> Edição 4K</span>
+                                    <span class="fp-tag-pill"><i class="fas fa-shield-alt"></i> Atendimento VIP</span>
+                                </div>
+                            </div>
+
+                            <!-- COLUNA 2: MODO DE CHEGAR (GPS) -->
+                            <div class="fp-footer-col fp-col-gps">
+                                <div class="fp-col-header">
+                                    <div class="fp-title-group">
+                                        <div class="fp-icon-circle green"><i class="fas fa-map-marker-alt"></i></div>
+                                        <h3 class="fp-col-heading">Modo de Chegar (GPS)</h3>
+                                    </div>
+                                    <button type="button" class="fp-btn-ampliar" onclick="abrirMapaAmpliado()" title="Ampliar mapa">
+                                        <i class="fas fa-expand-arrows-alt"></i> Ampliar
+                                    </button>
+                                </div>
+
+                                <div class="fp-map-card">
+                                    <iframe 
+                                        title="Mapa FP Studio"
+                                        class="fp-map-iframe"
+                                        src="https://maps.google.com/maps?q=Travessa+Dois+Le%C3%B5es,+19+-+Pernambu%C3%A9s,+Salvador+-+BA,+41110-050&t=&z=16&ie=UTF8&iwloc=&output=embed"
+                                        loading="lazy">
+                                    </iframe>
+                                    <div class="fp-map-overlay">
+                                        <a href="https://www.google.com/maps/search/?api=1&query=Travessa+Dois+Le%C3%B5es+19+Pernambu%C3%A9s+Salvador+BA" target="_blank" rel="noopener" class="fp-btn-ver-mapa">
+                                            <i class="fas fa-map-marker-alt"></i> Ver Mapa Ampliado
+                                        </a>
+                                        <a href="https://www.google.com/maps/search/?api=1&query=Travessa+Dois+Le%C3%B5es+19+Pernambu%C3%A9s+Salvador+BA" target="_blank" rel="noopener" class="fp-map-link-badge">
+                                            Maps <i class="fas fa-external-link-alt"></i>
+                                        </a>
+                                    </div>
+                                </div>
+
+                                <div class="fp-address-box">
+                                    <div class="fp-address-icon"><i class="fas fa-building"></i></div>
+                                    <div class="fp-address-info">
+                                        <span class="fp-address-label">ENDEREÇO COMPLETO</span>
+                                        <strong class="fp-address-street">Travessa Dois Leões, 19</strong>
+                                        <span class="fp-address-sub">Pernambués, Salvador - BA</span>
+                                        <span class="fp-address-cep">CEP: <strong class="text-neon">41110-050</strong></span>
+                                    </div>
+                                </div>
+
+                                <div class="fp-gps-actions">
+                                    <div class="fp-gps-row">
+                                        <a href="https://www.google.com/maps/dir/?api=1&destination=Travessa+Dois+Le%C3%B5es+19+Pernambu%C3%A9s+Salvador+BA" target="_blank" rel="noopener" class="fp-btn-gps maps" id="rotaGoogleClient">
+                                            <i class="fas fa-location-arrow"></i> Google Maps <i class="fas fa-external-link-alt mini"></i>
+                                        </a>
+                                        <a href="https://waze.com/ul?q=Travessa+Dois+Le%C3%B5es+19+Pernambu%C3%A9s+Salvador+BA&navigate=yes" target="_blank" rel="noopener" class="fp-btn-gps waze" id="rotaWazeClient">
+                                            <i class="fab fa-waze"></i> Waze <i class="fas fa-external-link-alt mini"></i>
+                                        </a>
+                                    </div>
+                                    <button type="button" class="fp-btn-copy-address" onclick="copiarTexto('Travessa Dois Leões, 19, Pernambués, Salvador - BA, CEP: 41110-050', 'Endereço completo copiado!')">
+                                        <i class="far fa-copy"></i> Copiar Endereço Completo
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- COLUNA 3: CONTATO & PAGAMENTOS -->
+                            <div class="fp-footer-col fp-col-contact">
+                                <div class="fp-col-header">
+                                    <div class="fp-title-group">
+                                        <div class="fp-icon-circle green"><i class="fas fa-phone-alt"></i></div>
+                                        <h3 class="fp-col-heading">Contato & Pagamentos</h3>
+                                    </div>
+                                </div>
+
+                                <div class="fp-contact-card">
+                                    <div class="fp-contact-icon-box green">
+                                        <i class="fas fa-phone-alt"></i>
+                                    </div>
+                                    <div class="fp-contact-content">
+                                        <span class="fp-card-caption">WHATSAPP & TELEFONE</span>
+                                        <strong class="fp-card-value-neon">(71) 9 8118–4589</strong>
+                                    </div>
+                                    <a href="https://wa.me/5571981184589" target="_blank" rel="noopener" class="fp-btn-whatsapp-pill">
+                                        WhatsApp
+                                    </a>
+                                </div>
+
+                                <div class="fp-contact-card">
+                                    <div class="fp-contact-icon-box muted">
+                                        <i class="far fa-envelope"></i>
+                                    </div>
+                                    <div class="fp-contact-content">
+                                        <span class="fp-card-caption">E-MAIL OFICIAL</span>
+                                        <a href="mailto:fpstudio2027@gmail.com" class="fp-card-value-white">fpstudio2027@gmail.com</a>
+                                    </div>
+                                </div>
+
+                                <div class="fp-contact-card fp-card-pix">
+                                    <div class="fp-pix-header">
+                                        <div class="fp-pix-title">
+                                            <i class="fas fa-qrcode text-neon"></i>
+                                            <strong>Chave PIX Studio</strong>
+                                        </div>
+                                        <span class="fp-pix-bank-badge">Nubank</span>
+                                    </div>
+                                    <div class="fp-pix-body">
+                                        <span class="fp-pix-key-val">36790486534</span>
+                                        <button type="button" class="fp-btn-copy-pix" onclick="copiarTexto('36790486534', 'Chave PIX copiada!')">
+                                            <i class="far fa-copy"></i> Copiar
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- BARRA INFERIOR -->
+                        <div class="fp-footer-bottom-bar">
+                            <div class="fp-footer-copy">
+                                FPStudio © 2026 <span class="fp-dot">•</span> Gravações, Produção Musical & Edição de Vídeo
+                            </div>
+                            <div class="fp-footer-hours">
+                                <i class="far fa-clock text-neon"></i> Seg – Sáb: 08:00 – 22:00 <span class="fp-dot">•</span> Salvador – BA
+                            </div>
+                        </div>
+                    </div>
+                </footer>
             </div>
-            <footer class="app-footer">
-                <div class="footer-bloco">
-                    <div class="footer-brand"><i class="fas fa-microphone-alt"></i><strong id="footerStudioNomeClient">FPS Studio</strong></div>
-                    <div class="footer-linha" id="footerStudioEnderecoClient" style="display:none;"><i class="fas fa-map-marker-alt"></i><span></span></div>
-                    <div class="footer-linha" id="footerStudioCidadeClient" style="display:none;"><i class="fas fa-city"></i><span></span></div>
-                    <div class="footer-linha" id="footerStudioTelefoneClient" style="display:none;"><i class="fas fa-phone"></i><span></span></div>
-                    <div class="footer-linha" id="footerStudioEmailClient" style="display:none;"><i class="fas fa-envelope"></i><span></span></div>
-                </div>
-                <div class="footer-rotas" id="footerRotasClient" style="display:none;">
-                    <span class="footer-rotas-label"><i class="fas fa-location-arrow"></i> Como chegar:</span>
-                    <a class="btn-rota btn-rota-google" id="rotaGoogleClient" target="_blank" rel="noopener"><i class="fa-brands fa-google"></i> Google Maps</a>
-                    <a class="btn-rota btn-rota-waze" id="rotaWazeClient" target="_blank" rel="noopener"><i class="fa-brands fa-waze"></i> Waze</a>
-                </div>
-            </footer>
         </main>
     </div>
 
@@ -1869,8 +2267,16 @@
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label>Quantidade de Faixas</label>
-                        <input type="number" id="clientPedidoQtdFaixas" min="1" value="1" oninput="atualizarFaixasEEAudiosClient(); updateClientPedidoTotal()" onchange="atualizarFaixasEEAudiosClient(); updateClientPedidoTotal()">
+                        <label style="display:flex; justify-content:space-between; align-items:center;">
+                            <span><i class="fas fa-layer-group text-primary"></i> Quantidade de Faixas / Trilhas</span>
+                            <span id="clientFaixasBadge" style="font-size:11px; background:rgba(108,92,231,0.12); color:var(--primary); padding:2px 8px; border-radius:10px; font-weight:700;">1 faixa</span>
+                        </label>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <button type="button" class="btn-secondary btn-sm" onclick="ajustarQtdFaixasClient(-1)" style="width:36px; height:36px; padding:0; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:bold; border-radius:6px;" title="Diminuir faixas">−</button>
+                            <input type="number" id="clientPedidoQtdFaixas" min="1" max="50" value="1" style="text-align:center; font-weight:700; font-size:16px; flex:1;" oninput="atualizarFaixasEEAudiosClient(); updateClientPedidoTotal()" onchange="atualizarFaixasEEAudiosClient(); updateClientPedidoTotal()">
+                            <button type="button" class="btn-secondary btn-sm" onclick="ajustarQtdFaixasClient(1)" style="width:36px; height:36px; padding:0; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:bold; border-radius:6px;" title="Aumentar faixas">+</button>
+                        </div>
+                        <small style="color:var(--text-muted);display:block;margin-top:4px;">Define o total de faixas e gera os campos para anexar os MP3s (1, 2, 3...).</small>
                     </div>
                     <div class="form-group">
                         <label>Desconto Extra / Cupom (R$)</label>
@@ -1878,10 +2284,25 @@
                         <small style="color:var(--text-muted);display:block;margin-top:2px;">Desconto concedido pelo estúdio ou cupom promocional.</small>
                     </div>
                 </div>
-                <div class="form-group">
-                    <label id="clientPedidoAudiosLabel">Anexar Áudios (até 1 áudio para 1 faixa)</label>
-                    <input type="file" id="clientPedidoAudios" accept="audio/mpeg, .mp3" multiple onchange="limitAudiosClient(this)">
-                    <small id="clientPedidoAudiosDica" style="color:var(--text-muted);display:block;margin-top:4px;">Selecione até 1 áudio de referência (1 arquivo por faixa).</small>
+                <div class="form-group" id="clientSecaoTrilhasAudio">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <label id="clientPedidoAudiosLabel" style="margin:0; font-weight:700; font-size:14px; display:flex; align-items:center; gap:8px;">
+                            <i class="fas fa-compact-disc" style="color:var(--primary); font-size:16px;"></i>
+                            <span>Anexar Áudios MP3 das Trilhas</span>
+                        </label>
+                        <span id="clientTrilhasStatusGeral" style="font-size:11px; font-weight:600; color:var(--text-muted); background:rgba(0,0,0,0.05); padding:3px 8px; border-radius:12px;">
+                            0 de 1 anexado
+                        </span>
+                    </div>
+                    <small id="clientPedidoAudiosDica" style="color:var(--text-muted); display:block; margin-bottom:10px;">
+                        Opções para anexar os arquivos MP3 de cada uma das trilhas escolhidas:
+                    </small>
+
+                    <!-- Container onde as opções de MP3 aparecem dinamicamente: Trilha 1, Trilha 2, Trilha 3... -->
+                    <div id="clientTrilhasSlotsContainer" style="display:flex; flex-direction:column; gap:10px;"></div>
+
+                    <!-- Input oculto e div existentes para compatibilidade total -->
+                    <input type="file" id="clientPedidoAudios" accept="audio/mpeg, .mp3, audio/*" multiple style="display:none;" onchange="limitAudiosClient(this)">
                     <div id="clientPedidoAudiosExistentes" style="margin-top:6px; display:none;"></div>
                 </div>
                 <div class="form-group">
@@ -2363,6 +2784,41 @@
                 <button class="btn-primary" onclick="salvarPerfilClient()">
                     <i class="fas fa-save"></i> Salvar dados
                 </button>
+            </div>
+        </div>
+
+        <!-- Modal Mapa Ampliado -->
+        <div class="modal modal-lg" id="modalMapaAmpliado" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3><i class="fas fa-map-marked-alt text-neon"></i> Localização - FP Studio</h3>
+                <button class="btn-close" onclick="closeAllModals()">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 16px;">
+                <div style="width: 100%; height: 380px; border-radius: 12px; overflow: hidden; border: 1px solid #1e2837; margin-bottom: 16px; position: relative; background: #0b0f15;">
+                    <iframe 
+                        title="Mapa Ampliado FP Studio"
+                        style="width: 100%; height: 100%; border: none; filter: invert(90%) hue-rotate(180deg) contrast(1.15);"
+                        src="https://maps.google.com/maps?q=Travessa+Dois+Le%C3%B5es,+19+-+Pernambu%C3%A9s,+Salvador+-+BA,+41110-050&t=&z=17&ie=UTF8&iwloc=&output=embed"
+                        loading="lazy">
+                    </iframe>
+                </div>
+                <div style="background: #111720; border: 1px solid #1e2837; border-radius: 10px; padding: 14px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+                    <div>
+                        <strong style="color: #ffffff; font-size: 16px; display: block;">Travessa Dois Leões, 19</strong>
+                        <span style="color: #94a3b8; font-size: 13px;">Pernambués, Salvador - BA &bull; CEP: <strong style="color: #00e676;">41110-050</strong></span>
+                    </div>
+                    <button type="button" class="btn-secondary btn-sm" onclick="copiarTexto('Travessa Dois Leões, 19, Pernambués, Salvador - BA, CEP: 41110-050', 'Endereço copiado!')">
+                        <i class="far fa-copy"></i> Copiar Endereço
+                    </button>
+                </div>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <a href="https://www.google.com/maps/dir/?api=1&destination=Travessa+Dois+Le%C3%B5es+19+Pernambu%C3%A9s+Salvador+BA" target="_blank" rel="noopener" class="btn-primary" style="flex: 1; min-width: 160px; text-align: center; background: #00e676; color: #000000; font-weight: 800; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                        <i class="fas fa-location-arrow"></i> Abrir no Google Maps
+                    </a>
+                    <a href="https://waze.com/ul?q=Travessa+Dois+Le%C3%B5es+19+Pernambu%C3%A9s+Salvador+BA&navigate=yes" target="_blank" rel="noopener" class="btn-primary" style="flex: 1; min-width: 160px; text-align: center; background: #1d68f2; color: #ffffff; font-weight: 800; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                        <i class="fab fa-waze"></i> Abrir no Waze
+                    </a>
+                </div>
             </div>
         </div>
     </div>
