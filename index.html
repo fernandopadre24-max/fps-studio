@@ -530,11 +530,15 @@
                         </div>
                         <div class="catalogo-chips-bar" id="filtroCatMateriaisAdmin">
                             <button class="cat-chip-btn active" data-cat="todos" onclick="selecionarFiltroCategoriaMaterial('todos', 'admin')">Todos (<span id="contagemMateriaisAdmin">0</span>)</button>
-                            <button class="cat-chip-btn" data-cat="cordas" onclick="selecionarFiltroCategoriaMaterial('cordas', 'admin')">Cordas</button>
-                            <button class="cat-chip-btn" data-cat="percussao" onclick="selecionarFiltroCategoriaMaterial('percussao', 'admin')">Bateria & Percussão</button>
-                            <button class="cat-chip-btn" data-cat="teclados" onclick="selecionarFiltroCategoriaMaterial('teclados', 'admin')">Teclados & FX</button>
-                            <button class="cat-chip-btn" data-cat="especiais" onclick="selecionarFiltroCategoriaMaterial('especiais', 'admin')">Instrumentos Especiais</button>
-                            <button class="cat-chip-btn" data-cat="inclusos" onclick="selecionarFiltroCategoriaMaterial('inclusos', 'admin')">Inclusos no Estúdio</button>
+                            <button class="cat-chip-btn" data-cat="instrumentos" onclick="selecionarFiltroCategoriaMaterial('instrumentos', 'admin')"><i class="fas fa-guitar"></i> Instrumentos</button>
+                            <button class="cat-chip-btn" data-cat="harmonia" onclick="selecionarFiltroCategoriaMaterial('harmonia', 'admin')"><i class="fas fa-music"></i> Harmonia</button>
+                            <button class="cat-chip-btn" data-cat="cordas" onclick="selecionarFiltroCategoriaMaterial('cordas', 'admin')"><i class="fas fa-wave-square"></i> Cordas</button>
+                            <button class="cat-chip-btn" data-cat="percussao" onclick="selecionarFiltroCategoriaMaterial('percussao', 'admin')"><i class="fas fa-drum"></i> Bateria & Percussão</button>
+                            <button class="cat-chip-btn" data-cat="teclados" onclick="selecionarFiltroCategoriaMaterial('teclados', 'admin')"><i class="fas fa-keyboard"></i> Teclados & FX</button>
+                            <button class="cat-chip-btn" data-cat="especiais" onclick="selecionarFiltroCategoriaMaterial('especiais', 'admin')"><i class="fas fa-star"></i> Instrumentos Especiais</button>
+                            <button class="cat-chip-btn" data-cat="captacao" onclick="selecionarFiltroCategoriaMaterial('captacao', 'admin')"><i class="fas fa-microphone"></i> Captação & Voz</button>
+                            <button class="cat-chip-btn" data-cat="equipamentos" onclick="selecionarFiltroCategoriaMaterial('equipamentos', 'admin')"><i class="fas fa-headphones"></i> Equipamentos</button>
+                            <button class="cat-chip-btn" data-cat="inclusos" onclick="selecionarFiltroCategoriaMaterial('inclusos', 'admin')"><i class="fas fa-check-circle"></i> Inclusos no Estúdio</button>
                         </div>
                         <div class="catalogo-toolbar-bar" id="ctrlView_adminMateriais">
                             <div class="catalogo-toolbar-group">
@@ -1720,11 +1724,15 @@
                         </div>
                         <div class="catalogo-chips-bar" id="filtroCatMateriaisClient">
                             <button class="cat-chip-btn active" data-cat="todos" onclick="selecionarFiltroCategoriaMaterial('todos', 'client')">Todos (<span id="contagemMateriaisClient">0</span>)</button>
-                            <button class="cat-chip-btn" data-cat="cordas" onclick="selecionarFiltroCategoriaMaterial('cordas', 'client')">Cordas</button>
-                            <button class="cat-chip-btn" data-cat="percussao" onclick="selecionarFiltroCategoriaMaterial('percussao', 'client')">Bateria & Percussão</button>
-                            <button class="cat-chip-btn" data-cat="teclados" onclick="selecionarFiltroCategoriaMaterial('teclados', 'client')">Teclados & FX</button>
-                            <button class="cat-chip-btn" data-cat="especiais" onclick="selecionarFiltroCategoriaMaterial('especiais', 'client')">Instrumentos Especiais</button>
-                            <button class="cat-chip-btn" data-cat="inclusos" onclick="selecionarFiltroCategoriaMaterial('inclusos', 'client')">Inclusos no Estúdio</button>
+                            <button class="cat-chip-btn" data-cat="instrumentos" onclick="selecionarFiltroCategoriaMaterial('instrumentos', 'client')"><i class="fas fa-guitar"></i> Instrumentos</button>
+                            <button class="cat-chip-btn" data-cat="harmonia" onclick="selecionarFiltroCategoriaMaterial('harmonia', 'client')"><i class="fas fa-music"></i> Harmonia</button>
+                            <button class="cat-chip-btn" data-cat="cordas" onclick="selecionarFiltroCategoriaMaterial('cordas', 'client')"><i class="fas fa-wave-square"></i> Cordas</button>
+                            <button class="cat-chip-btn" data-cat="percussao" onclick="selecionarFiltroCategoriaMaterial('percussao', 'client')"><i class="fas fa-drum"></i> Bateria & Percussão</button>
+                            <button class="cat-chip-btn" data-cat="teclados" onclick="selecionarFiltroCategoriaMaterial('teclados', 'client')"><i class="fas fa-keyboard"></i> Teclados & FX</button>
+                            <button class="cat-chip-btn" data-cat="especiais" onclick="selecionarFiltroCategoriaMaterial('especiais', 'client')"><i class="fas fa-star"></i> Instrumentos Especiais</button>
+                            <button class="cat-chip-btn" data-cat="captacao" onclick="selecionarFiltroCategoriaMaterial('captacao', 'client')"><i class="fas fa-microphone"></i> Captação & Voz</button>
+                            <button class="cat-chip-btn" data-cat="equipamentos" onclick="selecionarFiltroCategoriaMaterial('equipamentos', 'client')"><i class="fas fa-headphones"></i> Equipamentos</button>
+                            <button class="cat-chip-btn" data-cat="inclusos" onclick="selecionarFiltroCategoriaMaterial('inclusos', 'client')"><i class="fas fa-check-circle"></i> Inclusos no Estúdio</button>
                         </div>
                         <div class="catalogo-toolbar-bar" id="ctrlView_clientMateriais">
                             <div class="catalogo-toolbar-group">
@@ -2066,14 +2074,20 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label>Categoria</label>
+                    <label>Categoria do Material / Instrumento</label>
                     <select id="materialCategoria">
-                        <option value="microfone">Microfone</option>
-                        <option value="fone">Fone de Ouvido</option>
-                        <option value="monitor">Monitor de Áudio</option>
-                        <option value="interface">Interface de Áudio</option>
-                        <option value="cabo">Cabo/Conector</option>
-                        <option value="acessorio">Acessório</option>
+                        <option value="instrumentos">Instrumentos Musicais (Geral)</option>
+                        <option value="harmonia">Harmonia & Base</option>
+                        <option value="cordas">Cordas (Guitarras, Baixos, Violões)</option>
+                        <option value="percussao">Bateria & Percussão (Ritmo)</option>
+                        <option value="teclados">Teclados, MIDI & Sintetizadores</option>
+                        <option value="especiais">Instrumentos Especiais (Sanfona, Violino...)</option>
+                        <option value="captacao">Captação & Voz (Microfones)</option>
+                        <option value="monitoramento">Monitoramento & Fones</option>
+                        <option value="equipamentos">Equipamentos & Interfaces de Áudio</option>
+                        <option value="efeitos">Efeitos, Pedais & FX</option>
+                        <option value="software">DAW & Softwares de Produção</option>
+                        <option value="acessorio">Acessórios, Cabos & Conectores</option>
                         <option value="outro">Outro</option>
                     </select>
                 </div>

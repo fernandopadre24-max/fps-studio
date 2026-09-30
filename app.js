@@ -1597,11 +1597,57 @@ function renderMateriais(tela = 'admin') {
             const preco = Number(m.preco) || 0;
 
             if (st.cat === 'inclusos') return preco <= 0;
-            if (st.cat === 'cordas') return cat.includes('corda') || nome.includes('guitarra') || nome.includes('baixo') || nome.includes('violao');
-            if (st.cat === 'percussao') return cat.includes('percuss') || cat.includes('bateria') || nome.includes('bateria') || nome.includes('percussao');
-            if (st.cat === 'teclados') return cat.includes('teclado') || cat.includes('fx') || tag.includes('midi') || nome.includes('midi');
-            if (st.cat === 'especiais') return cat.includes('especia') || nome.includes('sanfona') || nome.includes('violino');
-            return cat.includes(st.cat);
+
+            if (st.cat === 'instrumentos') {
+                return cat.includes('instrument') || cat.includes('corda') || cat.includes('percuss') || 
+                       cat.includes('bateria') || cat.includes('teclado') || cat.includes('harmonia') || 
+                       cat.includes('sopro') || cat.includes('especia') ||
+                       tag.includes('instrument') || tag.includes('ibanez') || tag.includes('todeschini') || tag.includes('armonia') ||
+                       nome.includes('guitarra') || nome.includes('baixo') || nome.includes('viol') || nome.includes('bateria') || 
+                       nome.includes('sanfona') || nome.includes('teclado') || nome.includes('percuss') || nome.includes('midi');
+            }
+
+            if (st.cat === 'harmonia') {
+                return cat.includes('harmonia') || cat.includes('armonia') || tag.includes('harmonia') || tag.includes('armonia') ||
+                       cat.includes('teclado') || nome.includes('harmonia') || nome.includes('armonia') || nome.includes('baixo') || 
+                       nome.includes('violão') || nome.includes('violao') || nome.includes('teclado') || nome.includes('piano') ||
+                       nome.includes('base') || tag.includes('base');
+            }
+
+            if (st.cat === 'cordas') {
+                return cat.includes('corda') || nome.includes('guitarra') || nome.includes('baixo') || 
+                       nome.includes('violao') || nome.includes('violão') || nome.includes('cavaquinho') || 
+                       nome.includes('bandolim') || tag.includes('ibanez') || tag.includes('memphis');
+            }
+
+            if (st.cat === 'percussao') {
+                return cat.includes('percuss') || cat.includes('bateria') || cat.includes('ritmo') ||
+                       nome.includes('bateria') || nome.includes('percussao') || nome.includes('percussão') || 
+                       nome.includes('cajon') || nome.includes('pandeiro');
+            }
+
+            if (st.cat === 'teclados') {
+                return cat.includes('teclado') || cat.includes('fx') || cat.includes('sint') || cat.includes('synth') ||
+                       tag.includes('midi') || nome.includes('midi') || nome.includes('controlador') || nome.includes('piano');
+            }
+
+            if (st.cat === 'especiais') {
+                return cat.includes('especia') || nome.includes('sanfona') || nome.includes('acordeon') || 
+                       nome.includes('violino') || tag.includes('todeschini') || tag.includes('violino');
+            }
+
+            if (st.cat === 'captacao') {
+                return cat.includes('capta') || cat.includes('voz') || cat.includes('microf') || 
+                       nome.includes('microfone') || nome.includes('kadosh') || tag.includes('kadosh') || tag.includes('condenser');
+            }
+
+            if (st.cat === 'equipamentos') {
+                return cat.includes('monitor') || cat.includes('equip') || cat.includes('fone') || cat.includes('interface') ||
+                       cat.includes('daw') || cat.includes('software') || nome.includes('monitor') || nome.includes('tomate') || 
+                       nome.includes('m-audio') || nome.includes('pro tools') || tag.includes('audio') || tag.includes('pro tools');
+            }
+
+            return cat.includes(st.cat) || tag.includes(st.cat) || nome.includes(st.cat);
         });
     }
 
@@ -1684,7 +1730,23 @@ function editarMaterial(id) {
     let precoFmt = Number(m.preco || 0).toFixed(2).replace('.', ',');
     document.getElementById('materialPreco').value = precoFmt;
 
-    if (document.getElementById('materialCategoria')) document.getElementById('materialCategoria').value = m.categoria || 'outro';
+    const catSelect = document.getElementById('materialCategoria');
+    if (catSelect) {
+        const rawCat = (m.categoria || 'outro').toLowerCase();
+        let matched = false;
+        for (let opt of catSelect.options) {
+            const optVal = opt.value.toLowerCase();
+            const optTxt = opt.textContent.toLowerCase();
+            if (optVal === rawCat || optTxt.includes(rawCat) || rawCat.includes(optVal)) {
+                catSelect.value = opt.value;
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) {
+            catSelect.value = 'outro';
+        }
+    }
     
     const preview = document.getElementById('materialImagemPreview');
     const placeholder = document.getElementById('materialImgPreview');
@@ -5009,16 +5071,24 @@ function formatMaterialPrice(m, cls = 'item-card-price') {
 }
 
 function getCategoriaIcon(cat) {
-    const icons = {
-        microfone: 'fa-microphone',
-        fone: 'fa-headphones',
-        monitor: 'fa-volume-up',
-        interface: 'fa-plug',
-        cabo: 'fa-plug',
-        acessorio: 'fa-cog',
-        outro: 'fa-box'
-    };
-    return icons[cat] || 'fa-box';
+    const c = (cat || '').toLowerCase();
+    if (c.includes('guitar') || c.includes('baixo') || c.includes('viol') || c.includes('corda')) return 'fa-guitar';
+    if (c.includes('harmonia') || c.includes('armonia') || c.includes('piano')) return 'fa-music';
+    if (c.includes('bateria') || c.includes('percuss') || c.includes('ritmo')) return 'fa-drum';
+    if (c.includes('teclado') || c.includes('synth') || c.includes('midi') || c.includes('controlador')) return 'fa-keyboard';
+    if (c.includes('microf') || c.includes('voz') || c.includes('vocal') || c.includes('capta')) return 'fa-microphone-alt';
+    if (c.includes('fone') || c.includes('headphone')) return 'fa-headphones';
+    if (c.includes('monitor') || c.includes('caixa')) return 'fa-volume-up';
+    if (c.includes('sopro') || c.includes('metal') || c.includes('sax') || c.includes('flauta')) return 'fa-wind';
+    if (c.includes('sanfona') || c.includes('acordeon') || c.includes('especia') || c.includes('violino')) return 'fa-star';
+    if (c.includes('efeito') || c.includes('fx') || c.includes('pedal')) return 'fa-bolt';
+    if (c.includes('equip') || c.includes('hardware') || c.includes('interface')) return 'fa-sliders-h';
+    if (c.includes('cabo') || c.includes('plug') || c.includes('conector')) return 'fa-plug';
+    if (c.includes('software') || c.includes('daw') || c.includes('plugin')) return 'fa-laptop-code';
+    if (c.includes('acessorio') || c.includes('peça')) return 'fa-cog';
+    if (c.includes('incluso')) return 'fa-check-circle';
+    if (c.includes('instrument')) return 'fa-guitar';
+    return 'fa-box';
 }
 
 function limiteAudioBase64() {
