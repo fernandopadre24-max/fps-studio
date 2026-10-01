@@ -98,30 +98,30 @@ let currentChatCliente = null;
 function setupNavigation() {
     document.querySelectorAll('.nav-item').forEach(item => {
         item.addEventListener('click', function(e) {
-            e.preventDefault();
             const pageId = this.getAttribute('data-page');
             if(!pageId) return;
+            e.preventDefault();
             
-            // Remove active class from sibling nav items
-            const parentNav = this.closest('.sidebar-nav') || this.closest('.bottom-nav');
-            if (parentNav) {
-                parentNav.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
-            }
-            this.classList.add('active');
+            // Sincroniza classe ativa tanto na sidebar quanto na barra inferior do celular
+            const screenParent = this.closest('.screen') || document;
+            screenParent.querySelectorAll('.nav-item').forEach(nav => {
+                const match = nav.getAttribute('data-page') === pageId;
+                nav.classList.toggle('active', match);
+            });
             
             // Remove active class from pages inside the same container
             const pageEl = document.getElementById(pageId);
             if (pageEl) {
-                const container = pageEl.closest('.main-content');
+                const container = pageEl.closest('.main-content') || document.querySelector('.main-content');
                 if (container) {
                     container.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
                 }
                 pageEl.classList.add('active');
             }
             
-            if (window.innerWidth <= 768) {
-                const sidebar = this.closest('.sidebar');
-                if (sidebar) sidebar.classList.add('collapsed');
+            // Fecha o menu lateral no celular ao escolher uma página
+            if (typeof fecharSidebarMobile === 'function') {
+                fecharSidebarMobile();
             }
             
             // Call specific render functions based on page
@@ -140,7 +140,8 @@ function setupNavigation() {
             if(pageId === 'clientMateriais') renderMateriaisClient();
             if(pageId === 'clientPedidos') renderPedidosClient();
             if(pageId === 'clientChat') renderClientChat();
-            
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         });
     });
 }
@@ -567,8 +568,26 @@ function logout() {
 
 function toggleSidebar(id) {
     const sb = document.getElementById(id);
-    if (sb) sb.classList.toggle('collapsed');
+    const overlay = document.getElementById('sidebarOverlay');
+    if (sb) {
+        const isOpen = sb.classList.toggle('open');
+        sb.classList.toggle('collapsed', !isOpen);
+        if (overlay) {
+            overlay.classList.toggle('active', isOpen);
+        }
+    }
 }
+
+function fecharSidebarMobile() {
+    document.querySelectorAll('.sidebar').forEach(s => {
+        s.classList.remove('open');
+        s.classList.add('collapsed');
+    });
+    const overlay = document.getElementById('sidebarOverlay');
+    if (overlay) overlay.classList.remove('active');
+}
+window.toggleSidebar = toggleSidebar;
+window.fecharSidebarMobile = fecharSidebarMobile;
 
 function alternarVisaoPedidos(view) {
     const btnBoard = document.getElementById('btnViewBoard');
@@ -4072,13 +4091,22 @@ function openChatAdmin(clienteId) {
 
     const header = document.getElementById('chatHeaderAdmin');
     if (header) {
-        header.innerHTML = `<div class="chat-user-info">
+        header.innerHTML = `
+        <button type="button" class="btn-icon btn-voltar-chat-mobile" onclick="voltarListaChatAdmin()" title="Voltar à lista" style="margin-right: 8px;">
+            <i class="fas fa-arrow-left"></i>
+        </button>
+        <div class="chat-user-info">
             <div class="avatar"><i class="fas fa-user"></i></div>
             <div>
                 <h4>${cliente.nome || 'Cliente'}</h4>
                 <span>${cliente.telefone ? `${cliente.telefone} · ` : ''}${cliente.email || 'Conversa com Cliente'}</span>
             </div>
         </div>`;
+    }
+
+    if (window.innerWidth <= 768) {
+        const sidebar = document.querySelector('#adminChat .chat-sidebar');
+        if (sidebar) sidebar.classList.add('chat-oculto-mobile');
     }
 
     const inputArea = document.getElementById('chatInputAreaAdmin');
@@ -4088,6 +4116,12 @@ function openChatAdmin(clienteId) {
     renderChatList();
     updateChatBadge();
 }
+
+function voltarListaChatAdmin() {
+    const sidebar = document.querySelector('#adminChat .chat-sidebar');
+    if (sidebar) sidebar.classList.remove('chat-oculto-mobile');
+}
+window.voltarListaChatAdmin = voltarListaChatAdmin;
 
 function chatImagemHtml(imagem) {
     if (!imagem) return '';
@@ -4529,12 +4563,16 @@ function updateChatBadge() {
         });
         const b = document.getElementById('chatBadge');
         if (b) { b.textContent = count; b.style.display = count > 0 ? 'block' : 'none'; }
+        const bBottom = document.getElementById('bottomChatBadgeAdmin');
+        if (bBottom) { bBottom.textContent = count; bBottom.style.display = count > 0 ? 'inline-flex' : 'none'; }
     } else {
         const chatKey = `admin_${currentUser.id}`;
         const msgs = DB.chats[chatKey] || [];
         const unread = msgs.filter(m => m.remetente === 'admin' && !m.lida).length;
         const b = document.getElementById('chatBadgeClient');
         if (b) { b.textContent = unread; b.style.display = unread > 0 ? 'block' : 'none'; }
+        const bBottom = document.getElementById('bottomChatBadgeClient');
+        if (bBottom) { bBottom.textContent = unread; bBottom.style.display = unread > 0 ? 'inline-flex' : 'none'; }
     }
     atualizarBadgeNotif();
 }
@@ -8149,5 +8187,91 @@ window.definirModoVisualizacao = definirModoVisualizacao;
 window.definirTamanhoCards = definirTamanhoCards;
 window.alterarTamanhoCardsRelativo = alterarTamanhoCardsRelativo;
 window.aplicarEstilosCatalogo = aplicarEstilosCatalogo;
+
+// ============================================
+// PWA & SUPORTE MOBILE COMPLETO
+// ============================================
+let deferredPwaPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPwaPrompt = e;
+    mostrarPwaBannerSeNecessario();
+});
+
+window.addEventListener('appinstalled', () => {
+    deferredPwaPrompt = null;
+    fecharPwaBanner();
+    showToast('FPS Studio instalado como aplicativo!', 'success');
+});
+
+function isRunningStandalone() {
+    return window.matchMedia('(display-mode: standalone)').matches ||
+           window.navigator.standalone === true;
+}
+
+function isIosDevice() {
+    return /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase());
+}
+
+function isMobileDevice() {
+    return window.innerWidth <= 768 || /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent);
+}
+
+function mostrarPwaBannerSeNecessario() {
+    if (isRunningStandalone()) return;
+    if (sessionStorage.getItem('pwa_banner_fechado')) return;
+    if (!isMobileDevice()) return;
+    const banner = document.getElementById('pwaMobileInstallBanner');
+    if (banner) {
+        banner.style.display = 'flex';
+    }
+}
+
+function fecharPwaBanner() {
+    const banner = document.getElementById('pwaMobileInstallBanner');
+    if (banner) banner.style.display = 'none';
+    sessionStorage.setItem('pwa_banner_fechado', '1');
+}
+
+async function instalarPwaMobile() {
+    if (deferredPwaPrompt) {
+        try {
+            deferredPwaPrompt.prompt();
+            const { outcome } = await deferredPwaPrompt.userChoice;
+            if (outcome === 'accepted') {
+                fecharPwaBanner();
+            }
+        } catch(e) {
+            console.warn('Erro ao acionar prompt PWA:', e);
+        }
+        deferredPwaPrompt = null;
+    } else if (isIosDevice()) {
+        openModal('pwaIosModal');
+    } else {
+        showToast('Para instalar: no menu do navegador (três pontinhos), toque em "Instalar aplicativo" ou "Adicionar à tela inicial".', 'info', 6000);
+    }
+}
+
+// Registro do Service Worker
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+            .then(reg => {
+                console.log('[PWA] Service Worker registrado com sucesso:', reg.scope);
+            })
+            .catch(err => {
+                console.log('[PWA] Service Worker registro informativo:', err);
+            });
+    });
+}
+
+// Exibe banner PWA para mobile se aplicável
+setTimeout(() => {
+    mostrarPwaBannerSeNecessario();
+}, 2000);
+
+window.instalarPwaMobile = instalarPwaMobile;
+window.fecharPwaBanner = fecharPwaBanner;
 
 

@@ -2,13 +2,42 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>FPS Studio - Gerenciamento de Estúdio</title>
+    <meta name="description" content="Sistema completo de gerenciamento para estúdio de gravação musical, pedidos, áudios e pagamentos.">
+    <meta name="theme-color" content="#6c5ce7">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="FPS Studio">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <!-- MOBILE SIDEBAR BACKDROP OVERLAY -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="fecharSidebarMobile()"></div>
+
+    <!-- PWA MOBILE INSTALL BANNER -->
+    <div id="pwaMobileInstallBanner" class="pwa-mobile-banner" style="display:none;">
+        <div class="pwa-banner-content">
+            <img src="/icon-192.png" alt="FPS Studio" class="pwa-banner-icon">
+            <div class="pwa-banner-text">
+                <strong>Instalar App FPS Studio</strong>
+                <span>Adicione à tela inicial para usar como app no celular</span>
+            </div>
+        </div>
+        <div class="pwa-banner-actions">
+            <button type="button" class="btn-pwa-install" onclick="instalarPwaMobile()">
+                <i class="fas fa-download"></i> Instalar
+            </button>
+            <button type="button" class="btn-pwa-close" onclick="fecharPwaBanner()" title="Fechar">&times;</button>
+        </div>
+    </div>
+
     <!-- LOGIN SCREEN -->
     <div id="loginScreen" class="screen active">
         <div class="login-container">
@@ -736,6 +765,9 @@
                         </div>
                         <div class="chat-main">
                             <div class="chat-header" id="chatHeaderAdmin">
+                                <button type="button" class="btn-icon btn-voltar-chat-mobile" onclick="voltarListaChatAdmin()" title="Voltar à lista de conversas" style="display:none; margin-right: 8px;">
+                                    <i class="fas fa-arrow-left"></i>
+                                </button>
                                 <div class="chat-user-info">
                                     <div class="avatar"><i class="fas fa-user"></i></div>
                                     <div>
@@ -1438,6 +1470,26 @@
                 </footer>
             </div>
         </main>
+
+        <!-- MOBILE BOTTOM NAV ADMIN -->
+        <nav class="mobile-bottom-nav" id="adminBottomNav">
+            <a href="#" class="nav-item active" data-page="adminHome">
+                <i class="fas fa-home"></i><span>Início</span>
+            </a>
+            <a href="#" class="nav-item" data-page="adminPedidos">
+                <i class="fas fa-clipboard-list"></i><span>Pedidos</span>
+            </a>
+            <a href="#" class="nav-item" data-page="adminChat">
+                <i class="fas fa-comments"></i><span>Chat</span>
+                <span class="badge" id="bottomChatBadgeAdmin" style="display:none;">0</span>
+            </a>
+            <a href="#" class="nav-item" data-page="adminFinanceiro">
+                <i class="fas fa-chart-line"></i><span>Financeiro</span>
+            </a>
+            <a href="#" class="nav-item" onclick="toggleSidebar('adminSidebar'); return false;">
+                <i class="fas fa-bars"></i><span>Menu</span>
+            </a>
+        </nav>
     </div>
 
     <!-- CLIENT DASHBOARD -->
@@ -1981,10 +2033,62 @@
                 </footer>
             </div>
         </main>
+
+        <!-- MOBILE BOTTOM NAV CLIENT -->
+        <nav class="mobile-bottom-nav" id="clientBottomNav">
+            <a href="#" class="nav-item active" data-page="clientHome">
+                <i class="fas fa-home"></i><span>Início</span>
+            </a>
+            <a href="#" class="nav-item" data-page="clientServicos">
+                <i class="fas fa-concierge-bell"></i><span>Serviços</span>
+            </a>
+            <a href="#" class="nav-item" data-page="clientMateriais">
+                <i class="fas fa-boxes"></i><span>Materiais</span>
+            </a>
+            <a href="#" class="nav-item" data-page="clientPedidos">
+                <i class="fas fa-clipboard-list"></i><span>Pedidos</span>
+            </a>
+            <a href="#" class="nav-item" data-page="clientChat">
+                <i class="fas fa-comments"></i><span>Chat</span>
+                <span class="badge" id="bottomChatBadgeClient" style="display:none;">0</span>
+            </a>
+            <a href="#" class="nav-item" onclick="toggleSidebar('clientSidebar'); return false;">
+                <i class="fas fa-bars"></i><span>Menu</span>
+            </a>
+        </nav>
     </div>
 
     <!-- MODALS -->
     <div class="modal-overlay" id="modalOverlay" onclick="closeAllModals()">
+        <!-- PWA iOS Guide Modal -->
+        <div class="modal" id="pwaIosModal" onclick="event.stopPropagation()" style="max-width: 420px;">
+            <div class="modal-header">
+                <h3><i class="fab fa-apple text-primary"></i> Instalar no iPhone / iPad</h3>
+                <button class="btn-close" onclick="closeAllModals()">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 20px 24px; text-align: left;">
+                <div style="text-align: center; margin-bottom: 18px;">
+                    <img src="/icon-192.png" alt="FPS Studio" style="width: 64px; height: 64px; border-radius: 16px; box-shadow: 0 4px 14px rgba(0,0,0,0.25);">
+                    <h4 style="margin: 10px 0 4px 0; font-size: 17px; color: var(--text);">FPS Studio no seu iPhone</h4>
+                    <p style="color: var(--text-muted); font-size: 13px; margin: 0;">Siga estes 3 passos rápidos no Safari:</p>
+                </div>
+                <div class="pwa-ios-guide-step">
+                    <div class="pwa-ios-step-num">1</div>
+                    <div style="font-size: 13px; color: var(--text);">Toque no ícone de <strong>Compartilhar</strong> <i class="fas fa-share-square" style="color: #007aff; margin: 0 2px;"></i> na barra inferior do Safari.</div>
+                </div>
+                <div class="pwa-ios-guide-step">
+                    <div class="pwa-ios-step-num">2</div>
+                    <div style="font-size: 13px; color: var(--text);">Role para baixo e toque em <strong>"Adicionar à Tela de Início"</strong> <i class="fas fa-plus-square" style="color: #64748b; margin: 0 2px;"></i>.</div>
+                </div>
+                <div class="pwa-ios-guide-step">
+                    <div class="pwa-ios-step-num">3</div>
+                    <div style="font-size: 13px; color: var(--text);">Toque em <strong>"Adicionar"</strong> no canto superior direito para instalar o App.</div>
+                </div>
+                <button type="button" class="btn-primary btn-full" onclick="closeAllModals()" style="margin-top: 16px; width: 100%;">
+                    Entendi, Concluído
+                </button>
+            </div>
+        </div>
         <!-- Serviço Modal -->
         <div class="modal" id="servicoModal" onclick="event.stopPropagation()">
             <div class="modal-header">
