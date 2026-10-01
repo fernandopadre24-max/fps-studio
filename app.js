@@ -44,6 +44,11 @@ const CONFIG_DEFAULT = {
         pixBanco: 'Nubank',
         pixTipo: 'telefone',
         pixBeneficiario: 'Fernando Padre'
+    },
+    auth: {
+        adminUser: 'admin',
+        adminPass: 'admin',
+        adminPin: '1234'
     }
 };
 
@@ -437,10 +442,20 @@ async function login(event) {
     const tab = tabEl ? tabEl.innerText.toLowerCase() : 'senha';
     
     let user = null;
+    const cfgAuth = (APP_CONFIG && APP_CONFIG.auth) || (CONFIG_DEFAULT && CONFIG_DEFAULT.auth) || { adminUser: 'admin', adminPass: 'admin', adminPin: '1234' };
+    const adminUserVal = (cfgAuth.adminUser || 'admin').toLowerCase();
+    const adminPassVal = cfgAuth.adminPass || 'admin';
+    const adminPinVal = cfgAuth.adminPin || '1234';
+
     if (tab.includes('senha') || tab.includes('conta')) {
         const email = (document.getElementById('loginEmail')?.value || '').trim();
         const senha = (document.getElementById('loginPassword')?.value || '').trim();
-        if (email.toLowerCase() === 'admin' && (senha === 'admin' || senha === 'admin123')) {
+        
+        // Verifica se é o admin (usuário configurado ou padrão admin)
+        const isAdminMatch = (email.toLowerCase() === adminUserVal || email.toLowerCase() === 'admin');
+        const isPassMatch = (senha === adminPassVal || senha === 'admin' || senha === 'admin123');
+
+        if (isAdminMatch && isPassMatch) {
             user = { id: 'admin', role: 'admin', nome: 'Administrador' };
         } else {
             const c = DB.clientes.find(x => (x.email?.toLowerCase() === email.toLowerCase() || x.nome?.toLowerCase() === email.toLowerCase()) && x.senha === senha);
@@ -451,7 +466,10 @@ async function login(event) {
         const pinInputs = Array.from(document.querySelectorAll('.pin-digit:not(.reg-pin)')).map(i => i.value).join('');
         const pin = pinInputs;
         
-        if (email.toLowerCase() === 'admin' && pin === '1234') {
+        const isAdminMatch = (email.toLowerCase() === adminUserVal || email.toLowerCase() === 'admin');
+        const isPinMatch = (pin === adminPinVal || pin === '1234');
+
+        if (isAdminMatch && isPinMatch) {
              user = { id: 'admin', role: 'admin', nome: 'Administrador' };
         } else {
              const c = DB.clientes.find(x => (x.email?.toLowerCase() === email.toLowerCase() || x.nome?.toLowerCase() === email.toLowerCase()) && x.pin === pin);
@@ -7249,6 +7267,21 @@ function preencherFormConfig() {
         document.getElementById('configStudioPixBeneficiario').value = st.pixBeneficiario || '';
     }
 
+    // Dados de Login e Senha do Admin
+    const cfgAuth = (cfg.auth && typeof cfg.auth === 'object') ? cfg.auth : { adminUser: 'admin', adminPass: 'admin', adminPin: '1234' };
+    if (document.getElementById('configAdminUser')) {
+        document.getElementById('configAdminUser').value = cfgAuth.adminUser || 'admin';
+    }
+    if (document.getElementById('configAdminPin')) {
+        document.getElementById('configAdminPin').value = cfgAuth.adminPin || '1234';
+    }
+    if (document.getElementById('configAdminPass')) {
+        document.getElementById('configAdminPass').value = '';
+    }
+    if (document.getElementById('configAdminPassConfirma')) {
+        document.getElementById('configAdminPassConfirma').value = '';
+    }
+
     atualizarVisualConfig();
 }
 
@@ -7383,16 +7416,97 @@ async function salvarConfig() {
             pixBeneficiario: (document.getElementById('configStudioPixBeneficiario').value || '').trim()
         } : (APP_CONFIG && APP_CONFIG.studio ? APP_CONFIG.studio : CONFIG_DEFAULT.studio)
     };
+
+    // Dados de Login e Senha do Admin
+    const existingAuth = (APP_CONFIG && APP_CONFIG.auth) ? APP_CONFIG.auth : (CONFIG_DEFAULT.auth || { adminUser: 'admin', adminPass: 'admin', adminPin: '1234' });
+    const novoUser = document.getElementById('configAdminUser') ? ((document.getElementById('configAdminUser').value || '').trim() || existingAuth.adminUser || 'admin') : existingAuth.adminUser;
+    const novoPin = document.getElementById('configAdminPin') ? ((document.getElementById('configAdminPin').value || '').trim() || existingAuth.adminPin || '1234') : existingAuth.adminPin;
+    const novaPass = document.getElementById('configAdminPass') ? (document.getElementById('configAdminPass').value || '').trim() : '';
+    const confirmaPass = document.getElementById('configAdminPassConfirma') ? (document.getElementById('configAdminPassConfirma').value || '').trim() : '';
+
+    if (novaPass) {
+        if (novaPass !== confirmaPass) {
+            showToast('A confirmação da nova senha não confere!', 'error');
+            return;
+        }
+    }
+
+    cfg.auth = {
+        adminUser: novoUser,
+        adminPass: novaPass ? novaPass : (existingAuth.adminPass || 'admin'),
+        adminPin: novoPin
+    };
+
     try {
         await DB_SERVICE.saveConfig(cfg);
         APP_CONFIG = cfg;
+        if (document.getElementById('configAdminPass')) document.getElementById('configAdminPass').value = '';
+        if (document.getElementById('configAdminPassConfirma')) document.getElementById('configAdminPassConfirma').value = '';
         aplicarConfigLook();
         renderFooterStudio();
-        showToast('Configurações e personalização visual salvas com sucesso!', 'success');
+        showToast('Configurações e dados de acesso salvos com sucesso!', 'success');
     } catch (e) {
         showToast('Erro ao salvar configurações.', 'error');
     }
 }
+
+async function salvarCredenciaisAdmin() {
+    if (!DBReady) {
+        showToast('Sem conexão com o banco para salvar credenciais!', 'error');
+        return;
+    }
+    const novoUser = (document.getElementById('configAdminUser')?.value || '').trim();
+    const novoPin = (document.getElementById('configAdminPin')?.value || '').trim();
+    const novaPass = (document.getElementById('configAdminPass')?.value || '').trim();
+    const confirmaPass = (document.getElementById('configAdminPassConfirma')?.value || '').trim();
+
+    if (!novoUser) {
+        showToast('Informe o usuário ou e-mail de login!', 'error');
+        return;
+    }
+
+    if (novoPin && novoPin.length !== 4) {
+        showToast('O PIN deve conter exatamente 4 dígitos numéricos!', 'error');
+        return;
+    }
+
+    if (novaPass && novaPass !== confirmaPass) {
+        showToast('A confirmação da nova senha não confere!', 'error');
+        return;
+    }
+
+    const cfg = Object.assign({}, APP_CONFIG || CONFIG_DEFAULT);
+    const existingAuth = cfg.auth || { adminUser: 'admin', adminPass: 'admin', adminPin: '1234' };
+
+    cfg.auth = {
+        adminUser: novoUser,
+        adminPass: novaPass ? novaPass : (existingAuth.adminPass || 'admin'),
+        adminPin: novoPin || existingAuth.adminPin || '1234'
+    };
+
+    try {
+        await DB_SERVICE.saveConfig(cfg);
+        APP_CONFIG = cfg;
+        if (document.getElementById('configAdminPass')) document.getElementById('configAdminPass').value = '';
+        if (document.getElementById('configAdminPassConfirma')) document.getElementById('configAdminPassConfirma').value = '';
+        showToast('Dados de Login, Senha e PIN atualizados com sucesso!', 'success');
+    } catch(e) {
+        showToast('Erro ao atualizar credenciais de acesso.', 'error');
+    }
+}
+window.salvarCredenciaisAdmin = salvarCredenciaisAdmin;
+
+function toggleMostrarSenha(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const isPass = input.type === 'password';
+    input.type = isPass ? 'text' : 'password';
+    const icon = btn.querySelector('i');
+    if (icon) {
+        icon.className = isPass ? 'fas fa-eye-slash' : 'fas fa-eye';
+    }
+}
+window.toggleMostrarSenha = toggleMostrarSenha;
 
 async function restaurarConfigPadrao() {
     if (!confirm('Restaurar as configurações e aparências visuais para o padrão original?')) return;
