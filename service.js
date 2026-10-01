@@ -75,8 +75,31 @@ const DB_SERVICE = {
     async uploadAudio(d) { return apiCall('upload_audio', 'POST', d); },
 
     // CONFIGURAÇÕES
-    async getConfig() { return apiCall('config'); },
-    async saveConfig(d) { return apiCall('config', 'POST', d); },
+    async getConfig() {
+        try {
+            const data = await apiCall('config');
+            if (data && typeof data === 'object') {
+                try {
+                    localStorage.setItem('fps_cached_config', JSON.stringify(data));
+                    if (data.auth) localStorage.setItem('fps_auth_config', JSON.stringify(data.auth));
+                } catch(e) {}
+            }
+            return data;
+        } catch(e) {
+            try {
+                const ls = localStorage.getItem('fps_cached_config');
+                if (ls) return JSON.parse(ls);
+            } catch(e2) {}
+            return {};
+        }
+    },
+    async saveConfig(d) {
+        try {
+            localStorage.setItem('fps_cached_config', JSON.stringify(d));
+            if (d && d.auth) localStorage.setItem('fps_auth_config', JSON.stringify(d.auth));
+        } catch(e) {}
+        return apiCall('config', 'POST', d);
+    },
 
     // BACKUP / RESTAURAÇÃO
     async exportBackup() { return apiCall('backup_export'); },

@@ -278,8 +278,48 @@ const IDB_SERVICE = {
     },
 
     // ---------- CONFIG ----------
-    async getConfig() { return (await idbGet('config')) || {}; },
-    async saveConfig(d) { await idbSet('config', d); return { ok: true }; },
+    async getConfig() {
+        let localData = null;
+        try { localData = await idbGet('config'); } catch(e) {}
+        if (!localData || !Object.keys(localData).length) {
+            try {
+                const ls = localStorage.getItem('fps_cached_config') || localStorage.getItem('bloco_config');
+                if (ls) localData = JSON.parse(ls);
+            } catch(e) {}
+        }
+        // Se backend /api estiver disponível, sincroniza para obter credenciais e dados mais recentes
+        try {
+            const res = await fetch('/api/config');
+            if (res.ok) {
+                const srv = await res.json();
+                if (srv && typeof srv === 'object' && Object.keys(srv).length) {
+                    localData = Object.assign({}, localData || {}, srv);
+                    if (srv.auth) localData.auth = Object.assign({}, (localData && localData.auth) || {}, srv.auth);
+                    await idbSet('config', localData);
+                    try {
+                        localStorage.setItem('fps_cached_config', JSON.stringify(localData));
+                        if (localData.auth) localStorage.setItem('fps_auth_config', JSON.stringify(localData.auth));
+                    } catch(e) {}
+                }
+            }
+        } catch(e) {}
+        return localData || {};
+    },
+    async saveConfig(d) {
+        await idbSet('config', d);
+        try {
+            localStorage.setItem('fps_cached_config', JSON.stringify(d));
+            if (d && d.auth) localStorage.setItem('fps_auth_config', JSON.stringify(d.auth));
+        } catch(e) {}
+        try {
+            await fetch('/api/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(d)
+            });
+        } catch(e) {}
+        return { ok: true };
+    },
 
     // ---------- BACKUP ----------
     async exportBackup() {

@@ -58,6 +58,15 @@ try {
     if (cachedCfg) {
         APP_CONFIG = JSON.parse(cachedCfg);
     }
+    const cachedAuth = localStorage.getItem('fps_auth_config');
+    if (cachedAuth) {
+        const parsedAuth = JSON.parse(cachedAuth);
+        if (parsedAuth && parsedAuth.adminUser) {
+            if (!APP_CONFIG) APP_CONFIG = Object.assign({}, CONFIG_DEFAULT);
+            APP_CONFIG.auth = Object.assign({}, APP_CONFIG.auth || {}, parsedAuth);
+            CONFIG_DEFAULT.auth = Object.assign({}, CONFIG_DEFAULT.auth, parsedAuth);
+        }
+    }
 } catch (e) {}
 
 let usingIDB = false;
@@ -157,17 +166,19 @@ function salvarSessao() {
     try {
         if (currentUser) {
             sessionStorage.setItem('fps_current_user', JSON.stringify(currentUser));
+            localStorage.setItem('fps_session', JSON.stringify(currentUser));
         } else {
             sessionStorage.removeItem('fps_current_user');
+            localStorage.removeItem('fps_session');
         }
     } catch(e) {}
 }
 
-function restaurarSessao() {
+function obterSessaoSalva() {
     try {
-        const saved = sessionStorage.getItem('fps_current_user');
-        if (saved) {
-            const u = JSON.parse(saved);
+        const raw = sessionStorage.getItem('fps_current_user') || localStorage.getItem('fps_session');
+        if (raw) {
+            const u = JSON.parse(raw);
             if (u && (u.role === 'cliente' || u.role === 'client')) {
                 u.role = 'client';
             }
@@ -175,6 +186,17 @@ function restaurarSessao() {
         }
     } catch(e) {}
     return null;
+}
+
+function restaurarSessao() {
+    return obterSessaoSalva();
+}
+
+function limparSessao() {
+    try {
+        sessionStorage.removeItem('fps_current_user');
+        localStorage.removeItem('fps_session');
+    } catch(e) {}
 }
 
 let syncInterval = null;
@@ -309,6 +331,9 @@ async function init() {
         console.warn('[PERSIST] Nenhuma camada de dados disponível (IDB e backend falharam).');
     }
 
+    // Carregar e aplicar configurações visuais e credenciais de acesso
+    await carregarConfig();
+
     const saved = restaurarSessao();
     if (saved) {
         currentUser = saved;
@@ -377,9 +402,36 @@ async function loadDB() {
                     DB.movimentacoes = apiMov;
                     if (window.IDB_SERVICE?.salvarBloco) await window.IDB_SERVICE.salvarBloco('movimentacoes', apiMov);
                 }
+
+                // Sincronizar configurações do backend se o IndexedDB estiver vazio
+                if (!DB.config || !Object.keys(DB.config).length) {
+                    try {
+                        const apiCfg = await fetch('/api/config').then(r => r.ok ? r.json() : null).catch(() => null);
+                        if (apiCfg && typeof apiCfg === 'object' && Object.keys(apiCfg).length > 0) {
+                            DB.config = Object.assign({}, DB.config || {}, apiCfg);
+                            if (window.IDB_SERVICE?.saveConfig) await window.IDB_SERVICE.saveConfig(DB.config);
+                        }
+                    } catch(e) {}
+                }
             } catch (syncErr) {
                 console.warn('[SYNC] Falha ao sincronizar dados iniciais do backend:', syncErr);
             }
+        }
+
+        // Atualizar APP_CONFIG a partir de DB.config
+        if (DB.config && typeof DB.config === 'object' && Object.keys(DB.config).length > 0) {
+            APP_CONFIG = Object.assign({}, CONFIG_DEFAULT, DB.config);
+            if (DB.config.auth) {
+                APP_CONFIG.auth = Object.assign({}, CONFIG_DEFAULT.auth || {}, DB.config.auth);
+                CONFIG_DEFAULT.auth = Object.assign({}, APP_CONFIG.auth);
+            }
+            if (DB.config.studio) {
+                APP_CONFIG.studio = Object.assign({}, CONFIG_DEFAULT.studio || {}, DB.config.studio);
+            }
+            try {
+                localStorage.setItem('fps_cached_config', JSON.stringify(APP_CONFIG));
+                if (APP_CONFIG.auth) localStorage.setItem('fps_auth_config', JSON.stringify(APP_CONFIG.auth));
+            } catch(e) {}
         }
         
         // Normalizar IDs
@@ -442,20 +494,29 @@ async function login(event) {
     const tab = tabEl ? tabEl.innerText.toLowerCase() : 'senha';
     
     let user = null;
-    const cfgAuth = (APP_CONFIG && APP_CONFIG.auth) || (CONFIG_DEFAULT && CONFIG_DEFAULT.auth) || { adminUser: 'admin', adminPass: 'admin', adminPin: '1234' };
-    const adminUserVal = (cfgAuth.adminUser || 'admin').toLowerCase();
-    const adminPassVal = cfgAuth.adminPass || 'admin';
-    const adminPinVal = cfgAuth.adminPin || '1234';
+    let cfgAuth = null;
+    try {
+        const lsAuth = localStorage.getItem('fps_auth_config');
+        if (lsAuth) cfgAuth = JSON.parse(lsAuth);
+    } catch(e) {}
+    if (!cfgAuth || !cfgAuth.adminUser) {
+        cfgAuth = (APP_CONFIG && APP_CONFIG.auth) || (DB.config && DB.config.auth) || (CONFIG_DEFAULT && CONFIG_DEFAULT.auth) || { adminUser: 'admin', adminPass: 'admin', adminPin: '1234' };
+    }
+
+    const adminUserVal = (cfgAuth.adminUser || 'admin').trim().toLowerCase();
+    const adminPassVal = (cfgAuth.adminPass || 'admin').trim();
+    const adminPinVal = (cfgAuth.adminPin || '1234').trim();
 
     if (tab.includes('senha') || tab.includes('conta')) {
         const email = (document.getElementById('loginEmail')?.value || '').trim();
         const senha = (document.getElementById('loginPassword')?.value || '').trim();
         
-        // Verifica se é o admin (usuário configurado ou padrão admin)
-        const isAdminMatch = (email.toLowerCase() === adminUserVal || email.toLowerCase() === 'admin');
-        const isPassMatch = (senha === adminPassVal || senha === 'admin' || senha === 'admin123');
+        const inputUser = email.toLowerCase();
+        const isCustomAuth = (adminUserVal !== 'admin' || adminPassVal !== 'admin');
+        const isAdminUser = (inputUser === adminUserVal) || (!isCustomAuth && inputUser === 'admin') || (adminUserVal.includes('@') && inputUser === adminUserVal.split('@')[0]);
+        const isAdminPass = (senha === adminPassVal);
 
-        if (isAdminMatch && isPassMatch) {
+        if (isAdminUser && isAdminPass) {
             user = { id: 'admin', role: 'admin', nome: 'Administrador' };
         } else {
             const c = DB.clientes.find(x => (x.email?.toLowerCase() === email.toLowerCase() || x.nome?.toLowerCase() === email.toLowerCase()) && x.senha === senha);
@@ -464,16 +525,18 @@ async function login(event) {
     } else if (tab.includes('pin')) {
         const email = (document.getElementById('pinEmail')?.value || '').trim();
         const pinInputs = Array.from(document.querySelectorAll('.pin-digit:not(.reg-pin)')).map(i => i.value).join('');
-        const pin = pinInputs;
+        const pin = pinInputs.trim();
         
-        const isAdminMatch = (email.toLowerCase() === adminUserVal || email.toLowerCase() === 'admin');
-        const isPinMatch = (pin === adminPinVal || pin === '1234');
+        const inputUser = email.toLowerCase();
+        const isCustomAuth = (adminUserVal !== 'admin' || adminPinVal !== '1234');
+        const isAdminUser = (inputUser === adminUserVal) || (!isCustomAuth && inputUser === 'admin') || (adminUserVal.includes('@') && inputUser === adminUserVal.split('@')[0]);
+        const isAdminPin = (pin === adminPinVal);
 
-        if (isAdminMatch && isPinMatch) {
-             user = { id: 'admin', role: 'admin', nome: 'Administrador' };
+        if (isAdminUser && isAdminPin) {
+            user = { id: 'admin', role: 'admin', nome: 'Administrador' };
         } else {
-             const c = DB.clientes.find(x => (x.email?.toLowerCase() === email.toLowerCase() || x.nome?.toLowerCase() === email.toLowerCase()) && x.pin === pin);
-             if (c) user = { ...c, role: 'client' };
+            const c = DB.clientes.find(x => (x.email?.toLowerCase() === email.toLowerCase() || x.nome?.toLowerCase() === email.toLowerCase()) && x.pin === pin);
+            if (c) user = { ...c, role: 'client' };
         }
     }
 
@@ -6045,26 +6108,7 @@ async function restaurarAutoBackupLocal() {
 
 // [restore b03a43a] restaurarSessao
 function restaurarSessao() {
-    const saved = localStorage.getItem('fps_session');
-    if (!saved) return;
-    try {
-        const user = JSON.parse(saved);
-        if (!user || !user.role) return;
-        if (user.role === 'cliente') user.role = 'client';
-        if (user.role === 'client') {
-            const cliente = DB.clientes.find(c => c.id === user.id);
-            if (!cliente) { limparSessao(); return; }
-            currentUser = { role: 'client', ...cliente };
-            showDashboard('client');
-            document.getElementById('clientNameDisplay').textContent = cliente.nome;
-            atualizarAvisoPerfil();
-        } else {
-            currentUser = { role: 'admin', nome: 'Administrador' };
-            showDashboard('admin');
-        }
-    } catch (e) {
-        limparSessao();
-    }
+    return obterSessaoSalva();
 }
 
 // [restore b03a43a] salvarAutoBackupLocal
@@ -7123,13 +7167,61 @@ function aplicarConfigLook() {
 
 async function carregarConfig() {
     try {
-        const dados = await DB_SERVICE.getConfig();
-        APP_CONFIG = Object.assign({}, CONFIG_DEFAULT, dados || {});
+        let dados = null;
+        try {
+            dados = await DB_SERVICE.getConfig();
+        } catch (e) {}
+
+        if (!dados || !Object.keys(dados).length) {
+            try {
+                const res = await fetch('/api/config');
+                if (res.ok) dados = await res.json();
+            } catch(e) {}
+        }
+
+        if (!dados || !Object.keys(dados).length) {
+            try {
+                const ls = localStorage.getItem('fps_cached_config');
+                if (ls) dados = JSON.parse(ls);
+            } catch(e) {}
+        }
+
+        if (dados && typeof dados === 'object' && Object.keys(dados).length) {
+            APP_CONFIG = Object.assign({}, CONFIG_DEFAULT, dados);
+            if (dados.auth) {
+                APP_CONFIG.auth = Object.assign({}, CONFIG_DEFAULT.auth || {}, dados.auth);
+                CONFIG_DEFAULT.auth = Object.assign({}, APP_CONFIG.auth);
+            }
+            if (dados.studio) {
+                APP_CONFIG.studio = Object.assign({}, CONFIG_DEFAULT.studio || {}, dados.studio);
+            }
+        } else if (!APP_CONFIG) {
+            APP_CONFIG = Object.assign({}, CONFIG_DEFAULT);
+        }
+
+        // Se houver credenciais salvas no localStorage que não vieram do backend, mesclar
+        try {
+            const cachedAuth = localStorage.getItem('fps_auth_config');
+            if (cachedAuth) {
+                const parsedAuth = JSON.parse(cachedAuth);
+                if (parsedAuth && parsedAuth.adminUser) {
+                    APP_CONFIG.auth = Object.assign({}, APP_CONFIG.auth || {}, parsedAuth);
+                    CONFIG_DEFAULT.auth = Object.assign({}, APP_CONFIG.auth);
+                }
+            }
+        } catch(e) {}
+
+        try {
+            localStorage.setItem('fps_cached_config', JSON.stringify(APP_CONFIG));
+            if (APP_CONFIG.auth) localStorage.setItem('fps_auth_config', JSON.stringify(APP_CONFIG.auth));
+        } catch(e) {}
     } catch (e) {
-        APP_CONFIG = Object.assign({}, CONFIG_DEFAULT);
+        if (!APP_CONFIG) APP_CONFIG = Object.assign({}, CONFIG_DEFAULT);
     }
+    DB.config = APP_CONFIG;
     aplicarConfigLook();
     renderFooterStudio();
+    preencherFormConfig();
 }
 
 function selecionarEstiloTela(estilo) {
@@ -7268,7 +7360,14 @@ function preencherFormConfig() {
     }
 
     // Dados de Login e Senha do Admin
-    const cfgAuth = (cfg.auth && typeof cfg.auth === 'object') ? cfg.auth : { adminUser: 'admin', adminPass: 'admin', adminPin: '1234' };
+    let cfgAuth = (cfg.auth && typeof cfg.auth === 'object') ? cfg.auth : null;
+    if (!cfgAuth || !cfgAuth.adminUser) {
+        try {
+            const lsAuth = localStorage.getItem('fps_auth_config');
+            if (lsAuth) cfgAuth = JSON.parse(lsAuth);
+        } catch(e) {}
+    }
+    if (!cfgAuth) cfgAuth = { adminUser: 'admin', adminPass: 'admin', adminPin: '1234' };
     if (document.getElementById('configAdminUser')) {
         document.getElementById('configAdminUser').value = cfgAuth.adminUser || 'admin';
     }
@@ -7440,6 +7539,12 @@ async function salvarConfig() {
     try {
         await DB_SERVICE.saveConfig(cfg);
         APP_CONFIG = cfg;
+        DB.config = cfg;
+        if (CONFIG_DEFAULT && cfg.auth) CONFIG_DEFAULT.auth = Object.assign({}, cfg.auth);
+        try {
+            localStorage.setItem('fps_cached_config', JSON.stringify(cfg));
+            if (cfg.auth) localStorage.setItem('fps_auth_config', JSON.stringify(cfg.auth));
+        } catch(e) {}
         if (document.getElementById('configAdminPass')) document.getElementById('configAdminPass').value = '';
         if (document.getElementById('configAdminPassConfirma')) document.getElementById('configAdminPassConfirma').value = '';
         aplicarConfigLook();
@@ -7476,7 +7581,7 @@ async function salvarCredenciaisAdmin() {
     }
 
     const cfg = Object.assign({}, APP_CONFIG || CONFIG_DEFAULT);
-    const existingAuth = cfg.auth || { adminUser: 'admin', adminPass: 'admin', adminPin: '1234' };
+    const existingAuth = cfg.auth || (CONFIG_DEFAULT && CONFIG_DEFAULT.auth) || { adminUser: 'admin', adminPass: 'admin', adminPin: '1234' };
 
     cfg.auth = {
         adminUser: novoUser,
@@ -7487,10 +7592,22 @@ async function salvarCredenciaisAdmin() {
     try {
         await DB_SERVICE.saveConfig(cfg);
         APP_CONFIG = cfg;
+        DB.config = cfg;
+        if (CONFIG_DEFAULT) CONFIG_DEFAULT.auth = Object.assign({}, cfg.auth);
+
+        try {
+            localStorage.setItem('fps_cached_config', JSON.stringify(cfg));
+            localStorage.setItem('fps_auth_config', JSON.stringify(cfg.auth));
+        } catch(e) {}
+
         if (document.getElementById('configAdminPass')) document.getElementById('configAdminPass').value = '';
         if (document.getElementById('configAdminPassConfirma')) document.getElementById('configAdminPassConfirma').value = '';
+        if (document.getElementById('configAdminUser')) document.getElementById('configAdminUser').value = cfg.auth.adminUser;
+        if (document.getElementById('configAdminPin')) document.getElementById('configAdminPin').value = cfg.auth.adminPin;
+
         showToast('Dados de Login, Senha e PIN atualizados com sucesso!', 'success');
     } catch(e) {
+        console.error('Erro ao salvar credenciais:', e);
         showToast('Erro ao atualizar credenciais de acesso.', 'error');
     }
 }
@@ -7512,8 +7629,17 @@ async function restaurarConfigPadrao() {
     if (!confirm('Restaurar as configurações e aparências visuais para o padrão original?')) return;
     try {
         const padrao = Object.assign({}, CONFIG_DEFAULT);
+        // Preserva as credenciais de acesso existentes para não trancar o usuário fora
+        if (APP_CONFIG && APP_CONFIG.auth) {
+            padrao.auth = Object.assign({}, APP_CONFIG.auth);
+        }
         await DB_SERVICE.saveConfig(padrao);
         APP_CONFIG = padrao;
+        DB.config = padrao;
+        try {
+            localStorage.setItem('fps_cached_config', JSON.stringify(padrao));
+            if (padrao.auth) localStorage.setItem('fps_auth_config', JSON.stringify(padrao.auth));
+        } catch(e) {}
         aplicarConfigLook();
         preencherFormConfig();
         renderFooterStudio();
